@@ -1166,7 +1166,14 @@ function updateBubbles() {
       if (!el) {
         el = document.createElement('div');
         el.className = 'bubble3d';
-        el.innerHTML = '<div class="bx" onclick="this.parentElement.classList.remove(\'show\')">✕</div><div class="bc"></div>';
+        el.innerHTML = '<div class="bx">✕</div><div class="bc"></div>';
+        el.querySelector('.bx').addEventListener('click', function(e) {
+          e.stopPropagation();
+          el.classList.remove('show');
+        });
+        // Prevent 3D controls from capturing bubble clicks
+        el.addEventListener('mousedown', e => e.stopPropagation());
+        el.addEventListener('wheel', e => e.stopPropagation(), { passive: true });
         document.body.appendChild(el);
         bubbles[key] = el;
       }
@@ -1205,7 +1212,7 @@ function updateBubbles() {
           const totalSteps = thinkLog.length + toolLog.length;
           if (totalSteps > 0) {
             h += '<div class="b3d-section b3d-section-s2">';
-            h += `<div class="b3d-header collapsible" onclick="this.classList.toggle('collapsed');this.nextElementSibling.classList.toggle('collapsed')">🧠 思考过程 (${thinkLog.length}步, ${toolLog.length}工具)</div>`;
+            h += `<div class="b3d-header collapsible">🧠 思考过程 (${thinkLog.length}步, ${toolLog.length}工具)</div>`;
             h += `<div class="b3d-body" style="max-height:180px;overflow-y:auto">`;
             // Interleave thinking and tool calls
             const items = [];
@@ -1248,6 +1255,15 @@ function updateBubbles() {
         }
 
         bc.innerHTML = h;
+        // Add collapsible toggle handlers
+        bc.querySelectorAll('.b3d-header.collapsible').forEach(header => {
+          header.addEventListener('click', function(e) {
+            e.stopPropagation();
+            this.classList.toggle('collapsed');
+            const body = this.nextElementSibling;
+            if (body) body.classList.toggle('collapsed');
+          });
+        });
       } else {
         el.classList.remove('show');
       }

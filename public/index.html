@@ -37,8 +37,9 @@
   /* Speech bubbles (HTML overlay on 3D) */
   .bubble3d{position:fixed;z-index:80;background:rgba(255,255,255,0.97);color:#222;border-radius:12px;font-size:9px;line-height:1.6;min-width:220px;max-width:360px;box-shadow:0 8px 32px rgba(0,0,0,0.35);pointer-events:auto;transition:opacity 0.3s,transform 0.3s;opacity:0;transform:translateY(8px)}
   .bubble3d.show{opacity:1;transform:translateY(0)}
-  .bubble3d .bx{position:sticky;top:0;float:right;cursor:pointer;color:#999;font-size:13px;background:rgba(0,0,0,0.08);border-radius:50%;width:22px;height:22px;text-align:center;line-height:22px;z-index:10;margin:-4px -4px 0 0}
-  .bubble3d .bx:hover{background:rgba(0,0,0,0.15);color:#666}
+  .bubble3d .bx{position:absolute;top:6px;right:8px;cursor:pointer;color:#999;font-size:14px;background:rgba(0,0,0,0.08);border-radius:50%;width:24px;height:24px;text-align:center;line-height:24px;z-index:20;pointer-events:auto}
+  .bubble3d .bx:hover{background:rgba(0,0,0,0.18);color:#555}
+  .bubble3d .bc{padding-top:4px}
   .bubble3d::after{content:'';position:absolute;top:100%;left:50%;transform:translateX(-50%);border:8px solid transparent;border-top-color:rgba(255,255,255,0.97)}
   .b3d-section{padding:8px 12px}
   .b3d-section+.b3d-section{border-top:1px solid #eee}

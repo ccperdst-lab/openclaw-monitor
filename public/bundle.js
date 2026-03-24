@@ -28109,7 +28109,13 @@ function updateBubbles() {
       if (!el) {
         el = document.createElement("div");
         el.className = "bubble3d";
-        el.innerHTML = `<div class="bx" onclick="this.parentElement.classList.remove('show')">\u2715</div><div class="bc"></div>`;
+        el.innerHTML = '<div class="bx">\u2715</div><div class="bc"></div>';
+        el.querySelector(".bx").addEventListener("click", function(e) {
+          e.stopPropagation();
+          el.classList.remove("show");
+        });
+        el.addEventListener("mousedown", (e) => e.stopPropagation());
+        el.addEventListener("wheel", (e) => e.stopPropagation(), { passive: true });
         document.body.appendChild(el);
         bubbles[key] = el;
       }
@@ -28140,7 +28146,7 @@ function updateBubbles() {
           const totalSteps = thinkLog.length + toolLog.length;
           if (totalSteps > 0) {
             h += '<div class="b3d-section b3d-section-s2">';
-            h += `<div class="b3d-header collapsible" onclick="this.classList.toggle('collapsed');this.nextElementSibling.classList.toggle('collapsed')">\u{1F9E0} \u601D\u8003\u8FC7\u7A0B (${thinkLog.length}\u6B65, ${toolLog.length}\u5DE5\u5177)</div>`;
+            h += `<div class="b3d-header collapsible">\u{1F9E0} \u601D\u8003\u8FC7\u7A0B (${thinkLog.length}\u6B65, ${toolLog.length}\u5DE5\u5177)</div>`;
             h += `<div class="b3d-body" style="max-height:180px;overflow-y:auto">`;
             const items = [];
             thinkLog.forEach((t) => items.push({ type: "think", data: t }));
@@ -28178,6 +28184,14 @@ function updateBubbles() {
           h += `</div></div>`;
         }
         bc.innerHTML = h;
+        bc.querySelectorAll(".b3d-header.collapsible").forEach((header) => {
+          header.addEventListener("click", function(e) {
+            e.stopPropagation();
+            this.classList.toggle("collapsed");
+            const body = this.nextElementSibling;
+            if (body) body.classList.toggle("collapsed");
+          });
+        });
       } else {
         el.classList.remove("show");
       }
