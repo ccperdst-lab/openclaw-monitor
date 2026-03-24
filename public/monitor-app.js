@@ -24,22 +24,13 @@ let moveSpeed = 12;
 let pointerLocked = false;
 const keys = { w: false, a: false, s: false, d: false, space: false, shift: false };
 
-// Pointer lock: click canvas to lock, click again to unlock
-let lockClicks = 0;
+// Pointer lock: click canvas to toggle
 renderer.domElement.addEventListener('click', () => {
   if (pointerLocked) {
     document.exitPointerLock();
-    lockClicks = 0;
   } else {
-    lockClicks++;
-    if (lockClicks === 1) {
-      renderer.domElement.requestPointerLock();
-    }
+    renderer.domElement.requestPointerLock();
   }
-});
-// ESC to exit pointer lock
-document.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && pointerLocked) document.exitPointerLock();
 });
 
 document.addEventListener('pointerlockchange', () => {

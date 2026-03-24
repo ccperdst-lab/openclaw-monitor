@@ -27107,20 +27107,12 @@ var pitch = 0;
 var moveSpeed = 12;
 var pointerLocked = false;
 var keys = { w: false, a: false, s: false, d: false, space: false, shift: false };
-var lockClicks = 0;
 renderer.domElement.addEventListener("click", () => {
   if (pointerLocked) {
     document.exitPointerLock();
-    lockClicks = 0;
   } else {
-    lockClicks++;
-    if (lockClicks === 1) {
-      renderer.domElement.requestPointerLock();
-    }
+    renderer.domElement.requestPointerLock();
   }
-});
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && pointerLocked) document.exitPointerLock();
 });
 document.addEventListener("pointerlockchange", () => {
   pointerLocked = document.pointerLockElement === renderer.domElement;
