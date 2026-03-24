@@ -358,6 +358,20 @@ app.get('/api/logs/tail', (req, res) => {
   });
 });
 
+// Monitor events history (from monitor-events.jsonl)
+app.get('/api/events/history', (req, res) => {
+  const p = path.join(LOG_DIR, 'monitor-events.jsonl');
+  if (!fs.existsSync(p)) return res.json({ events: [] });
+  try {
+    const stat = fs.statSync(p);
+    const sz = Math.min(stat.size, 50000);
+    const buf = fs.readFileSync(p, 'utf-8');
+    const lines = buf.split('\n').filter(Boolean);
+    const events = lines.slice(-30).map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+    res.json({ events });
+  } catch { res.json({ events: [] }); }
+});
+
 // Command execution endpoint
 app.use(express.json());
 app.post('/api/exec', (req, res) => {

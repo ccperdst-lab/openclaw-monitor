@@ -28436,6 +28436,9 @@ fetch("/api/state").then((r) => r.json()).then(init);
 fetch("/api/logs/tail").then((r) => r.json()).then((d) => {
   if (d.events) d.events.forEach(addLog);
 });
+fetch("/api/events/history").then((r) => r.json()).then((d) => {
+  if (d.events) d.events.forEach(addLog);
+});
 animate();
 window.addEventListener("resize", () => {
   camera.aspect = window.innerWidth / window.innerHeight;
