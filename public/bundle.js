@@ -27110,6 +27110,11 @@ var keys = { w: false, a: false, s: false, d: false, space: false, shift: false 
 renderer.domElement.addEventListener("click", () => {
   if (!pointerLocked) renderer.domElement.requestPointerLock();
 });
+document.addEventListener("mousedown", (e) => {
+  if (pointerLocked && (e.target.closest(".bubble3d") || e.target.closest("#drawer") || e.target.closest("#toggle"))) {
+    document.exitPointerLock();
+  }
+}, true);
 document.addEventListener("pointerlockchange", () => {
   pointerLocked = document.pointerLockElement === renderer.domElement;
   document.body.style.cursor = pointerLocked ? "none" : "default";

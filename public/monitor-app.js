@@ -24,10 +24,16 @@ let moveSpeed = 12;
 let pointerLocked = false;
 const keys = { w: false, a: false, s: false, d: false, space: false, shift: false };
 
-// Request pointer lock on click
+// Request pointer lock on click (only on canvas, not on UI elements)
 renderer.domElement.addEventListener('click', () => {
   if (!pointerLocked) renderer.domElement.requestPointerLock();
 });
+// Auto-exit pointer lock when clicking on bubbles or UI
+document.addEventListener('mousedown', e => {
+  if (pointerLocked && (e.target.closest('.bubble3d') || e.target.closest('#drawer') || e.target.closest('#toggle'))) {
+    document.exitPointerLock();
+  }
+}, true); // capture phase to run before pointer lock swallows the event
 
 document.addEventListener('pointerlockchange', () => {
   pointerLocked = document.pointerLockElement === renderer.domElement;
