@@ -27904,6 +27904,16 @@ function createMinion(profile) {
     replyText: "",
     replyCount: 0,
     lastEventTime: 0,
+    // Saved chat input (preserved across bubble close/open)
+    savedInput: "",
+    // Notification: "!" indicator when conversation ends and bubble is closed
+    hasNotification: false,
+    notificationSprite: null,
+    // Attention animation (jump/wave)
+    attentionAnim: 0,
+    // 0 = off, >0 = time remaining
+    attentionType: "jump",
+    // 'jump' or 'wave'
     // Movement
     idleTimer: 0,
     idleAction: "stand",
@@ -27912,6 +27922,49 @@ function createMinion(profile) {
     chineseName: p.name || ""
   };
   return group;
+}
+function createNotificationSprite() {
+  const canvas = document.createElement("canvas");
+  canvas.width = 64;
+  canvas.height = 64;
+  const ctx = canvas.getContext("2d");
+  ctx.beginPath();
+  ctx.arc(32, 32, 28, 0, Math.PI * 2);
+  ctx.fillStyle = "#ef4444";
+  ctx.fill();
+  ctx.strokeStyle = "#fff";
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  ctx.font = "bold 36px sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = "#fff";
+  ctx.fillText("!", 32, 33);
+  const tex = new CanvasTexture(canvas);
+  tex.minFilter = LinearFilter;
+  const mat2 = new SpriteMaterial({ map: tex, transparent: true, depthWrite: false });
+  const sprite = new Sprite(mat2);
+  sprite.scale.set(0.5, 0.5, 1);
+  return sprite;
+}
+function showNotification(minion) {
+  if (minion.userData.notificationSprite) return;
+  const sprite = createNotificationSprite();
+  const hs = minion.userData.heightScale || 1;
+  sprite.position.y = 2.5 * hs * 0.5 + 1.8;
+  minion.add(sprite);
+  minion.userData.notificationSprite = sprite;
+  minion.userData.hasNotification = true;
+  minion.userData.attentionAnim = 2.5;
+  minion.userData.attentionType = Math.random() > 0.5 ? "jump" : "wave";
+}
+function clearNotification(minion) {
+  if (minion.userData.notificationSprite) {
+    minion.remove(minion.userData.notificationSprite);
+    minion.userData.notificationSprite = null;
+  }
+  minion.userData.hasNotification = false;
+  minion.userData.attentionAnim = 0;
 }
 function addNameLabel(minion, line1, line2) {
   const old = minion.children.find((c) => c.userData?.isNameLabel);
@@ -28223,6 +28276,14 @@ function showBubble(m) {
   const el = getOrCreateBubble(m.userData.sessionKey);
   updateBubbleContent(m);
   if (!el._dismissed) el.classList.add("show");
+  if (m.userData.savedInput) {
+    const inputEl = el.querySelector(".bub-chat-in");
+    if (inputEl && !inputEl.value) {
+      inputEl.value = m.userData.savedInput;
+      m.userData.savedInput = "";
+    }
+  }
+  clearNotification(m);
   updateBubblePosition(m, 0);
 }
 var eventSource = null;
@@ -28284,14 +28345,27 @@ function handleEvent(ev) {
     ud.replyCount++;
     ud.state = "done";
     ud.lastEventTime = Date.now();
-    showBubble(m);
+    const b = bubbles[ud.sessionKey];
+    const bubbleVisible = b && b.classList.contains("show") && !b._dismissed;
+    if (bubbleVisible) {
+      showBubble(m);
+      clearNotification(m);
+    } else {
+      showNotification(m);
+    }
     setTimeout(() => {
-      if (Date.now() - ud.lastEventTime > 7500) {
-        const b = bubbles[ud.sessionKey];
-        if (b) b.classList.remove("show");
-        ud.state = "idle";
+      if (Date.now() - ud.lastEventTime > 29500) {
+        const b2 = bubbles[ud.sessionKey];
+        if (b2 && b2.classList.contains("show")) {
+          const inputEl = b2.querySelector(".bub-chat-in");
+          if (inputEl && inputEl.value) ud.savedInput = inputEl.value;
+          if (document.activeElement === inputEl && inputEl.value.trim()) return;
+          b2.classList.remove("show");
+          b2._dismissed = true;
+          ud.state = "idle";
+        }
       }
-    }, 8e3);
+    }, 3e4);
   }
 }
 function addLog(ev) {
@@ -28393,12 +28467,30 @@ function animate() {
       m.position.x = Math.max(ud.bounds.minX, Math.min(ud.bounds.maxX, m.position.x));
       m.position.z = Math.max(ud.bounds.minZ, Math.min(ud.bounds.maxZ, m.position.z));
     }
-    m.position.y = Math.sin(time * 1.5 + ud.bobPhase) * 0.02;
+    let yOff = Math.sin(time * 1.5 + ud.bobPhase) * 0.02;
+    if (ud.attentionAnim > 0) {
+      ud.attentionAnim -= dt;
+      const t = ud.attentionAnim;
+      if (ud.attentionType === "jump") {
+        const cycle = (2.5 - t) % 0.8;
+        if (cycle < 0.4) yOff += Math.sin(cycle / 0.4 * Math.PI) * 0.35;
+      }
+    }
+    m.position.y = yOff;
     m.children.forEach((c) => {
       if (c.userData?.isArm) {
-        c.rotation.x = Math.sin(time * 2 + ud.bobPhase + (c.userData.side > 0 ? 0 : Math.PI)) * 0.15;
+        let armAngle = Math.sin(time * 2 + ud.bobPhase + (c.userData.side > 0 ? 0 : Math.PI)) * 0.15;
+        if (ud.attentionAnim > 0 && ud.attentionType === "wave") {
+          if (c.userData.side > 0) {
+            armAngle = Math.sin(time * 8) * 0.6 - 0.8;
+          }
+        }
+        c.rotation.x = armAngle;
       }
     });
+    if (ud.notificationSprite) {
+      ud.notificationSprite.position.y = 2.5 * (ud.heightScale || 1) * 0.5 + 1.8 + Math.sin(time * 3 + ud.bobPhase) * 0.1;
+    }
     updateBubblePosition(m, time);
   });
   renderer.render(scene, camera);
