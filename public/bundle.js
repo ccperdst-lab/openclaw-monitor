@@ -12322,6 +12322,232 @@ var DataTexture = class extends Texture {
     this.unpackAlignment = 1;
   }
 };
+var InstancedBufferAttribute = class extends BufferAttribute {
+  /**
+   * Constructs a new instanced buffer attribute.
+   *
+   * @param {TypedArray} array - The array holding the attribute data.
+   * @param {number} itemSize - The item size.
+   * @param {boolean} [normalized=false] - Whether the data are normalized or not.
+   * @param {number} [meshPerAttribute=1] - How often a value of this buffer attribute should be repeated.
+   */
+  constructor(array, itemSize, normalized, meshPerAttribute = 1) {
+    super(array, itemSize, normalized);
+    this.isInstancedBufferAttribute = true;
+    this.meshPerAttribute = meshPerAttribute;
+  }
+  copy(source) {
+    super.copy(source);
+    this.meshPerAttribute = source.meshPerAttribute;
+    return this;
+  }
+  toJSON() {
+    const data = super.toJSON();
+    data.meshPerAttribute = this.meshPerAttribute;
+    data.isInstancedBufferAttribute = true;
+    return data;
+  }
+};
+var _instanceLocalMatrix = /* @__PURE__ */ new Matrix4();
+var _instanceWorldMatrix = /* @__PURE__ */ new Matrix4();
+var _instanceIntersects = [];
+var _box3 = /* @__PURE__ */ new Box3();
+var _identity = /* @__PURE__ */ new Matrix4();
+var _mesh$1 = /* @__PURE__ */ new Mesh();
+var _sphere$4 = /* @__PURE__ */ new Sphere();
+var InstancedMesh = class extends Mesh {
+  /**
+   * Constructs a new instanced mesh.
+   *
+   * @param {BufferGeometry} [geometry] - The mesh geometry.
+   * @param {Material|Array<Material>} [material] - The mesh material.
+   * @param {number} count - The number of instances.
+   */
+  constructor(geometry, material, count) {
+    super(geometry, material);
+    this.isInstancedMesh = true;
+    this.instanceMatrix = new InstancedBufferAttribute(new Float32Array(count * 16), 16);
+    this.previousInstanceMatrix = null;
+    this.instanceColor = null;
+    this.morphTexture = null;
+    this.count = count;
+    this.boundingBox = null;
+    this.boundingSphere = null;
+    for (let i = 0; i < count; i++) {
+      this.setMatrixAt(i, _identity);
+    }
+  }
+  /**
+   * Computes the bounding box of the instanced mesh, and updates {@link InstancedMesh#boundingBox}.
+   * The bounding box is not automatically computed by the engine; this method must be called by your app.
+   * You may need to recompute the bounding box if an instance is transformed via {@link InstancedMesh#setMatrixAt}.
+   */
+  computeBoundingBox() {
+    const geometry = this.geometry;
+    const count = this.count;
+    if (this.boundingBox === null) {
+      this.boundingBox = new Box3();
+    }
+    if (geometry.boundingBox === null) {
+      geometry.computeBoundingBox();
+    }
+    this.boundingBox.makeEmpty();
+    for (let i = 0; i < count; i++) {
+      this.getMatrixAt(i, _instanceLocalMatrix);
+      _box3.copy(geometry.boundingBox).applyMatrix4(_instanceLocalMatrix);
+      this.boundingBox.union(_box3);
+    }
+  }
+  /**
+   * Computes the bounding sphere of the instanced mesh, and updates {@link InstancedMesh#boundingSphere}
+   * The engine automatically computes the bounding sphere when it is needed, e.g., for ray casting or view frustum culling.
+   * You may need to recompute the bounding sphere if an instance is transformed via {@link InstancedMesh#setMatrixAt}.
+   */
+  computeBoundingSphere() {
+    const geometry = this.geometry;
+    const count = this.count;
+    if (this.boundingSphere === null) {
+      this.boundingSphere = new Sphere();
+    }
+    if (geometry.boundingSphere === null) {
+      geometry.computeBoundingSphere();
+    }
+    this.boundingSphere.makeEmpty();
+    for (let i = 0; i < count; i++) {
+      this.getMatrixAt(i, _instanceLocalMatrix);
+      _sphere$4.copy(geometry.boundingSphere).applyMatrix4(_instanceLocalMatrix);
+      this.boundingSphere.union(_sphere$4);
+    }
+  }
+  copy(source, recursive) {
+    super.copy(source, recursive);
+    this.instanceMatrix.copy(source.instanceMatrix);
+    if (source.previousInstanceMatrix !== null) this.previousInstanceMatrix = source.previousInstanceMatrix.clone();
+    if (source.morphTexture !== null) this.morphTexture = source.morphTexture.clone();
+    if (source.instanceColor !== null) this.instanceColor = source.instanceColor.clone();
+    this.count = source.count;
+    if (source.boundingBox !== null) this.boundingBox = source.boundingBox.clone();
+    if (source.boundingSphere !== null) this.boundingSphere = source.boundingSphere.clone();
+    return this;
+  }
+  /**
+   * Gets the color of the defined instance.
+   *
+   * @param {number} index - The instance index.
+   * @param {Color} color - The target object that is used to store the method's result.
+   */
+  getColorAt(index, color) {
+    color.fromArray(this.instanceColor.array, index * 3);
+  }
+  /**
+   * Gets the local transformation matrix of the defined instance.
+   *
+   * @param {number} index - The instance index.
+   * @param {Matrix4} matrix - The target object that is used to store the method's result.
+   */
+  getMatrixAt(index, matrix) {
+    matrix.fromArray(this.instanceMatrix.array, index * 16);
+  }
+  /**
+   * Gets the morph target weights of the defined instance.
+   *
+   * @param {number} index - The instance index.
+   * @param {Mesh} object - The target object that is used to store the method's result.
+   */
+  getMorphAt(index, object) {
+    const objectInfluences = object.morphTargetInfluences;
+    const array = this.morphTexture.source.data.data;
+    const len = objectInfluences.length + 1;
+    const dataIndex = index * len + 1;
+    for (let i = 0; i < objectInfluences.length; i++) {
+      objectInfluences[i] = array[dataIndex + i];
+    }
+  }
+  raycast(raycaster2, intersects) {
+    const matrixWorld = this.matrixWorld;
+    const raycastTimes = this.count;
+    _mesh$1.geometry = this.geometry;
+    _mesh$1.material = this.material;
+    if (_mesh$1.material === void 0) return;
+    if (this.boundingSphere === null) this.computeBoundingSphere();
+    _sphere$4.copy(this.boundingSphere);
+    _sphere$4.applyMatrix4(matrixWorld);
+    if (raycaster2.ray.intersectsSphere(_sphere$4) === false) return;
+    for (let instanceId = 0; instanceId < raycastTimes; instanceId++) {
+      this.getMatrixAt(instanceId, _instanceLocalMatrix);
+      _instanceWorldMatrix.multiplyMatrices(matrixWorld, _instanceLocalMatrix);
+      _mesh$1.matrixWorld = _instanceWorldMatrix;
+      _mesh$1.raycast(raycaster2, _instanceIntersects);
+      for (let i = 0, l = _instanceIntersects.length; i < l; i++) {
+        const intersect2 = _instanceIntersects[i];
+        intersect2.instanceId = instanceId;
+        intersect2.object = this;
+        intersects.push(intersect2);
+      }
+      _instanceIntersects.length = 0;
+    }
+  }
+  /**
+   * Sets the given color to the defined instance. Make sure you set the `needsUpdate` flag of
+   * {@link InstancedMesh#instanceColor} to `true` after updating all the colors.
+   *
+   * @param {number} index - The instance index.
+   * @param {Color} color - The instance color.
+   */
+  setColorAt(index, color) {
+    if (this.instanceColor === null) {
+      this.instanceColor = new InstancedBufferAttribute(new Float32Array(this.instanceMatrix.count * 3).fill(1), 3);
+    }
+    color.toArray(this.instanceColor.array, index * 3);
+  }
+  /**
+   * Sets the given local transformation matrix to the defined instance. Make sure you set the `needsUpdate` flag of
+   * {@link InstancedMesh#instanceMatrix} to `true` after updating all the colors.
+   *
+   * @param {number} index - The instance index.
+   * @param {Matrix4} matrix - The local transformation.
+   */
+  setMatrixAt(index, matrix) {
+    matrix.toArray(this.instanceMatrix.array, index * 16);
+  }
+  /**
+   * Sets the morph target weights to the defined instance. Make sure you set the `needsUpdate` flag of
+   * {@link InstancedMesh#morphTexture} to `true` after updating all the influences.
+   *
+   * @param {number} index - The instance index.
+   * @param {Mesh} object -  A mesh which `morphTargetInfluences` property containing the morph target weights
+   * of a single instance.
+   */
+  setMorphAt(index, object) {
+    const objectInfluences = object.morphTargetInfluences;
+    const len = objectInfluences.length + 1;
+    if (this.morphTexture === null) {
+      this.morphTexture = new DataTexture(new Float32Array(len * this.count), len, this.count, RedFormat, FloatType);
+    }
+    const array = this.morphTexture.source.data.data;
+    let morphInfluencesSum = 0;
+    for (let i = 0; i < objectInfluences.length; i++) {
+      morphInfluencesSum += objectInfluences[i];
+    }
+    const morphBaseInfluence = this.geometry.morphTargetsRelative ? 1 : 1 - morphInfluencesSum;
+    const dataIndex = len * index;
+    array[dataIndex] = morphBaseInfluence;
+    array.set(objectInfluences, dataIndex + 1);
+  }
+  updateMorphTargets() {
+  }
+  /**
+   * Frees the GPU-related resources allocated by this instance. Call this
+   * method whenever this instance is no longer used in your app.
+   */
+  dispose() {
+    this.dispatchEvent({ type: "dispose" });
+    if (this.morphTexture !== null) {
+      this.morphTexture.dispose();
+      this.morphTexture = null;
+    }
+  }
+};
 var _vector1 = /* @__PURE__ */ new Vector3();
 var _vector2 = /* @__PURE__ */ new Vector3();
 var _normalMatrix = /* @__PURE__ */ new Matrix3();
@@ -28661,6 +28887,12 @@ function createContinent(agentName, index) {
   const pillow = new Mesh(new BoxGeometry(1.1, 0.1, 0.45), new MeshStandardMaterial({ color: 16777215, roughness: 0.5 }));
   pillow.position.set(hx + 1.5, 0.3, hz - 1.7);
   scene.add(pillow);
+  const canopyColors = [
+    new Color(5025616),
+    new Color(3706428),
+    new Color(6732650),
+    new Color(3046706)
+  ];
   const treePositions = [
     [ox + 2, oz + 2],
     [ox + W - 2, oz + 2],
@@ -28672,20 +28904,43 @@ function createContinent(agentName, index) {
   ];
   treePositions.forEach(([tx, tz], ti) => {
     const treeH = 1.5 + Math.random() * 1;
-    const trunk = new Mesh(new CylinderGeometry(0.12, 0.18, treeH, 8), mat.trunkBrown);
+    const trunk = new Mesh(new CylinderGeometry(0.1, 0.16, treeH, 8), mat.trunkBrown);
     trunk.position.set(tx, treeH / 2, tz);
+    trunk.rotation.z = (Math.random() - 0.5) * 0.1;
     trunk.castShadow = true;
     scene.add(trunk);
+    for (let b = 0; b < 2; b++) {
+      const bAngle = Math.random() * Math.PI * 2;
+      const bH = treeH * (0.4 + Math.random() * 0.3);
+      const branch = new Mesh(new CylinderGeometry(0.03, 0.05, 0.5, 5), mat.trunkBrown);
+      branch.position.set(tx + Math.cos(bAngle) * 0.15, bH, tz + Math.sin(bAngle) * 0.15);
+      branch.rotation.z = Math.cos(bAngle) * 0.6;
+      branch.rotation.x = Math.sin(bAngle) * 0.6;
+      scene.add(branch);
+    }
     const canopyR = 0.9 + Math.random() * 0.4;
-    const canopyMat = ti % 2 === 0 ? mat.leafGreen : mat.leafDark;
-    [[0, 0, 0], [0.3, 0.1, 0.2], [-0.2, 0.15, -0.15]].forEach(([dx, dy, dz]) => {
-      const canopy = new Mesh(new SphereGeometry(canopyR * (0.8 + Math.random() * 0.3), 12, 10), canopyMat);
+    const canopyColor = canopyColors[ti % canopyColors.length];
+    const canopyShaderMat = new ShaderMaterial({
+      vertexShader: canopyVertexShader,
+      fragmentShader: canopyFragmentShader,
+      uniforms: {
+        uTime: { value: 0 },
+        uWindStrength: { value: 0.08 + Math.random() * 0.04 },
+        uWindDir: { value: new Vector3(1, 0.2, 0.5).normalize() },
+        uColor: { value: canopyColor },
+        uLightDir: { value: new Vector3(0.5, 0.8, 0.3).normalize() }
+      }
+    });
+    [[0, 0, 0, 1], [0.3, 0.1, 0.2, 0.85], [-0.2, 0.15, -0.15, 0.9], [0.1, -0.1, 0.25, 0.75]].forEach(([dx, dy, dz, scaleMod]) => {
+      const canopyGeo = new SphereGeometry(canopyR * scaleMod, 14, 10);
+      const canopy = new Mesh(canopyGeo, canopyShaderMat);
       canopy.position.set(tx + dx, treeH + canopyR * 0.5 + dy, tz + dz);
       canopy.castShadow = true;
       scene.add(canopy);
     });
     addObstacle(tx - 0.4, tx + 0.4, tz - 0.4, tz + 0.4, "tree");
   });
+  createGrassForContinent(ox, oz, W, D);
   const flowerColors = [mat.flowerRed, mat.flowerPink, mat.flowerYellow, mat.flowerPurple, mat.flowerWhite];
   for (let i = 0; i < 15; i++) {
     const fx = ox + 1 + Math.random() * (W - 2);
@@ -28710,10 +28965,35 @@ function createContinent(agentName, index) {
     scene.add(bush);
   }
   const pondX = cx + 4, pondZ = cz + 4;
-  const pond = new Mesh(new CircleGeometry(1.8, 20), mat.water);
+  const waterShaderMat = new ShaderMaterial({
+    vertexShader: waterVertexShader,
+    fragmentShader: waterFragmentShader,
+    uniforms: {
+      uTime: { value: 0 },
+      uColor: { value: new Color(6013163) },
+      uDeepColor: { value: new Color(1735605) }
+    },
+    transparent: true,
+    side: DoubleSide
+  });
+  const pondGeo = new CircleGeometry(1.8, 24);
+  const pond = new Mesh(pondGeo, waterShaderMat);
   pond.rotation.x = -Math.PI / 2;
   pond.position.set(pondX, 0.02, pondZ);
   scene.add(pond);
+  if (!window._waterMeshes) window._waterMeshes = [];
+  window._waterMeshes.push(pond);
+  for (let i = 0; i < 3; i++) {
+    const la = Math.random() * Math.PI * 2;
+    const lr = 0.5 + Math.random() * 0.8;
+    const lily = new Mesh(
+      new CircleGeometry(0.2, 8),
+      new MeshStandardMaterial({ color: 5025616, roughness: 0.8, side: DoubleSide })
+    );
+    lily.rotation.x = -Math.PI / 2;
+    lily.position.set(pondX + Math.cos(la) * lr, 0.04, pondZ + Math.sin(la) * lr);
+    scene.add(lily);
+  }
   for (let a = 0; a < Math.PI * 2; a += Math.PI / 6) {
     const r = 1.8 + (Math.random() - 0.5) * 0.3;
     const rs = new Mesh(new SphereGeometry(0.15 + Math.random() * 0.1, 6, 5), mat.rock);
@@ -29647,6 +29927,12 @@ function animate() {
   });
   reportPositions();
   updatePetals(dt, time);
+  updateGrass(time);
+  if (window._waterMeshes) {
+    for (const w of window._waterMeshes) {
+      if (w.material.uniforms?.uTime) w.material.uniforms.uTime.value = time;
+    }
+  }
   renderer.render(scene, camera);
 }
 window.runCmd = function() {
@@ -29735,15 +30021,15 @@ window.addEventListener("resize", () => {
   drawer.addEventListener("mouseup", (e) => e.stopPropagation());
 })();
 function initClouds() {
-  const cloudMat = new MeshBasicMaterial({ color: 16777215, transparent: true, opacity: 0.6 });
-  for (let i = 0; i < 12; i++) {
+  const cloudMat = new MeshStandardMaterial({ color: 16777215, roughness: 1, transparent: true, opacity: 0.85 });
+  for (let i = 0; i < 15; i++) {
     const cloud = new Group();
-    const count = 3 + Math.floor(Math.random() * 3);
+    const count = 4 + Math.floor(Math.random() * 4);
     for (let j = 0; j < count; j++) {
-      const r = 1.5 + Math.random() * 2;
-      const puff = new Mesh(new SphereGeometry(r, 8, 6), cloudMat);
-      puff.position.set(j * 2 - count, Math.random() * 0.5, Math.random() * 0.8);
-      puff.scale.y = 0.4 + Math.random() * 0.2;
+      const r = 2 + Math.random() * 3;
+      const puff = new Mesh(new SphereGeometry(r, 10, 8), cloudMat);
+      puff.position.set(j * 2.5 - count * 1.2, Math.random() * 0.8, Math.random() * 1.2);
+      puff.scale.y = 0.35 + Math.random() * 0.15;
       cloud.add(puff);
     }
     cloud.position.set(
@@ -29756,6 +30042,152 @@ function initClouds() {
   }
 }
 initClouds();
+var grassInstances = [];
+var grassVertexShader = `
+  uniform float uTime;
+  uniform float uWindStrength;
+  varying vec2 vUv;
+  varying float vHeight;
+  void main() {
+    vUv = uv;
+    vec4 instancePos = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+    vec4 mvPosition = modelViewMatrix * instancePos;
+    vec3 pos = position;
+    vHeight = pos.y;
+    // Wind sway: stronger at top
+    float sway = sin(uTime * 2.0 + instancePos.x * 0.5 + instancePos.z * 0.7) * uWindStrength;
+    float sway2 = cos(uTime * 1.5 + instancePos.x * 0.3 - instancePos.z * 0.4) * uWindStrength * 0.5;
+    pos.x += sway * pos.y * 0.8;
+    pos.z += sway2 * pos.y * 0.5;
+    // Apply instance transform
+    vec4 worldPos = instanceMatrix * vec4(pos, 1.0);
+    gl_Position = projectionMatrix * modelViewMatrix * worldPos;
+  }
+`;
+var grassFragmentShader = `
+  varying vec2 vUv;
+  varying float vHeight;
+  uniform vec3 uColorBottom;
+  uniform vec3 uColorTop;
+  void main() {
+    // Gradient from dark bottom to bright top
+    vec3 color = mix(uColorBottom, uColorTop, vHeight * 2.5);
+    // Slight tip darkening
+    if (vHeight > 0.35) color *= 0.9;
+    gl_FragColor = vec4(color, 1.0);
+  }
+`;
+function createGrassForContinent(ox, oz, W, D) {
+  const grassBladeGeo = new PlaneGeometry(0.06, 0.35, 1, 3);
+  const posAttr = grassBladeGeo.getAttribute("position");
+  for (let i = 0; i < posAttr.count; i++) {
+    const y = posAttr.getY(i);
+    if (y > 0) posAttr.setX(i, posAttr.getX(i) + 0.02 * (y / 0.175));
+  }
+  posAttr.needsUpdate = true;
+  const grassMat = new ShaderMaterial({
+    vertexShader: grassVertexShader,
+    fragmentShader: grassFragmentShader,
+    uniforms: {
+      uTime: { value: 0 },
+      uWindStrength: { value: 0.04 },
+      uColorBottom: { value: new Color(2980410) },
+      uColorTop: { value: new Color(6737006) }
+    },
+    side: DoubleSide
+  });
+  const density = 12;
+  const count = Math.floor(W * D * density / 4);
+  const grassMesh = new InstancedMesh(grassBladeGeo, grassMat, count);
+  const dummy = new Object3D();
+  for (let i = 0; i < count; i++) {
+    const gx = ox + 1 + Math.random() * (W - 2);
+    const gz = oz + 1 + Math.random() * (D - 2);
+    dummy.position.set(gx, 0.15, gz);
+    dummy.rotation.y = Math.random() * Math.PI;
+    dummy.scale.set(0.8 + Math.random() * 0.6, 0.7 + Math.random() * 0.8, 1);
+    dummy.updateMatrix();
+    grassMesh.setMatrixAt(i, dummy.matrix);
+  }
+  grassMesh.instanceMatrix.needsUpdate = true;
+  scene.add(grassMesh);
+  grassInstances.push({ mesh: grassMesh, mat: grassMat });
+}
+function updateGrass(time) {
+  for (const g of grassInstances) {
+    g.mat.uniforms.uTime.value = time;
+  }
+}
+var canopyVertexShader = `
+  uniform float uTime;
+  uniform float uWindStrength;
+  uniform vec3 uWindDir;
+  varying vec3 vNormal;
+  varying vec3 vWorldPos;
+  void main() {
+    vNormal = normalize(normalMatrix * normal);
+    vec3 pos = position;
+    // Wind sway: based on height and world X/Z
+    float heightFactor = max(0.0, pos.y) * 0.5;
+    float sway = sin(uTime * 1.8 + pos.x * 2.0 + pos.z * 1.5) * uWindStrength * heightFactor;
+    pos += uWindDir * sway;
+    pos.x += cos(uTime * 1.2 + pos.z * 3.0) * uWindStrength * 0.3 * heightFactor;
+    vec4 worldPos = modelMatrix * vec4(pos, 1.0);
+    vWorldPos = worldPos.xyz;
+    gl_Position = projectionMatrix * viewMatrix * worldPos;
+  }
+`;
+var canopyFragmentShader = `
+  uniform vec3 uColor;
+  uniform vec3 uLightDir;
+  varying vec3 vNormal;
+  varying vec3 vWorldPos;
+  void main() {
+    // Simple toon-ish lighting
+    float NdotL = dot(normalize(vNormal), normalize(uLightDir));
+    float light = 0.4 + 0.6 * max(0.0, NdotL);
+    // Darken bottom
+    float bottomDark = smoothstep(-0.5, 1.0, vWorldPos.y);
+    vec3 color = uColor * light * (0.7 + 0.3 * bottomDark);
+    gl_FragColor = vec4(color, 1.0);
+  }
+`;
+var waterVertexShader = `
+  uniform float uTime;
+  varying vec2 vUv;
+  varying vec3 vWorldPos;
+  void main() {
+    vUv = uv;
+    vec3 pos = position;
+    // Gentle waves
+    pos.y += sin(pos.x * 3.0 + uTime * 1.5) * 0.02;
+    pos.y += cos(pos.z * 2.5 + uTime * 1.2) * 0.015;
+    vec4 worldPos = modelMatrix * vec4(pos, 1.0);
+    vWorldPos = worldPos.xyz;
+    gl_Position = projectionMatrix * viewMatrix * worldPos;
+  }
+`;
+var waterFragmentShader = `
+  uniform float uTime;
+  uniform vec3 uColor;
+  uniform vec3 uDeepColor;
+  varying vec2 vUv;
+  varying vec3 vWorldPos;
+  void main() {
+    // Ripple pattern
+    float ripple = sin(vUv.x * 20.0 + uTime * 2.0) * cos(vUv.y * 18.0 + uTime * 1.5) * 0.5 + 0.5;
+    // Fresnel-like edge brightening
+    float dist = length(vUv - 0.5) * 2.0;
+    float edge = smoothstep(0.0, 0.8, dist);
+    vec3 color = mix(uDeepColor, uColor, ripple * 0.5 + 0.3);
+    color = mix(color, uColor * 1.3, edge * 0.3);
+    // Sparkle
+    float sparkle = pow(max(0.0, sin(vUv.x * 50.0 + uTime * 3.0) * sin(vUv.y * 45.0 - uTime * 2.5)), 8.0);
+    color += vec3(sparkle * 0.4);
+    float alpha = 0.65 + ripple * 0.1;
+    gl_FragColor = vec4(color, alpha);
+  }
+`;
 var petals = [];
 var petalColors = [16761035, 16758725, 16773365, 16770273, 16573676, 15267305];
 function initPetals() {

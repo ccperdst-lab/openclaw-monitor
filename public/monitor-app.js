@@ -490,25 +490,58 @@ function createContinent(agentName, index) {
   const pillow = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.1, 0.45), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5 }));
   pillow.position.set(hx + 1.5, 0.3, hz - 1.7); scene.add(pillow);
 
-  // ===== Trees (Pokemon round-canopy style) =====
+  // ===== Trees (dynamic canopy with wind shader) =====
+  const canopyColors = [
+    new THREE.Color(0x4caf50), new THREE.Color(0x388e3c),
+    new THREE.Color(0x66bb6a), new THREE.Color(0x2e7d32),
+  ];
   const treePositions = [
     [ox + 2, oz + 2], [ox + W - 2, oz + 2], [ox + 2, oz + D - 2], [ox + W - 2, oz + D - 2],
     [cx + 5, cz + 3], [cx - 6, cz - 4], [cx + 3, cz - 6],
   ];
   treePositions.forEach(([tx, tz], ti) => {
     const treeH = 1.5 + Math.random() * 1;
-    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.18, treeH, 8), mat.trunkBrown);
-    trunk.position.set(tx, treeH/2, tz); trunk.castShadow = true; scene.add(trunk);
-    // Canopy (2-3 overlapping spheres for fluffy look)
+    // Trunk with slight lean
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.16, treeH, 8), mat.trunkBrown);
+    trunk.position.set(tx, treeH/2, tz);
+    trunk.rotation.z = (Math.random() - 0.5) * 0.1;
+    trunk.castShadow = true; scene.add(trunk);
+    // Branch stubs
+    for (let b = 0; b < 2; b++) {
+      const bAngle = Math.random() * Math.PI * 2;
+      const bH = treeH * (0.4 + Math.random() * 0.3);
+      const branch = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.05, 0.5, 5), mat.trunkBrown);
+      branch.position.set(tx + Math.cos(bAngle) * 0.15, bH, tz + Math.sin(bAngle) * 0.15);
+      branch.rotation.z = Math.cos(bAngle) * 0.6;
+      branch.rotation.x = Math.sin(bAngle) * 0.6;
+      scene.add(branch);
+    }
+    // Canopy (shader-based, wind animated)
     const canopyR = 0.9 + Math.random() * 0.4;
-    const canopyMat = ti % 2 === 0 ? mat.leafGreen : mat.leafDark;
-    [[0, 0, 0], [0.3, 0.1, 0.2], [-0.2, 0.15, -0.15]].forEach(([dx, dy, dz]) => {
-      const canopy = new THREE.Mesh(new THREE.SphereGeometry(canopyR * (0.8 + Math.random()*0.3), 12, 10), canopyMat);
+    const canopyColor = canopyColors[ti % canopyColors.length];
+    const canopyShaderMat = new THREE.ShaderMaterial({
+      vertexShader: canopyVertexShader,
+      fragmentShader: canopyFragmentShader,
+      uniforms: {
+        uTime: { value: 0 },
+        uWindStrength: { value: 0.08 + Math.random() * 0.04 },
+        uWindDir: { value: new THREE.Vector3(1, 0.2, 0.5).normalize() },
+        uColor: { value: canopyColor },
+        uLightDir: { value: new THREE.Vector3(0.5, 0.8, 0.3).normalize() },
+      },
+    });
+    // Multiple canopy spheres for fluffy look
+    [[0, 0, 0, 1], [0.3, 0.1, 0.2, 0.85], [-0.2, 0.15, -0.15, 0.9], [0.1, -0.1, 0.25, 0.75]].forEach(([dx, dy, dz, scaleMod]) => {
+      const canopyGeo = new THREE.SphereGeometry(canopyR * scaleMod, 14, 10);
+      const canopy = new THREE.Mesh(canopyGeo, canopyShaderMat);
       canopy.position.set(tx + dx, treeH + canopyR * 0.5 + dy, tz + dz);
       canopy.castShadow = true; scene.add(canopy);
     });
     addObstacle(tx - 0.4, tx + 0.4, tz - 0.4, tz + 0.4, 'tree');
   });
+
+  // ===== Dynamic Grass =====
+  createGrassForContinent(ox, oz, W, D);
 
   // ===== Flowers =====
   const flowerColors = [mat.flowerRed, mat.flowerPink, mat.flowerYellow, mat.flowerPurple, mat.flowerWhite];
@@ -535,10 +568,40 @@ function createContinent(agentName, index) {
     bush.position.set(bx, 0.25, bz); bush.scale.y = 0.7; bush.castShadow = true; scene.add(bush);
   }
 
-  // ===== Small Pond =====
+  // ===== Small Pond (shader-based animated water) =====
   const pondX = cx + 4, pondZ = cz + 4;
-  const pond = new THREE.Mesh(new THREE.CircleGeometry(1.8, 20), mat.water);
+  const waterShaderMat = new THREE.ShaderMaterial({
+    vertexShader: waterVertexShader,
+    fragmentShader: waterFragmentShader,
+    uniforms: {
+      uTime: { value: 0 },
+      uColor: { value: new THREE.Color(0x5bc0eb) },
+      uDeepColor: { value: new THREE.Color(0x1a7bb5) },
+    },
+    transparent: true,
+    side: THREE.DoubleSide,
+  });
+  // Use a plane with segments for wave animation
+  const pondGeo = new THREE.CircleGeometry(1.8, 24);
+  const pond = new THREE.Mesh(pondGeo, waterShaderMat);
   pond.rotation.x = -Math.PI/2; pond.position.set(pondX, 0.02, pondZ); scene.add(pond);
+  // Store for animation
+  if (!window._waterMeshes) window._waterMeshes = [];
+  window._waterMeshes.push(pond);
+
+  // Lily pads
+  for (let i = 0; i < 3; i++) {
+    const la = Math.random() * Math.PI * 2;
+    const lr = 0.5 + Math.random() * 0.8;
+    const lily = new THREE.Mesh(
+      new THREE.CircleGeometry(0.2, 8),
+      new THREE.MeshStandardMaterial({ color: 0x4caf50, roughness: 0.8, side: THREE.DoubleSide })
+    );
+    lily.rotation.x = -Math.PI / 2;
+    lily.position.set(pondX + Math.cos(la) * lr, 0.04, pondZ + Math.sin(la) * lr);
+    scene.add(lily);
+  }
+
   // Pond edge stones
   for (let a = 0; a < Math.PI * 2; a += Math.PI / 6) {
     const r = 1.8 + (Math.random() - 0.5) * 0.3;
@@ -1594,6 +1657,16 @@ function animate() {
   // Update floating petals
   updatePetals(dt, time);
 
+  // Update dynamic grass wind
+  updateGrass(time);
+
+  // Update water shader
+  if (window._waterMeshes) {
+    for (const w of window._waterMeshes) {
+      if (w.material.uniforms?.uTime) w.material.uniforms.uTime.value = time;
+    }
+  }
+
   renderer.render(scene, camera);
 }
 
@@ -1691,15 +1764,15 @@ window.addEventListener('resize', () => {
 
 // ===== Clouds (sky decoration) =====
 function initClouds() {
-  const cloudMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6 });
-  for (let i = 0; i < 12; i++) {
+  const cloudMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, transparent: true, opacity: 0.85 });
+  for (let i = 0; i < 15; i++) {
     const cloud = new THREE.Group();
-    const count = 3 + Math.floor(Math.random() * 3);
+    const count = 4 + Math.floor(Math.random() * 4);
     for (let j = 0; j < count; j++) {
-      const r = 1.5 + Math.random() * 2;
-      const puff = new THREE.Mesh(new THREE.SphereGeometry(r, 8, 6), cloudMat);
-      puff.position.set(j * 2 - count, Math.random() * 0.5, Math.random() * 0.8);
-      puff.scale.y = 0.4 + Math.random() * 0.2;
+      const r = 2 + Math.random() * 3;
+      const puff = new THREE.Mesh(new THREE.SphereGeometry(r, 10, 8), cloudMat);
+      puff.position.set(j * 2.5 - count * 1.2, Math.random() * 0.8, Math.random() * 1.2);
+      puff.scale.y = 0.35 + Math.random() * 0.15;
       cloud.add(puff);
     }
     cloud.position.set(
@@ -1712,6 +1785,169 @@ function initClouds() {
   }
 }
 initClouds();
+
+// ===== Dynamic Grass (InstancedMesh + Custom Shader) =====
+const grassInstances = []; // { mesh, count }
+
+const grassVertexShader = `
+  uniform float uTime;
+  uniform float uWindStrength;
+  varying vec2 vUv;
+  varying float vHeight;
+  void main() {
+    vUv = uv;
+    vec4 instancePos = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+    vec4 mvPosition = modelViewMatrix * instancePos;
+    vec3 pos = position;
+    vHeight = pos.y;
+    // Wind sway: stronger at top
+    float sway = sin(uTime * 2.0 + instancePos.x * 0.5 + instancePos.z * 0.7) * uWindStrength;
+    float sway2 = cos(uTime * 1.5 + instancePos.x * 0.3 - instancePos.z * 0.4) * uWindStrength * 0.5;
+    pos.x += sway * pos.y * 0.8;
+    pos.z += sway2 * pos.y * 0.5;
+    // Apply instance transform
+    vec4 worldPos = instanceMatrix * vec4(pos, 1.0);
+    gl_Position = projectionMatrix * modelViewMatrix * worldPos;
+  }
+`;
+
+const grassFragmentShader = `
+  varying vec2 vUv;
+  varying float vHeight;
+  uniform vec3 uColorBottom;
+  uniform vec3 uColorTop;
+  void main() {
+    // Gradient from dark bottom to bright top
+    vec3 color = mix(uColorBottom, uColorTop, vHeight * 2.5);
+    // Slight tip darkening
+    if (vHeight > 0.35) color *= 0.9;
+    gl_FragColor = vec4(color, 1.0);
+  }
+`;
+
+function createGrassForContinent(ox, oz, W, D) {
+  const grassBladeGeo = new THREE.PlaneGeometry(0.06, 0.35, 1, 3);
+  // Slightly curve the blade
+  const posAttr = grassBladeGeo.getAttribute('position');
+  for (let i = 0; i < posAttr.count; i++) {
+    const y = posAttr.getY(i);
+    if (y > 0) posAttr.setX(i, posAttr.getX(i) + 0.02 * (y / 0.175));
+  }
+  posAttr.needsUpdate = true;
+
+  const grassMat = new THREE.ShaderMaterial({
+    vertexShader: grassVertexShader,
+    fragmentShader: grassFragmentShader,
+    uniforms: {
+      uTime: { value: 0 },
+      uWindStrength: { value: 0.04 },
+      uColorBottom: { value: new THREE.Color(0x2d7a3a) },
+      uColorTop: { value: new THREE.Color(0x66cc6e) },
+    },
+    side: THREE.DoubleSide,
+  });
+
+  // Place grass instances across the continent
+  const density = 12; // blades per unit
+  const count = Math.floor(W * D * density / 4); // spread over area
+  const grassMesh = new THREE.InstancedMesh(grassBladeGeo, grassMat, count);
+  const dummy = new THREE.Object3D();
+
+  for (let i = 0; i < count; i++) {
+    const gx = ox + 1 + Math.random() * (W - 2);
+    const gz = oz + 1 + Math.random() * (D - 2);
+    dummy.position.set(gx, 0.15, gz);
+    dummy.rotation.y = Math.random() * Math.PI;
+    dummy.scale.set(0.8 + Math.random() * 0.6, 0.7 + Math.random() * 0.8, 1);
+    dummy.updateMatrix();
+    grassMesh.setMatrixAt(i, dummy.matrix);
+  }
+  grassMesh.instanceMatrix.needsUpdate = true;
+  scene.add(grassMesh);
+  grassInstances.push({ mesh: grassMesh, mat: grassMat });
+}
+
+function updateGrass(time) {
+  for (const g of grassInstances) {
+    g.mat.uniforms.uTime.value = time;
+  }
+}
+
+// ===== Tree Canopy Wind Shader =====
+const canopyVertexShader = `
+  uniform float uTime;
+  uniform float uWindStrength;
+  uniform vec3 uWindDir;
+  varying vec3 vNormal;
+  varying vec3 vWorldPos;
+  void main() {
+    vNormal = normalize(normalMatrix * normal);
+    vec3 pos = position;
+    // Wind sway: based on height and world X/Z
+    float heightFactor = max(0.0, pos.y) * 0.5;
+    float sway = sin(uTime * 1.8 + pos.x * 2.0 + pos.z * 1.5) * uWindStrength * heightFactor;
+    pos += uWindDir * sway;
+    pos.x += cos(uTime * 1.2 + pos.z * 3.0) * uWindStrength * 0.3 * heightFactor;
+    vec4 worldPos = modelMatrix * vec4(pos, 1.0);
+    vWorldPos = worldPos.xyz;
+    gl_Position = projectionMatrix * viewMatrix * worldPos;
+  }
+`;
+
+const canopyFragmentShader = `
+  uniform vec3 uColor;
+  uniform vec3 uLightDir;
+  varying vec3 vNormal;
+  varying vec3 vWorldPos;
+  void main() {
+    // Simple toon-ish lighting
+    float NdotL = dot(normalize(vNormal), normalize(uLightDir));
+    float light = 0.4 + 0.6 * max(0.0, NdotL);
+    // Darken bottom
+    float bottomDark = smoothstep(-0.5, 1.0, vWorldPos.y);
+    vec3 color = uColor * light * (0.7 + 0.3 * bottomDark);
+    gl_FragColor = vec4(color, 1.0);
+  }
+`;
+
+// ===== Enhanced Water Shader =====
+const waterVertexShader = `
+  uniform float uTime;
+  varying vec2 vUv;
+  varying vec3 vWorldPos;
+  void main() {
+    vUv = uv;
+    vec3 pos = position;
+    // Gentle waves
+    pos.y += sin(pos.x * 3.0 + uTime * 1.5) * 0.02;
+    pos.y += cos(pos.z * 2.5 + uTime * 1.2) * 0.015;
+    vec4 worldPos = modelMatrix * vec4(pos, 1.0);
+    vWorldPos = worldPos.xyz;
+    gl_Position = projectionMatrix * viewMatrix * worldPos;
+  }
+`;
+
+const waterFragmentShader = `
+  uniform float uTime;
+  uniform vec3 uColor;
+  uniform vec3 uDeepColor;
+  varying vec2 vUv;
+  varying vec3 vWorldPos;
+  void main() {
+    // Ripple pattern
+    float ripple = sin(vUv.x * 20.0 + uTime * 2.0) * cos(vUv.y * 18.0 + uTime * 1.5) * 0.5 + 0.5;
+    // Fresnel-like edge brightening
+    float dist = length(vUv - 0.5) * 2.0;
+    float edge = smoothstep(0.0, 0.8, dist);
+    vec3 color = mix(uDeepColor, uColor, ripple * 0.5 + 0.3);
+    color = mix(color, uColor * 1.3, edge * 0.3);
+    // Sparkle
+    float sparkle = pow(max(0.0, sin(vUv.x * 50.0 + uTime * 3.0) * sin(vUv.y * 45.0 - uTime * 2.5)), 8.0);
+    color += vec3(sparkle * 0.4);
+    float alpha = 0.65 + ripple * 0.1;
+    gl_FragColor = vec4(color, alpha);
+  }
+`;
 
 // ===== Floating Petals (atmosphere particles) =====
 const petals = [];
