@@ -383,6 +383,44 @@ function buildRoom(ox, oz, w, d, label) {
 }
 
 // ===== Build Minion Character =====
+// Add a floating name label above a minion
+function addNameLabel(minion, name) {
+  // Remove old label if any
+  const old = minion.children.find(c => c.userData && c.userData.isNameLabel);
+  if (old) minion.remove(old);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = 256; canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, 256, 64);
+  // Background pill
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  const w = Math.min(240, ctx.measureText(name).width + 40);
+  ctx.beginPath();
+  ctx.roundRect(128 - w/2, 10, w, 44, 12);
+  ctx.fill();
+  // Text
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 22px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(name.slice(0, 12), 128, 32);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.needsUpdate = true;
+  const label = new THREE.Mesh(
+    new THREE.PlaneGeometry(2, 0.5),
+    new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, side: THREE.DoubleSide })
+  );
+  label.position.set(0, 2.2, 0); // above minion head
+  label.userData.isNameLabel = true;
+  // Make label always face camera (billboard)
+  label.onBeforeRender = function(renderer, scene, camera) {
+    this.quaternion.copy(camera.quaternion);
+  };
+  minion.add(label);
+}
+
 function createMinion(colorHex) {
   const group = new THREE.Group();
   const bodyMat = new THREE.MeshStandardMaterial({ color: colorHex || 0xf5d033, roughness: 0.5 });
@@ -587,9 +625,7 @@ function init(d) {
     // Create minions for each INTERACTIVE session (skip cron/subagent)
     const allSessions = agent.sessions || [];
     const sessions = allSessions.filter(s => ['group', 'dm', 'main'].includes(s.type));
-    // Fallback: if no interactive sessions, show first 2
     const display = sessions.length > 0 ? sessions : allSessions.slice(0, 2);
-    // Generate spread positions dynamically based on session count
     const count = Math.max(display.length, 1);
     const cols = Math.ceil(Math.sqrt(count));
     const rows = Math.ceil(count / cols);
@@ -610,6 +646,24 @@ function init(d) {
         minZ: oz + 1.5, maxZ: oz + ROOM_D - 1.5
       };
       m.userData.houseOffset = { ox, oz };
+
+      // Resolve and display Feishu name label
+      const feishuId = (sess.key || '').match(/(oc_\w+|ou_\w+)/)?.[1];
+      if (feishuId) {
+        fetch(`/api/resolve/${feishuId}`).then(r => r.json()).then(d => {
+          if (d.name && d.name !== feishuId) {
+            m.userData.displayName = d.name;
+            addNameLabel(m, d.name);
+          }
+        }).catch(() => {});
+      }
+      // Fallback label from session name
+      if (!feishuId) {
+        const fallbackName = sess.name || sess.type || 'session';
+        m.userData.displayName = fallbackName;
+        addNameLabel(m, fallbackName);
+      }
+
       scene.add(m);
       minions.push(m);
     });

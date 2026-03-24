@@ -27384,6 +27384,37 @@ function buildRoom(ox, oz, w, d, label) {
   scene.add(group);
   return group;
 }
+function addNameLabel(minion, name) {
+  const old = minion.children.find((c) => c.userData && c.userData.isNameLabel);
+  if (old) minion.remove(old);
+  const canvas = document.createElement("canvas");
+  canvas.width = 256;
+  canvas.height = 64;
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, 256, 64);
+  ctx.fillStyle = "rgba(0,0,0,0.6)";
+  const w = Math.min(240, ctx.measureText(name).width + 40);
+  ctx.beginPath();
+  ctx.roundRect(128 - w / 2, 10, w, 44, 12);
+  ctx.fill();
+  ctx.fillStyle = "#fff";
+  ctx.font = "bold 22px sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(name.slice(0, 12), 128, 32);
+  const tex = new CanvasTexture(canvas);
+  tex.needsUpdate = true;
+  const label = new Mesh(
+    new PlaneGeometry(2, 0.5),
+    new MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, side: DoubleSide })
+  );
+  label.position.set(0, 2.2, 0);
+  label.userData.isNameLabel = true;
+  label.onBeforeRender = function(renderer2, scene2, camera2) {
+    this.quaternion.copy(camera2.quaternion);
+  };
+  minion.add(label);
+}
 function createMinion(colorHex) {
   const group = new Group();
   const bodyMat = new MeshStandardMaterial({ color: colorHex || 16109619, roughness: 0.5 });
@@ -27577,6 +27608,21 @@ function init(d) {
         maxZ: oz + ROOM_D - 1.5
       };
       m.userData.houseOffset = { ox, oz };
+      const feishuId = (sess.key || "").match(/(oc_\w+|ou_\w+)/)?.[1];
+      if (feishuId) {
+        fetch(`/api/resolve/${feishuId}`).then((r) => r.json()).then((d2) => {
+          if (d2.name && d2.name !== feishuId) {
+            m.userData.displayName = d2.name;
+            addNameLabel(m, d2.name);
+          }
+        }).catch(() => {
+        });
+      }
+      if (!feishuId) {
+        const fallbackName = sess.name || sess.type || "session";
+        m.userData.displayName = fallbackName;
+        addNameLabel(m, fallbackName);
+      }
       scene.add(m);
       minions.push(m);
     });

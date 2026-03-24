@@ -350,7 +350,9 @@ async function getFeishuToken() {
   if (feishuToken && Date.now() < feishuTokenExpiry) return feishuToken;
   try {
     const config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
-    const feishu = config.channels?.feishu || {};
+    const feishuCh = config.channels?.feishu || {};
+    // Support both single-account and multi-account formats
+    const feishu = feishuCh.accounts?.default || feishuCh;
     const resp = await fetch('https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ app_id: feishu.appId, app_secret: feishu.appSecret })
