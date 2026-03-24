@@ -25,14 +25,12 @@ let state = { agents: [], channels: [], bindings: [], gateway: {} };
 const sseClients = new Set();
 
 // ===== Logging =====
-const LOG_DIR = '/tmp/openclaw';
-const LOG_FILE = path.join(LOG_DIR, 'monitor.log');
-try { fs.mkdirSync(LOG_DIR, { recursive: true }); } catch {}
+const MONITOR_LOG = path.join(LOG_DIR, 'monitor.log');
 function log(level, msg) {
   const ts = new Date().toISOString();
   const line = `[${ts}] [${level.toUpperCase()}] ${msg}`;
   console.log(line);
-  try { fs.appendFileSync(LOG_FILE, line + '\n'); } catch {}
+  try { fs.appendFileSync(MONITOR_LOG, line + '\n'); } catch {}
 }
 
 // Build agents + sessions dynamically from sessionMap
