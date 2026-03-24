@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🟢 OpenClaw Monitor 3D</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#0a0a1a;color:#e0e0e0;font-family:'Press Start 2P',monospace;overflow:hidden;height:100vh;user-select:none}
+  #scene3d{position:fixed;top:0;left:0;width:100%;height:100%;z-index:1}
+
+  /* Drawer */
+  #drawer{position:fixed;top:0;left:0;height:100vh;width:380px;background:rgba(8,8,24,0.93);backdrop-filter:blur(16px);border-right:2px solid rgba(83,216,251,0.2);z-index:100;transform:translateX(0);transition:transform 0.4s cubic-bezier(0.4,0,0.2,1);display:flex;flex-direction:column;box-shadow:6px 0 40px rgba(0,0,0,0.6)}
+  #drawer.shut{transform:translateX(-380px)}
+  #drawer:not(.shut)~#toggle{left:388px}
+  #toggle{position:fixed;top:14px;left:14px;z-index:101;width:40px;height:40px;border:2px solid #53d8fb;background:rgba(8,8,24,0.9);backdrop-filter:blur(8px);color:#53d8fb;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;border-radius:6px}
+  .dh{padding:20px 16px;border-bottom:1px solid rgba(83,216,251,0.12);text-align:center}
+  .dh h1{font-size:14px;color:#53d8fb}.dh .sub{font-size:8px;color:#556;margin-top:6px}
+  .db{flex:1;overflow-y:auto;padding:10px}.db::-webkit-scrollbar{width:5px}.db::-webkit-scrollbar-thumb{background:#0f3460}
+  .sec{margin-bottom:10px;background:rgba(15,52,96,0.12);border-radius:6px;overflow:hidden}
+  .sec-h{font-size:9px;color:#53d8fb;padding:10px 12px;cursor:pointer;display:flex;justify-content:space-between;align-items:center}
+  .sec-h:hover{background:rgba(15,52,96,0.35)}
+  .sec.off .sec-b{display:none}.sec.off .arr{transform:rotate(-90deg)}.arr{transition:transform 0.2s;font-size:10px}
+  .sec-b{padding:6px 8px 10px}
+  .row{font-size:9px;padding:7px 8px;margin-bottom:3px;background:rgba(0,0,0,0.2);border-radius:4px;display:flex;justify-content:space-between}
+  .dot{width:8px;height:8px;margin-right:6px;display:inline-block;border-radius:1px}.dot.on{background:#4ade80;box-shadow:0 0 6px #4ade80}.dot.off{background:#ef4444}
+  .log{font-size:7px;padding:5px 8px;margin-bottom:2px;border-left:3px solid #0f3460;background:rgba(0,0,0,0.15);border-radius:0 3px 3px 0;font-family:monospace;line-height:1.6}
+  .log.t_user_msg{border-color:#34d399}.log.t_thinking_content{border-color:#a78bfa}.log.t_tool_detail{border-color:#f97316}.log.t_thinking{border-color:#fbbf24}.log.t_streaming{border-color:#60a5fa}.log.t_idle{border-color:#4ade80}.log.t_error{border-color:#ef4444}
+  .cmd-input{width:100%;padding:8px 10px;background:rgba(15,52,96,0.3);border:1px solid rgba(83,216,251,0.2);border-radius:4px;color:#53d8fb;font-family:monospace;font-size:9px;outline:none}
+  .cmd-result{margin-top:6px;padding:6px 8px;background:rgba(0,0,0,0.3);border-radius:4px;font-family:monospace;font-size:7px;color:#889;max-height:120px;overflow-y:auto;white-space:pre-wrap;display:none}
+  #hud{position:fixed;top:12px;right:14px;z-index:90;display:flex;gap:6px}
+  .hud{font-size:7px;padding:5px 12px;border-radius:12px;background:rgba(8,8,24,0.85);border:1px solid rgba(83,216,251,0.2);backdrop-filter:blur(6px);color:#889}
+  .hud .hd{width:6px;height:6px;display:inline-block;margin-right:4px;background:#4ade80;box-shadow:0 0 4px #4ade80;border-radius:1px}
+  #help{position:fixed;bottom:12px;right:14px;z-index:90;font-size:7px;color:#334;text-align:right;line-height:1.8}
+
+  /* Speech bubbles (HTML overlay on 3D) */
+  .bubble3d{position:fixed;z-index:80;background:rgba(255,255,255,0.97);color:#222;padding:10px 14px;border-radius:10px;border:2px solid #53d8fb;font-size:8px;line-height:1.7;min-width:200px;max-width:340px;max-height:260px;overflow-y:auto;box-shadow:0 6px 20px rgba(0,0,0,0.4);pointer-events:auto;transition:opacity 0.3s;opacity:0}
+  .bubble3d.show{opacity:1}
+  .bubble3d .bx{position:sticky;top:-2px;float:right;cursor:pointer;color:#999;font-size:14px;background:rgba(255,255,255,0.9);border-radius:50%;width:18px;height:18px;text-align:center;line-height:18px}
+  .bubble3d::after{content:'';position:absolute;top:100%;left:50%;transform:translateX(-50%);border:7px solid transparent;border-top-color:#53d8fb}
+</style>
+</head>
+<body>
+<div id="scene3d"></div>
+<div id="hud"><div class="hud"><span class="hd"></span>Online</div><div class="hud" id="h-rooms">Rooms: 0</div><div class="hud" id="h-sess">Sessions: 0</div></div>
+<div id="drawer">
+  <div class="dh"><h1>🟢 OPENCLAW 3D</h1><div class="sub">Three.js Agent Monitor</div></div>
+  <div class="db">
+    <div class="sec"><div class="sec-h" onclick="this.parentElement.classList.toggle('off')">🏠 Rooms <span class="arr">▼</span></div><div class="sec-b" id="b-agents"></div></div>
+    <div class="sec"><div class="sec-h" onclick="this.parentElement.classList.toggle('off')">📡 Sessions <span class="arr">▼</span></div><div class="sec-b" id="b-channels"></div></div>
+    <div class="sec"><div class="sec-h" onclick="this.parentElement.classList.toggle('off')">⚡ Gateway <span class="arr">▼</span></div><div class="sec-b" id="b-status"></div></div>
+    <div class="sec"><div class="sec-h" onclick="this.parentElement.classList.toggle('off')">📋 Events <span class="arr">▼</span></div><div class="sec-b" id="b-logs" style="max-height:280px;overflow-y:auto"></div></div>
+    <div class="sec"><div class="sec-h" onclick="this.parentElement.classList.toggle('off')">⌨️ CLI <span class="arr">▼</span></div><div class="sec-b">
+      <input class="cmd-input" id="cmd-in" placeholder="openclaw status ..." onkeydown="if(event.key==='Enter')runCmd()">
+      <div class="cmd-result" id="cmd-out"></div>
+    </div></div>
+  </div>
+</div>
+<button id="toggle" onclick="document.getElementById('drawer').classList.toggle('shut')">☰</button>
+<div id="help">WASD 移动 · 空格上 · Shift下 · 鼠标转向 · Ctrl+Tab 释放鼠标</div>
+
+<script type="module" src="/bundle.js"></script>
+</body>
+</html>
