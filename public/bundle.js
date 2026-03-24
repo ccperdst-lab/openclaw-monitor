@@ -14178,6 +14178,33 @@ var Light = class extends Object3D {
     return data;
   }
 };
+var HemisphereLight = class extends Light {
+  /**
+   * Constructs a new hemisphere light.
+   *
+   * @param {(number|Color|string)} [skyColor=0xffffff] - The light's sky color.
+   * @param {(number|Color|string)} [groundColor=0xffffff] - The light's ground color.
+   * @param {number} [intensity=1] - The light's strength/intensity.
+   */
+  constructor(skyColor, groundColor, intensity) {
+    super(skyColor, intensity);
+    this.isHemisphereLight = true;
+    this.type = "HemisphereLight";
+    this.position.copy(Object3D.DEFAULT_UP);
+    this.updateMatrix();
+    this.groundColor = new Color(groundColor);
+  }
+  copy(source, recursive) {
+    super.copy(source, recursive);
+    this.groundColor.copy(source.groundColor);
+    return this;
+  }
+  toJSON(meta) {
+    const data = super.toJSON(meta);
+    data.object.groundColor = this.groundColor.getHex();
+    return data;
+  }
+};
 var _projScreenMatrix = /* @__PURE__ */ new Matrix4();
 var _lightPositionWorld = /* @__PURE__ */ new Vector3();
 var _lookTarget = /* @__PURE__ */ new Vector3();
@@ -27121,7 +27148,9 @@ window.addEventListener("keyup", (e) => {
 });
 camera.position.set(6, 5, 12);
 yaw = Math.PI;
-var ambientLight = new AmbientLight(8952251, 0.8);
+var hemiLight = new HemisphereLight(8900331, 5917242, 0.5);
+scene.add(hemiLight);
+var ambientLight = new AmbientLight(8952251, 0.6);
 scene.add(ambientLight);
 var sunLight = new DirectionalLight(16774368, 1.2);
 sunLight.position.set(15, 30, 10);
@@ -27163,38 +27192,111 @@ for (let i = 0; i < 8; i++) {
   cloud.rotation.x = -Math.PI / 2;
   scene.add(cloud);
 }
+function makeCanvasTex(w, h, drawFn) {
+  const c = document.createElement("canvas");
+  c.width = w;
+  c.height = h;
+  const ctx = c.getContext("2d");
+  drawFn(ctx, w, h);
+  const t = new CanvasTexture(c);
+  t.wrapS = t.wrapT = RepeatWrapping;
+  return t;
+}
+function woodTexture(ctx, w, h) {
+  ctx.fillStyle = "#8B6914";
+  ctx.fillRect(0, 0, w, h);
+  for (let i = 0; i < h; i += 3) {
+    ctx.fillStyle = `rgba(${100 + Math.random() * 40},${80 + Math.random() * 30},${20 + Math.random() * 15},0.3)`;
+    ctx.fillRect(0, i, w, 2);
+  }
+  for (let i = 0; i < 5; i++) {
+    ctx.beginPath();
+    ctx.arc(Math.random() * w, Math.random() * h, 3 + Math.random() * 4, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(60,40,10,0.2)";
+    ctx.fill();
+  }
+}
+function wallTexture(ctx, w, h) {
+  ctx.fillStyle = "#f5e6d3";
+  ctx.fillRect(0, 0, w, h);
+  for (let i = 0; i < 500; i++) {
+    ctx.fillStyle = `rgba(${200 + Math.random() * 55},${180 + Math.random() * 50},${160 + Math.random() * 40},0.15)`;
+    ctx.fillRect(Math.random() * w, Math.random() * h, 2 + Math.random() * 4, 2 + Math.random() * 4);
+  }
+}
+function roofTexture(ctx, w, h) {
+  ctx.fillStyle = "#b84c3a";
+  ctx.fillRect(0, 0, w, h);
+  const tw = 16, th = 10;
+  for (let y = 0; y < h; y += th) {
+    const off = Math.floor(y / th) % 2 * tw / 2;
+    for (let x = -tw; x < w + tw; x += tw) {
+      ctx.strokeStyle = "rgba(80,30,20,0.3)";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x + off, y, tw - 1, th - 1);
+      ctx.fillStyle = `rgba(${160 + Math.random() * 40},${50 + Math.random() * 20},${40 + Math.random() * 15},0.15)`;
+      ctx.fillRect(x + off + 1, y + 1, tw - 3, th - 3);
+    }
+  }
+}
+function grassTexture(ctx, w, h) {
+  ctx.fillStyle = "#4a8c3f";
+  ctx.fillRect(0, 0, w, h);
+  for (let i = 0; i < 800; i++) {
+    const gx = Math.random() * w, gy = Math.random() * h;
+    ctx.strokeStyle = `rgba(${50 + Math.random() * 40},${100 + Math.random() * 60},${30 + Math.random() * 30},0.4)`;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(gx, gy);
+    ctx.lineTo(gx - 2 + Math.random() * 4, gy - 4 - Math.random() * 6);
+    ctx.stroke();
+  }
+}
+function plankTexture(ctx, w, h) {
+  const pw = w / 6;
+  for (let i = 0; i < 6; i++) {
+    const shade = 130 + Math.random() * 30;
+    ctx.fillStyle = `rgb(${shade},${shade - 30},${shade - 60})`;
+    ctx.fillRect(i * pw, 0, pw - 1, h);
+    for (let j = 0; j < h; j += 2) {
+      ctx.fillStyle = `rgba(${shade - 20},${shade - 40},${shade - 70},0.15)`;
+      ctx.fillRect(i * pw, j, pw - 1, 1);
+    }
+    ctx.strokeStyle = "rgba(60,40,20,0.3)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(i * pw, 0, pw, h);
+  }
+}
 var mat = {
-  floor: new MeshStandardMaterial({ color: 9139029, roughness: 0.8 }),
-  // warm wood
-  floorAlt: new MeshStandardMaterial({ color: 10191717, roughness: 0.8 }),
-  wall: new MeshStandardMaterial({ color: 16115411, roughness: 0.9 }),
-  // cream walls
-  wallSide: new MeshStandardMaterial({ color: 15259072, roughness: 0.9 }),
-  roof: new MeshStandardMaterial({ color: 12078138, roughness: 0.7 }),
-  // terracotta
+  floor: new MeshStandardMaterial({ map: makeCanvasTex(128, 128, plankTexture), roughness: 0.7 }),
+  floorAlt: new MeshStandardMaterial({ map: makeCanvasTex(128, 128, (c, w, h) => {
+    plankTexture(c, w, h);
+    c.fillStyle = "rgba(0,0,0,0.05)";
+    c.fillRect(0, 0, w, h);
+  }), roughness: 0.7 }),
+  wall: new MeshStandardMaterial({ map: makeCanvasTex(128, 128, wallTexture), roughness: 0.9 }),
+  wallSide: new MeshStandardMaterial({ map: makeCanvasTex(128, 128, wallTexture), roughness: 0.9 }),
+  roof: new MeshStandardMaterial({ map: makeCanvasTex(128, 64, roofTexture), roughness: 0.7 }),
   roofDark: new MeshStandardMaterial({ color: 10107434, roughness: 0.7 }),
-  wood: new MeshStandardMaterial({ color: 9136404, roughness: 0.6 }),
-  // golden wood
+  wood: new MeshStandardMaterial({ map: makeCanvasTex(64, 64, woodTexture), roughness: 0.6 }),
   woodDark: new MeshStandardMaterial({ color: 5913114, roughness: 0.7 }),
-  metal: new MeshStandardMaterial({ color: 8947848, metalness: 0.6, roughness: 0.3 }),
-  glass: new MeshStandardMaterial({ color: 11197951, transparent: true, opacity: 0.4 }),
+  metal: new MeshStandardMaterial({ color: 8947848, metalness: 0.7, roughness: 0.25 }),
+  glass: new MeshStandardMaterial({ color: 13428991, transparent: true, opacity: 0.35, metalness: 0.1, roughness: 0.05 }),
   fabric: new MeshStandardMaterial({ color: 4878245, roughness: 0.9 }),
-  // blue blanket
   pillow: new MeshStandardMaterial({ color: 16773344, roughness: 0.95 }),
   book1: new MeshStandardMaterial({ color: 12597547, roughness: 0.8 }),
   book2: new MeshStandardMaterial({ color: 2719929, roughness: 0.8 }),
   book3: new MeshStandardMaterial({ color: 2600544, roughness: 0.8 }),
-  grass: new MeshStandardMaterial({ color: 4885567, roughness: 1 }),
-  // green grass
+  grass: new MeshStandardMaterial({ map: makeCanvasTex(256, 256, grassTexture), roughness: 1 }),
   grassAlt: new MeshStandardMaterial({ color: 5938255, roughness: 1 }),
   rug: new MeshStandardMaterial({ color: 9118290, roughness: 0.95 }),
-  // burgundy rug
   door: new MeshStandardMaterial({ color: 7029795, roughness: 0.7 }),
+  wallDecor: new MeshStandardMaterial({ color: 13943976, roughness: 0.9 }),
   // Minion materials
-  minionYellow: new MeshStandardMaterial({ color: 16109619, roughness: 0.5 }),
-  minionBlue: new MeshStandardMaterial({ color: 3889560, roughness: 0.6 }),
-  minionGoggle: new MeshStandardMaterial({ color: 8947848, metalness: 0.8, roughness: 0.2 }),
-  minionGoggleGlass: new MeshStandardMaterial({ color: 11197951, transparent: true, opacity: 0.6 }),
+  minionYellow: new MeshStandardMaterial({ color: 16109619, roughness: 0.4, metalness: 0.1 }),
+  minionBlue: new MeshStandardMaterial({ color: 3889560, roughness: 0.5 }),
+  minionGoggle: new MeshStandardMaterial({ color: 10066329, metalness: 0.85, roughness: 0.15 }),
+  minionGoggleGlass: new MeshStandardMaterial({ color: 11197951, transparent: true, opacity: 0.5 }),
   minionEye: new MeshStandardMaterial({ color: 5912613, roughness: 0.3 }),
   minionPupil: new MeshStandardMaterial({ color: 1118481 }),
   minionMouth: new MeshStandardMaterial({ color: 9127187 }),
@@ -27301,9 +27403,9 @@ function buildRoom(ox, oz, w, d, label) {
     const fx = -2 + Math.random() * (w + 4);
     const fz = d + 2 + Math.random() * 6;
     if (Math.abs(fx - w / 2 - 0.5) < 1.5) continue;
-    const flower = new Mesh(new SphereGeometry(0.15, 6, 6), new MeshStandardMaterial({ color: flowerColors[i % 5] }));
-    flower.position.set(fx, 0.15, fz);
-    group.add(flower);
+    const flower2 = new Mesh(new SphereGeometry(0.15, 6, 6), new MeshStandardMaterial({ color: flowerColors[i % 5] }));
+    flower2.position.set(fx, 0.15, fz);
+    group.add(flower2);
     const stem = new Mesh(new CylinderGeometry(0.02, 0.02, 0.3, 4), mat.plant);
     stem.position.set(fx, 0.05, fz);
     group.add(stem);
@@ -27381,6 +27483,53 @@ function buildRoom(ox, oz, w, d, label) {
   const plantLeaves = new Mesh(new SphereGeometry(0.3, 8, 8), mat.plant);
   plantLeaves.position.set(ox + w - 1.5, 0.55, oz + d - 1);
   group.add(plantLeaves);
+  const frameGeo = new BoxGeometry(0.8, 0.6, 0.05);
+  const frameMat = new MeshStandardMaterial({ color: 4863264, roughness: 0.6 });
+  const frame1 = new Mesh(frameGeo, frameMat);
+  frame1.position.set(ox + 4, 2, oz - 0.05);
+  group.add(frame1);
+  const pic1 = new Mesh(new PlaneGeometry(0.6, 0.4), new MeshStandardMaterial({ color: 8900331 }));
+  pic1.position.set(ox + 4, 2, oz + 0.01);
+  group.add(pic1);
+  const frame2 = new Mesh(frameGeo, frameMat);
+  frame2.position.set(ox + w + 0.05, 2, oz + 6);
+  frame2.rotation.y = Math.PI / 2;
+  group.add(frame2);
+  const clockFace = new Mesh(new CircleGeometry(0.25, 16), new MeshStandardMaterial({ color: 16775399 }));
+  clockFace.position.set(ox + 8, 2.2, oz - 0.05);
+  group.add(clockFace);
+  const clockRim = new Mesh(new TorusGeometry(0.25, 0.03, 8, 16), mat.woodDark);
+  clockRim.position.set(ox + 8, 2.2, oz - 0.04);
+  group.add(clockRim);
+  const sofaSeat = new Mesh(new BoxGeometry(2, 0.3, 0.8), new MeshStandardMaterial({ color: 5996453, roughness: 0.9 }));
+  sofaSeat.position.set(ox + 4, 0.35, oz + d - 0.5);
+  group.add(sofaSeat);
+  const sofaBack = new Mesh(new BoxGeometry(2, 0.6, 0.15), new MeshStandardMaterial({ color: 4877972, roughness: 0.9 }));
+  sofaBack.position.set(ox + 4, 0.65, oz + d - 0.9);
+  group.add(sofaBack);
+  const sofaArm1 = new Mesh(new BoxGeometry(0.15, 0.4, 0.8), new MeshStandardMaterial({ color: 4877972, roughness: 0.9 }));
+  sofaArm1.position.set(ox + 3, 0.5, oz + d - 0.5);
+  group.add(sofaArm1);
+  const sofaArm2 = sofaArm1.clone();
+  sofaArm2.position.x = ox + 5;
+  group.add(sofaArm2);
+  for (let i = 0; i < 4; i++) {
+    const tx = ox - 3 + Math.random() * (w + 6);
+    const tz = oz + d + 4 + Math.random() * 8;
+    if (Math.abs(tx - ox - w / 2 - 0.5) < 2) continue;
+    const trunk = new Mesh(new CylinderGeometry(0.08, 0.12, 1.5, 6), mat.woodDark);
+    trunk.position.set(tx, 0.75, tz);
+    group.add(trunk);
+    const canopy = new Mesh(new SphereGeometry(0.6 + Math.random() * 0.3, 8, 6), mat.plant);
+    canopy.position.set(tx, 1.8 + Math.random() * 0.3, tz);
+    group.add(canopy);
+  }
+  const vase = new Mesh(new CylinderGeometry(0.06, 0.08, 0.25, 8), new MeshStandardMaterial({ color: 13395524, roughness: 0.5 }));
+  vase.position.set(ox + w / 2 + 0.3, 1.1, oz + d / 2);
+  group.add(vase);
+  const flower = new Mesh(new SphereGeometry(0.1, 6, 6), new MeshStandardMaterial({ color: 16738740 }));
+  flower.position.set(ox + w / 2 + 0.3, 1.35, oz + d / 2);
+  group.add(flower);
   scene.add(group);
   return group;
 }
@@ -27958,7 +28107,7 @@ function updateBubbles() {
       if (!el) {
         el = document.createElement("div");
         el.className = "bubble3d";
-        el.innerHTML = `<div class="bc"></div><div class="bx" onclick="this.parentElement.classList.remove('show')">\u2715</div>`;
+        el.innerHTML = `<div class="bx" onclick="this.parentElement.classList.remove('show')">\u2715</div><div class="bc"></div>`;
         document.body.appendChild(el);
         bubbles[key] = el;
       }
@@ -27967,53 +28116,64 @@ function updateBubbles() {
       const x = (screenPos.x * 0.5 + 0.5) * window.innerWidth;
       const y = (-screenPos.y * 0.5 + 0.5) * window.innerHeight;
       const camDist = camera.position.distanceTo(new Vector3(m.position.x, 1, m.position.z));
-      const maxBubbleDist = 15;
       const raycaster = new Raycaster();
       raycaster.set(camera.position, new Vector3(m.position.x - camera.position.x, 1 - camera.position.y, m.position.z - camera.position.z).normalize());
       raycaster.far = camDist;
       const wallHits = raycaster.intersectObjects(wallMeshes, false);
       const blocked = wallHits.length > 0 && wallHits[0].distance < camDist - 1;
-      if (camDist < maxBubbleDist && !blocked && screenPos.z < 1) {
-        el.style.left = Math.max(10, Math.min(window.innerWidth - 300, x - 110)) + "px";
-        el.style.top = Math.max(10, Math.min(window.innerHeight - 250, y - 120)) + "px";
+      if (camDist < 15 && !blocked && screenPos.z < 1) {
+        el.style.left = Math.max(10, Math.min(window.innerWidth - 370, x - 120)) + "px";
+        el.style.top = Math.max(10, Math.min(window.innerHeight - 300, y - 140)) + "px";
         el.classList.add("show");
         const bc = el.querySelector(".bc");
         const thinkLog = ud.thinkLog || [];
         const toolLog = ud.toolLog || [];
         let h = "";
         if (ud.state === "thinking") {
-          h += '<div style="font-size:11px;color:#0f3460;font-weight:bold;margin-bottom:6px;border-bottom:2px solid #53d8fb;padding-bottom:4px">\u{1F4E9} \u6536\u5230\u6D88\u606F</div>';
-          if (ud.userName) h += `<div style="font-size:10px;color:#666;margin-bottom:4px">\u6765\u81EA <b style="color:#4cade8">${esc(ud.userName)}</b></div>`;
-          if (ud.userMsg) h += `<div style="background:#f0f4ff;border-radius:6px;padding:6px 8px;margin:4px 0;font-size:10px;border-left:4px solid #60a5fa;color:#222;word-break:break-all;line-height:1.6">\u{1F4AC} ${esc(ud.userMsg.slice(0, 200))}</div>`;
-          if (thinkLog.length > 0) {
-            h += '<div style="font-size:10px;color:#7c3aed;font-weight:bold;margin-top:8px;margin-bottom:4px;border-top:1px solid #e0e0e0;padding-top:4px">\u{1F9E0} \u601D\u8003\u8FC7\u7A0B</div>';
-            thinkLog.slice(-5).forEach((t, i) => {
-              h += `<div style="background:#f5f0ff;border-radius:4px;padding:4px 6px;margin:2px 0;font-size:8px;border-left:3px solid #a78bfa;color:#444;line-height:1.5">${esc(t.slice(0, 150))}</div>`;
+          h += '<div class="b3d-section b3d-section-s1">';
+          h += '<div class="b3d-header">\u{1F4E9} \u6536\u5230\u6D88\u606F</div>';
+          if (ud.userName) h += `<div style="font-size:9px;color:#60a5fa;font-weight:bold;margin-bottom:3px">${esc(ud.userName)}</div>`;
+          if (ud.userMsg) h += `<div class="b3d-section-msg">${esc(ud.userMsg.slice(0, 200))}</div>`;
+          h += "</div>";
+          const totalSteps = thinkLog.length + toolLog.length;
+          if (totalSteps > 0) {
+            h += '<div class="b3d-section b3d-section-s2">';
+            h += `<div class="b3d-header collapsible" onclick="this.classList.toggle('collapsed');this.nextElementSibling.classList.toggle('collapsed')">\u{1F9E0} \u601D\u8003\u8FC7\u7A0B (${thinkLog.length}\u6B65, ${toolLog.length}\u5DE5\u5177)</div>`;
+            h += `<div class="b3d-body" style="max-height:180px;overflow-y:auto">`;
+            const items = [];
+            thinkLog.forEach((t) => items.push({ type: "think", data: t }));
+            toolLog.forEach((t) => items.push({ type: "tool", data: t }));
+            items.slice(-8).forEach((item) => {
+              if (item.type === "think") {
+                h += `<div class="b3d-section-think">${esc((item.data || "").slice(0, 120))}</div>`;
+              } else {
+                h += `<div class="b3d-section-tool">\u{1F527} ${esc(item.data.name)}: ${esc((item.data.args || "").slice(0, 60))}</div>`;
+              }
             });
-            if (thinkLog.length > 5) h += `<div style="font-size:7px;color:#888">...\u8FD8\u6709 ${thinkLog.length - 5} \u6761\u601D\u8003</div>`;
+            if (items.length > 8) h += `<div class="b3d-summary">...\u8FD8\u6709 ${items.length - 8} \u6761</div>`;
+            h += "</div></div>";
           }
-          if (toolLog.length > 0) {
-            h += '<div style="font-size:10px;color:#d97706;font-weight:bold;margin-top:6px;margin-bottom:3px">\u{1F527} \u5DE5\u5177\u8C03\u7528</div>';
-            toolLog.slice(-3).forEach((t) => {
-              h += `<div style="background:#fff8f0;border-radius:4px;padding:3px 6px;margin:2px 0;font-size:8px;border-left:3px solid #f97316;color:#555">${esc(t.name)}: ${esc(t.args.slice(0, 60))}</div>`;
-            });
-          }
-          h += `<div style="font-size:8px;color:#888;margin-top:6px">\u23F3 \u601D\u8003\u4E2D... (${thinkLog.length} \u6B65)</div>`;
+          h += '<div class="b3d-section"><div class="b3d-summary">\u23F3 \u601D\u8003\u4E2D...</div></div>';
         } else if (ud.state === "streaming") {
-          h += '<div style="font-size:11px;color:#0f3460;font-weight:bold;margin-bottom:6px">\u{1F4AC} \u6B63\u5728\u56DE\u590D</div>';
-          if (ud.userName) h += `<div style="font-size:10px;color:#666;margin-bottom:4px">\u56DE\u590D <b style="color:#4cade8">${esc(ud.userName)}</b></div>`;
-          if (thinkLog.length > 0) {
-            h += `<div style="font-size:8px;color:#888">\u601D\u8003\u4E86 ${thinkLog.length} \u6B65\uFF0C\u8C03\u7528 ${toolLog.length} \u4E2A\u5DE5\u5177</div>`;
-          }
-          h += '<div style="font-size:8px;color:#888;margin-top:3px">\u6D41\u5F0F\u8F93\u51FA\u4E2D...</div>';
+          h += '<div class="b3d-section b3d-section-s1">';
+          h += '<div class="b3d-header">\u{1F4E9} \u6536\u5230\u6D88\u606F</div>';
+          if (ud.userName) h += `<div style="font-size:9px;color:#60a5fa;font-weight:bold">${esc(ud.userName)}</div>`;
+          if (ud.userMsg) h += `<div class="b3d-section-msg" style="max-height:60px;overflow:hidden">${esc(ud.userMsg.slice(0, 100))}</div>`;
+          h += "</div>";
+          h += '<div class="b3d-section b3d-section-s3">';
+          h += '<div class="b3d-header">\u{1F4AC} \u6B63\u5728\u56DE\u590D</div>';
+          h += `<div class="b3d-summary">\u601D\u8003\u4E86 ${thinkLog.length} \u6B65\uFF0C\u8C03\u7528 ${toolLog.length} \u4E2A\u5DE5\u5177</div>`;
+          h += '<div class="b3d-summary">\u6D41\u5F0F\u8F93\u51FA\u4E2D...</div>';
+          h += "</div>";
         } else if (ud.state === "responding") {
-          h += '<div style="font-size:11px;color:#27ae60;font-weight:bold;margin-bottom:6px;border-bottom:2px solid #27ae60;padding-bottom:4px">\u2705 \u56DE\u590D\u5B8C\u6210</div>';
-          if (ud.userName) h += `<div style="font-size:10px;color:#666;margin-bottom:4px">\u56DE\u590D\u4E86 <b style="color:#4cade8">${esc(ud.userName)}</b></div>`;
-          h += `<div style="font-size:9px;color:#555;line-height:1.6">`;
-          h += `\u{1F4DD} \u601D\u8003\u4E86 <b>${thinkLog.length}</b> \u6B65<br>`;
-          h += `\u{1F527} \u4F7F\u7528\u4E86 <b>${toolLog.length}</b> \u4E2A\u5DE5\u5177<br>`;
-          h += `\u{1F4E4} \u53D1\u9001\u4E86 <b>${ud.replyCount || 0}</b> \u6761\u56DE\u590D`;
-          h += `</div>`;
+          h += '<div class="b3d-section b3d-section-s3">';
+          h += '<div class="b3d-header">\u2705 \u56DE\u590D\u5B8C\u6210</div>';
+          if (ud.userName) h += `<div style="font-size:9px;color:#27ae60;font-weight:bold;margin-bottom:3px">\u56DE\u590D\u4E86 ${esc(ud.userName)}</div>`;
+          h += `<div style="font-size:9px;color:#555;line-height:1.7">`;
+          h += `\u{1F4DD} \u601D\u8003 <b>${thinkLog.length}</b> \u6B65 \xB7 `;
+          h += `\u{1F527} <b>${toolLog.length}</b> \u5DE5\u5177 \xB7 `;
+          h += `\u{1F4E4} <b>${ud.replyCount || 0}</b> \u6761`;
+          h += `</div></div>`;
         }
         bc.innerHTML = h;
       } else {

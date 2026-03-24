@@ -70,7 +70,9 @@ camera.position.set(6, 5, 12);
 yaw = Math.PI; // face toward the house
 
 // Lights - daytime scene
-const ambientLight = new THREE.AmbientLight(0x8899bb, 0.8);
+const hemiLight = new THREE.HemisphereLight(0x87CEEB, 0x5a4a3a, 0.5);
+scene.add(hemiLight);
+const ambientLight = new THREE.AmbientLight(0x8899bb, 0.6);
 scene.add(ambientLight);
 const sunLight = new THREE.DirectionalLight(0xfff4e0, 1.2);
 sunLight.position.set(15, 30, 10);
@@ -122,31 +124,100 @@ for (let i = 0; i < 8; i++) {
 }
 
 // ===== Materials =====
+// ===== Procedural Textures =====
+function makeCanvasTex(w, h, drawFn) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const ctx = c.getContext('2d');
+  drawFn(ctx, w, h);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
+
+function woodTexture(ctx, w, h) {
+  ctx.fillStyle = '#8B6914'; ctx.fillRect(0, 0, w, h);
+  for (let i = 0; i < h; i += 3) {
+    ctx.fillStyle = `rgba(${100+Math.random()*40},${80+Math.random()*30},${20+Math.random()*15},0.3)`;
+    ctx.fillRect(0, i, w, 2);
+  }
+  for (let i = 0; i < 5; i++) {
+    ctx.beginPath(); ctx.arc(Math.random()*w, Math.random()*h, 3+Math.random()*4, 0, Math.PI*2);
+    ctx.fillStyle = 'rgba(60,40,10,0.2)'; ctx.fill();
+  }
+}
+function wallTexture(ctx, w, h) {
+  ctx.fillStyle = '#f5e6d3'; ctx.fillRect(0, 0, w, h);
+  // Subtle plaster texture
+  for (let i = 0; i < 500; i++) {
+    ctx.fillStyle = `rgba(${200+Math.random()*55},${180+Math.random()*50},${160+Math.random()*40},0.15)`;
+    ctx.fillRect(Math.random()*w, Math.random()*h, 2+Math.random()*4, 2+Math.random()*4);
+  }
+}
+function roofTexture(ctx, w, h) {
+  ctx.fillStyle = '#b84c3a'; ctx.fillRect(0, 0, w, h);
+  // Tile pattern
+  const tw = 16, th = 10;
+  for (let y = 0; y < h; y += th) {
+    const off = (Math.floor(y/th) % 2) * tw/2;
+    for (let x = -tw; x < w + tw; x += tw) {
+      ctx.strokeStyle = 'rgba(80,30,20,0.3)'; ctx.lineWidth = 1;
+      ctx.strokeRect(x+off, y, tw-1, th-1);
+      ctx.fillStyle = `rgba(${160+Math.random()*40},${50+Math.random()*20},${40+Math.random()*15},0.15)`;
+      ctx.fillRect(x+off+1, y+1, tw-3, th-3);
+    }
+  }
+}
+function grassTexture(ctx, w, h) {
+  ctx.fillStyle = '#4a8c3f'; ctx.fillRect(0, 0, w, h);
+  for (let i = 0; i < 800; i++) {
+    const gx = Math.random()*w, gy = Math.random()*h;
+    ctx.strokeStyle = `rgba(${50+Math.random()*40},${100+Math.random()*60},${30+Math.random()*30},0.4)`;
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(gx, gy); ctx.lineTo(gx-2+Math.random()*4, gy-4-Math.random()*6); ctx.stroke();
+  }
+}
+function plankTexture(ctx, w, h) {
+  const pw = w / 6;
+  for (let i = 0; i < 6; i++) {
+    const shade = 130 + Math.random() * 30;
+    ctx.fillStyle = `rgb(${shade},${shade-30},${shade-60})`;
+    ctx.fillRect(i*pw, 0, pw-1, h);
+    // Grain
+    for (let j = 0; j < h; j += 2) {
+      ctx.fillStyle = `rgba(${shade-20},${shade-40},${shade-70},0.15)`;
+      ctx.fillRect(i*pw, j, pw-1, 1);
+    }
+    ctx.strokeStyle = 'rgba(60,40,20,0.3)'; ctx.lineWidth = 1;
+    ctx.strokeRect(i*pw, 0, pw, h);
+  }
+}
+
 const mat = {
-  floor: new THREE.MeshStandardMaterial({ color: 0x8B7355, roughness: 0.8 }), // warm wood
-  floorAlt: new THREE.MeshStandardMaterial({ color: 0x9B8365, roughness: 0.8 }),
-  wall: new THREE.MeshStandardMaterial({ color: 0xf5e6d3, roughness: 0.9 }), // cream walls
-  wallSide: new THREE.MeshStandardMaterial({ color: 0xe8d5c0, roughness: 0.9 }),
-  roof: new THREE.MeshStandardMaterial({ color: 0xb84c3a, roughness: 0.7 }), // terracotta
+  floor: new THREE.MeshStandardMaterial({ map: makeCanvasTex(128, 128, plankTexture), roughness: 0.7 }),
+  floorAlt: new THREE.MeshStandardMaterial({ map: makeCanvasTex(128, 128, (c,w,h) => { plankTexture(c,w,h); c.fillStyle='rgba(0,0,0,0.05)'; c.fillRect(0,0,w,h); }), roughness: 0.7 }),
+  wall: new THREE.MeshStandardMaterial({ map: makeCanvasTex(128, 128, wallTexture), roughness: 0.9 }),
+  wallSide: new THREE.MeshStandardMaterial({ map: makeCanvasTex(128, 128, wallTexture), roughness: 0.9 }),
+  roof: new THREE.MeshStandardMaterial({ map: makeCanvasTex(128, 64, roofTexture), roughness: 0.7 }),
   roofDark: new THREE.MeshStandardMaterial({ color: 0x9a3a2a, roughness: 0.7 }),
-  wood: new THREE.MeshStandardMaterial({ color: 0x8B6914, roughness: 0.6 }), // golden wood
+  wood: new THREE.MeshStandardMaterial({ map: makeCanvasTex(64, 64, woodTexture), roughness: 0.6 }),
   woodDark: new THREE.MeshStandardMaterial({ color: 0x5a3a1a, roughness: 0.7 }),
-  metal: new THREE.MeshStandardMaterial({ color: 0x888888, metalness: 0.6, roughness: 0.3 }),
-  glass: new THREE.MeshStandardMaterial({ color: 0xaaddff, transparent: true, opacity: 0.4 }),
-  fabric: new THREE.MeshStandardMaterial({ color: 0x4a6fa5, roughness: 0.9 }), // blue blanket
+  metal: new THREE.MeshStandardMaterial({ color: 0x888888, metalness: 0.7, roughness: 0.25 }),
+  glass: new THREE.MeshStandardMaterial({ color: 0xcce8ff, transparent: true, opacity: 0.35, metalness: 0.1, roughness: 0.05 }),
+  fabric: new THREE.MeshStandardMaterial({ color: 0x4a6fa5, roughness: 0.9 }),
   pillow: new THREE.MeshStandardMaterial({ color: 0xfff0e0, roughness: 0.95 }),
   book1: new THREE.MeshStandardMaterial({ color: 0xc0392b, roughness: 0.8 }),
   book2: new THREE.MeshStandardMaterial({ color: 0x2980b9, roughness: 0.8 }),
   book3: new THREE.MeshStandardMaterial({ color: 0x27ae60, roughness: 0.8 }),
-  grass: new THREE.MeshStandardMaterial({ color: 0x4a8c3f, roughness: 1 }), // green grass
+  grass: new THREE.MeshStandardMaterial({ map: makeCanvasTex(256, 256, grassTexture), roughness: 1 }),
   grassAlt: new THREE.MeshStandardMaterial({ color: 0x5a9c4f, roughness: 1 }),
-  rug: new THREE.MeshStandardMaterial({ color: 0x8b2252, roughness: 0.95 }), // burgundy rug
+  rug: new THREE.MeshStandardMaterial({ color: 0x8b2252, roughness: 0.95 }),
   door: new THREE.MeshStandardMaterial({ color: 0x6b4423, roughness: 0.7 }),
+  wallDecor: new THREE.MeshStandardMaterial({ color: 0xd4c4a8, roughness: 0.9 }),
   // Minion materials
-  minionYellow: new THREE.MeshStandardMaterial({ color: 0xf5d033, roughness: 0.5 }),
-  minionBlue: new THREE.MeshStandardMaterial({ color: 0x3b5998, roughness: 0.6 }),
-  minionGoggle: new THREE.MeshStandardMaterial({ color: 0x888888, metalness: 0.8, roughness: 0.2 }),
-  minionGoggleGlass: new THREE.MeshStandardMaterial({ color: 0xaaddff, transparent: true, opacity: 0.6 }),
+  minionYellow: new THREE.MeshStandardMaterial({ color: 0xf5d033, roughness: 0.4, metalness: 0.1 }),
+  minionBlue: new THREE.MeshStandardMaterial({ color: 0x3b5998, roughness: 0.5 }),
+  minionGoggle: new THREE.MeshStandardMaterial({ color: 0x999999, metalness: 0.85, roughness: 0.15 }),
+  minionGoggleGlass: new THREE.MeshStandardMaterial({ color: 0xaaddff, transparent: true, opacity: 0.5 }),
   minionEye: new THREE.MeshStandardMaterial({ color: 0x5a3825, roughness: 0.3 }),
   minionPupil: new THREE.MeshStandardMaterial({ color: 0x111111 }),
   minionMouth: new THREE.MeshStandardMaterial({ color: 0x8b4513 }),
@@ -377,6 +448,64 @@ function buildRoom(ox, oz, w, d, label) {
   const plantLeaves = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 8), mat.plant);
   plantLeaves.position.set(ox + w - 1.5, 0.55, oz + d - 1);
   group.add(plantLeaves);
+
+  // Wall decorations: picture frames
+  const frameGeo = new THREE.BoxGeometry(0.8, 0.6, 0.05);
+  const frameMat = new THREE.MeshStandardMaterial({ color: 0x4a3520, roughness: 0.6 });
+  // Frame 1 on north wall
+  const frame1 = new THREE.Mesh(frameGeo, frameMat);
+  frame1.position.set(ox + 4, 2, oz - 0.05);
+  group.add(frame1);
+  const pic1 = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.4), new THREE.MeshStandardMaterial({ color: 0x87CEEB }));
+  pic1.position.set(ox + 4, 2, oz + 0.01);
+  group.add(pic1);
+  // Frame 2 on east wall
+  const frame2 = new THREE.Mesh(frameGeo, frameMat);
+  frame2.position.set(ox + w + 0.05, 2, oz + 6);
+  frame2.rotation.y = Math.PI / 2;
+  group.add(frame2);
+
+  // Wall clock on north wall
+  const clockFace = new THREE.Mesh(new THREE.CircleGeometry(0.25, 16), new THREE.MeshStandardMaterial({ color: 0xfff8e7 }));
+  clockFace.position.set(ox + 8, 2.2, oz - 0.05);
+  group.add(clockFace);
+  const clockRim = new THREE.Mesh(new THREE.TorusGeometry(0.25, 0.03, 8, 16), mat.woodDark);
+  clockRim.position.set(ox + 8, 2.2, oz - 0.04);
+  group.add(clockRim);
+
+  // Couch/sofa (bottom wall near lamp)
+  const sofaSeat = new THREE.Mesh(new THREE.BoxGeometry(2, 0.3, 0.8), new THREE.MeshStandardMaterial({ color: 0x5b7fa5, roughness: 0.9 }));
+  sofaSeat.position.set(ox + 4, 0.35, oz + d - 0.5);
+  group.add(sofaSeat);
+  const sofaBack = new THREE.Mesh(new THREE.BoxGeometry(2, 0.6, 0.15), new THREE.MeshStandardMaterial({ color: 0x4a6e94, roughness: 0.9 }));
+  sofaBack.position.set(ox + 4, 0.65, oz + d - 0.9);
+  group.add(sofaBack);
+  const sofaArm1 = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.4, 0.8), new THREE.MeshStandardMaterial({ color: 0x4a6e94, roughness: 0.9 }));
+  sofaArm1.position.set(ox + 3, 0.5, oz + d - 0.5);
+  group.add(sofaArm1);
+  const sofaArm2 = sofaArm1.clone(); sofaArm2.position.x = ox + 5;
+  group.add(sofaArm2);
+
+  // Trees outside
+  for (let i = 0; i < 4; i++) {
+    const tx = ox - 3 + Math.random() * (w + 6);
+    const tz = oz + d + 4 + Math.random() * 8;
+    if (Math.abs(tx - ox - w/2 - 0.5) < 2) continue;
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.12, 1.5, 6), mat.woodDark);
+    trunk.position.set(tx, 0.75, tz);
+    group.add(trunk);
+    const canopy = new THREE.Mesh(new THREE.SphereGeometry(0.6 + Math.random()*0.3, 8, 6), mat.plant);
+    canopy.position.set(tx, 1.8 + Math.random()*0.3, tz);
+    group.add(canopy);
+  }
+
+  // Vase on table
+  const vase = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 0.25, 8), new THREE.MeshStandardMaterial({ color: 0xcc6644, roughness: 0.5 }));
+  vase.position.set(ox + w/2 + 0.3, 1.1, oz + d/2);
+  group.add(vase);
+  const flower = new THREE.Mesh(new THREE.SphereGeometry(0.1, 6, 6), new THREE.MeshStandardMaterial({ color: 0xff69b4 }));
+  flower.position.set(ox + w/2 + 0.3, 1.35, oz + d/2);
+  group.add(flower);
 
   scene.add(group);
   return group;
@@ -1029,34 +1158,31 @@ function updateBubbles() {
 
     let el = bubbles[key] || null;
     if (show) {
-      // Clean up removed elements
       if (el && !document.body.contains(el)) { delete bubbles[key]; el = null; }
 
       if (!el) {
         el = document.createElement('div');
         el.className = 'bubble3d';
-        el.innerHTML = '<div class="bc"></div><div class="bx" onclick="this.parentElement.classList.remove(\'show\')">✕</div>';
+        el.innerHTML = '<div class="bx" onclick="this.parentElement.classList.remove(\'show\')">✕</div><div class="bc"></div>';
         document.body.appendChild(el);
         bubbles[key] = el;
       }
 
-      // Project 3D position to 2D screen
+      // Project 3D → 2D
       const charPos = new THREE.Vector3(m.position.x, m.position.y + 2.5, m.position.z);
       const screenPos = charPos.clone().project(camera);
       const x = (screenPos.x * 0.5 + 0.5) * window.innerWidth;
       const y = (-screenPos.y * 0.5 + 0.5) * window.innerHeight;
-
       const camDist = camera.position.distanceTo(new THREE.Vector3(m.position.x, 1, m.position.z));
-      const maxBubbleDist = 15;
       const raycaster = new THREE.Raycaster();
       raycaster.set(camera.position, new THREE.Vector3(m.position.x - camera.position.x, 1 - camera.position.y, m.position.z - camera.position.z).normalize());
       raycaster.far = camDist;
       const wallHits = raycaster.intersectObjects(wallMeshes, false);
       const blocked = wallHits.length > 0 && wallHits[0].distance < camDist - 1;
 
-      if (camDist < maxBubbleDist && !blocked && screenPos.z < 1) {
-        el.style.left = Math.max(10, Math.min(window.innerWidth - 300, x - 110)) + 'px';
-        el.style.top = Math.max(10, Math.min(window.innerHeight - 250, y - 120)) + 'px';
+      if (camDist < 15 && !blocked && screenPos.z < 1) {
+        el.style.left = Math.max(10, Math.min(window.innerWidth - 370, x - 120)) + 'px';
+        el.style.top = Math.max(10, Math.min(window.innerHeight - 300, y - 140)) + 'px';
         el.classList.add('show');
 
         const bc = el.querySelector('.bc');
@@ -1065,47 +1191,57 @@ function updateBubbles() {
         let h = '';
 
         if (ud.state === 'thinking') {
-          // Phase 1: Message received
-          h += '<div style="font-size:11px;color:#0f3460;font-weight:bold;margin-bottom:6px;border-bottom:2px solid #53d8fb;padding-bottom:4px">📩 收到消息</div>';
-          if (ud.userName) h += `<div style="font-size:10px;color:#666;margin-bottom:4px">来自 <b style="color:#4cade8">${esc(ud.userName)}</b></div>`;
-          if (ud.userMsg) h += `<div style="background:#f0f4ff;border-radius:6px;padding:6px 8px;margin:4px 0;font-size:10px;border-left:4px solid #60a5fa;color:#222;word-break:break-all;line-height:1.6">💬 ${esc(ud.userMsg.slice(0, 200))}</div>`;
+          // Section 1: Message (always visible)
+          h += '<div class="b3d-section b3d-section-s1">';
+          h += '<div class="b3d-header">📩 收到消息</div>';
+          if (ud.userName) h += `<div style="font-size:9px;color:#60a5fa;font-weight:bold;margin-bottom:3px">${esc(ud.userName)}</div>`;
+          if (ud.userMsg) h += `<div class="b3d-section-msg">${esc(ud.userMsg.slice(0, 200))}</div>`;
+          h += '</div>';
 
-          // Phase 2: Thinking log (accumulated)
-          if (thinkLog.length > 0) {
-            h += '<div style="font-size:10px;color:#7c3aed;font-weight:bold;margin-top:8px;margin-bottom:4px;border-top:1px solid #e0e0e0;padding-top:4px">🧠 思考过程</div>';
-            thinkLog.slice(-5).forEach((t, i) => {
-              h += `<div style="background:#f5f0ff;border-radius:4px;padding:4px 6px;margin:2px 0;font-size:8px;border-left:3px solid #a78bfa;color:#444;line-height:1.5">${esc(t.slice(0, 150))}</div>`;
+          // Section 2: Thinking + tools mixed (collapsible)
+          const totalSteps = thinkLog.length + toolLog.length;
+          if (totalSteps > 0) {
+            h += '<div class="b3d-section b3d-section-s2">';
+            h += `<div class="b3d-header collapsible" onclick="this.classList.toggle('collapsed');this.nextElementSibling.classList.toggle('collapsed')">🧠 思考过程 (${thinkLog.length}步, ${toolLog.length}工具)</div>`;
+            h += `<div class="b3d-body" style="max-height:180px;overflow-y:auto">`;
+            // Interleave thinking and tool calls
+            const items = [];
+            thinkLog.forEach(t => items.push({ type: 'think', data: t }));
+            toolLog.forEach(t => items.push({ type: 'tool', data: t }));
+            items.slice(-8).forEach(item => {
+              if (item.type === 'think') {
+                h += `<div class="b3d-section-think">${esc((item.data || '').slice(0, 120))}</div>`;
+              } else {
+                h += `<div class="b3d-section-tool">🔧 ${esc(item.data.name)}: ${esc((item.data.args || '').slice(0, 60))}</div>`;
+              }
             });
-            if (thinkLog.length > 5) h += `<div style="font-size:7px;color:#888">...还有 ${thinkLog.length - 5} 条思考</div>`;
+            if (items.length > 8) h += `<div class="b3d-summary">...还有 ${items.length - 8} 条</div>`;
+            h += '</div></div>';
           }
 
-          // Tool calls
-          if (toolLog.length > 0) {
-            h += '<div style="font-size:10px;color:#d97706;font-weight:bold;margin-top:6px;margin-bottom:3px">🔧 工具调用</div>';
-            toolLog.slice(-3).forEach(t => {
-              h += `<div style="background:#fff8f0;border-radius:4px;padding:3px 6px;margin:2px 0;font-size:8px;border-left:3px solid #f97316;color:#555">${esc(t.name)}: ${esc(t.args.slice(0, 60))}</div>`;
-            });
-          }
-
-          h += `<div style="font-size:8px;color:#888;margin-top:6px">⏳ 思考中... (${thinkLog.length} 步)</div>`;
+          h += '<div class="b3d-section"><div class="b3d-summary">⏳ 思考中...</div></div>';
 
         } else if (ud.state === 'streaming') {
-          h += '<div style="font-size:11px;color:#0f3460;font-weight:bold;margin-bottom:6px">💬 正在回复</div>';
-          if (ud.userName) h += `<div style="font-size:10px;color:#666;margin-bottom:4px">回复 <b style="color:#4cade8">${esc(ud.userName)}</b></div>`;
-          if (thinkLog.length > 0) {
-            h += `<div style="font-size:8px;color:#888">思考了 ${thinkLog.length} 步，调用 ${toolLog.length} 个工具</div>`;
-          }
-          h += '<div style="font-size:8px;color:#888;margin-top:3px">流式输出中...</div>';
+          h += '<div class="b3d-section b3d-section-s1">';
+          h += '<div class="b3d-header">📩 收到消息</div>';
+          if (ud.userName) h += `<div style="font-size:9px;color:#60a5fa;font-weight:bold">${esc(ud.userName)}</div>`;
+          if (ud.userMsg) h += `<div class="b3d-section-msg" style="max-height:60px;overflow:hidden">${esc(ud.userMsg.slice(0, 100))}</div>`;
+          h += '</div>';
+          h += '<div class="b3d-section b3d-section-s3">';
+          h += '<div class="b3d-header">💬 正在回复</div>';
+          h += `<div class="b3d-summary">思考了 ${thinkLog.length} 步，调用 ${toolLog.length} 个工具</div>`;
+          h += '<div class="b3d-summary">流式输出中...</div>';
+          h += '</div>';
 
         } else if (ud.state === 'responding') {
-          // Phase 3: Summary
-          h += '<div style="font-size:11px;color:#27ae60;font-weight:bold;margin-bottom:6px;border-bottom:2px solid #27ae60;padding-bottom:4px">✅ 回复完成</div>';
-          if (ud.userName) h += `<div style="font-size:10px;color:#666;margin-bottom:4px">回复了 <b style="color:#4cade8">${esc(ud.userName)}</b></div>`;
-          h += `<div style="font-size:9px;color:#555;line-height:1.6">`;
-          h += `📝 思考了 <b>${thinkLog.length}</b> 步<br>`;
-          h += `🔧 使用了 <b>${toolLog.length}</b> 个工具<br>`;
-          h += `📤 发送了 <b>${ud.replyCount || 0}</b> 条回复`;
-          h += `</div>`;
+          h += '<div class="b3d-section b3d-section-s3">';
+          h += '<div class="b3d-header">✅ 回复完成</div>';
+          if (ud.userName) h += `<div style="font-size:9px;color:#27ae60;font-weight:bold;margin-bottom:3px">回复了 ${esc(ud.userName)}</div>`;
+          h += `<div style="font-size:9px;color:#555;line-height:1.7">`;
+          h += `📝 思考 <b>${thinkLog.length}</b> 步 · `;
+          h += `🔧 <b>${toolLog.length}</b> 工具 · `;
+          h += `📤 <b>${ud.replyCount || 0}</b> 条`;
+          h += `</div></div>`;
         }
 
         bc.innerHTML = h;
@@ -1113,7 +1249,6 @@ function updateBubbles() {
         el.classList.remove('show');
       }
     } else {
-      // Hide all bubbles for this minion
       if (el) el.classList.remove('show');
     }
   });

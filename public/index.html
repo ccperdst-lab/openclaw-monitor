@@ -35,10 +35,25 @@
   #help{position:fixed;bottom:12px;right:14px;z-index:90;font-size:7px;color:#334;text-align:right;line-height:1.8}
 
   /* Speech bubbles (HTML overlay on 3D) */
-  .bubble3d{position:fixed;z-index:80;background:rgba(255,255,255,0.97);color:#222;padding:10px 14px;border-radius:10px;border:2px solid #53d8fb;font-size:8px;line-height:1.7;min-width:200px;max-width:340px;max-height:260px;overflow-y:auto;box-shadow:0 6px 20px rgba(0,0,0,0.4);pointer-events:auto;transition:opacity 0.3s;opacity:0}
-  .bubble3d.show{opacity:1}
-  .bubble3d .bx{position:sticky;top:-2px;float:right;cursor:pointer;color:#999;font-size:14px;background:rgba(255,255,255,0.9);border-radius:50%;width:18px;height:18px;text-align:center;line-height:18px}
-  .bubble3d::after{content:'';position:absolute;top:100%;left:50%;transform:translateX(-50%);border:7px solid transparent;border-top-color:#53d8fb}
+  .bubble3d{position:fixed;z-index:80;background:rgba(255,255,255,0.97);color:#222;border-radius:12px;font-size:9px;line-height:1.6;min-width:220px;max-width:360px;box-shadow:0 8px 32px rgba(0,0,0,0.35);pointer-events:auto;transition:opacity 0.3s,transform 0.3s;opacity:0;transform:translateY(8px);overflow:hidden}
+  .bubble3d.show{opacity:1;transform:translateY(0)}
+  .bubble3d .bx{position:absolute;top:6px;right:8px;cursor:pointer;color:#999;font-size:13px;background:rgba(0,0,0,0.06);border-radius:50%;width:20px;height:20px;text-align:center;line-height:20px;z-index:5}
+  .bubble3d .bx:hover{background:rgba(0,0,0,0.12);color:#666}
+  .bubble3d::after{content:'';position:absolute;top:100%;left:50%;transform:translateX(-50%);border:8px solid transparent;border-top-color:rgba(255,255,255,0.97)}
+  .b3d-section{padding:8px 12px}
+  .b3d-section+.b3d-section{border-top:1px solid #eee}
+  .b3d-header{font-size:10px;font-weight:bold;margin-bottom:5px;display:flex;align-items:center;gap:4px;cursor:pointer;user-select:none}
+  .b3d-header.collapsible::after{content:'▼';font-size:7px;margin-left:auto;transition:transform 0.2s;color:#999}
+  .b3d-header.collapsible.collapsed::after{transform:rotate(-90deg)}
+  .b3d-body{overflow:hidden;transition:max-height 0.3s ease}
+  .b3d-body.collapsed{max-height:0!important;padding:0!important}
+  .b3d-section-msg{border-left:4px solid #60a5fa;background:#f0f4ff;border-radius:6px;padding:6px 8px;margin:3px 0;font-size:9px;color:#222;word-break:break-all;line-height:1.5}
+  .b3d-section-think{border-left:3px solid #a78bfa;background:#f8f5ff;border-radius:4px;padding:4px 6px;margin:2px 0;font-size:8px;color:#444;line-height:1.5}
+  .b3d-section-tool{border-left:3px solid #f97316;background:#fff8f0;border-radius:4px;padding:4px 6px;margin:2px 0;font-size:8px;color:#555}
+  .b3d-section-s1{border-left:4px solid #60a5fa}
+  .b3d-section-s2{border-left:4px solid #a78bfa}
+  .b3d-section-s3{border-left:4px solid #27ae60}
+  .b3d-summary{font-size:8px;color:#888;margin-top:3px}
 </style>
 </head>
 <body>
