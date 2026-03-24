@@ -28133,7 +28133,7 @@ function updateBubbles() {
       if (!el) {
         el = document.createElement("div");
         el.className = "bubble3d";
-        el.innerHTML = `<div class="bx" onclick="this.classList.remove('show');this.parentNode._dismissed=true">\u2715</div><div class="bc"></div>`;
+        el.innerHTML = `<div class="bx" onclick="this.parentNode.classList.remove('show');this.parentNode._dismissed=true">\u2715</div><div class="bc"></div>`;
         el.addEventListener("wheel", (e) => e.stopPropagation(), { passive: true });
         document.body.appendChild(el);
         bubbles[key] = el;
@@ -28337,6 +28337,8 @@ function addLog(ev) {
     targets.forEach((m) => {
       if (!m.userData.thinkLog) m.userData.thinkLog = [];
       if (t2) m.userData.thinkLog.push(t2.slice(0, 200));
+      const b = bubbles[m.userData.id];
+      if (b) b._dismissed = false;
       if (m.userData.state === "idle" && (m.userData.userMsg || m.userData.thinkLog.length > 0)) {
         setMinionState(m.userData.id, "thinking", 6e4);
       }
