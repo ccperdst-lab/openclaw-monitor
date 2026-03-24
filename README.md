@@ -1,0 +1,158 @@
+# 🟢 OpenClaw Monitor 3D
+
+A real-time 3D visualization dashboard for [OpenClaw](https://github.com/openclaw/openclaw) agents and sessions. Each OpenClaw agent is a continent in a 3D world, each session is a cute minion walking around. Click a minion to see its live conversation, or send messages directly from the monitor.
+
+![Three.js](https://img.shields.io/badge/Three.js-3D-green) ![Node.js](https://img.shields.io/badge/Node.js-Server-blue)
+
+## Features
+
+- 🌍 **3D World** — Each agent gets a continent with a house, furniture, and decorations
+- 🟡 **Minions** — Every session is a unique minion with randomized appearance (height, color, eyes, hair)
+- 💬 **Live Bubbles** — Click a minion to see its real-time conversation (user messages, thinking, tool calls, replies)
+- 📡 **SSE Streaming** — Events push to the browser in real-time via Server-Sent Events
+- ✏️ **Direct Chat** — Type in the bubble input to send messages directly to the agent via Gateway
+- ❗ **Notifications** — Minions jump/wave with a red `!` when a conversation ends while the bubble is closed
+- 🏷️ **Chinese Names** — Each minion gets a random Chinese name displayed on its floating label
+- 🚫 **Collision** — AABB collision detection prevents minions from walking through walls and furniture
+- 💾 **Persistence** — Minion positions and profiles survive page reloads and world reinits
+- 📦 **Daemon Install** — One-command systemd user-level service installation
+
+## Architecture
+
+```
+┌─────────────┐     SSE      ┌──────────────┐     chokidar    ┌─────────────────┐
+│   Browser   │◄─────────────│  Monitor API │◄───────────────│ OpenClaw JSONL  │
+│  (Three.js) │   /api/events│  (Express)   │  watch .jsonl  │  session files  │
+└─────────────┘              └──────────────┘                 └─────────────────┘
+       │                           │
+       │ click minion              │ POST /api/chat/:sessionId
+       │ → show bubble             │ → `openclaw agent --session-id`
+       │                           │
+       ▼                           ▼
+┌─────────────┐              ┌──────────────┐
+│  Bubble UI  │              │ OpenClaw     │
+│  (DOM)      │              │ Gateway API  │
+└─────────────┘              └──────────────┘
+```
+
+### Data Flow
+
+1. **Server** reads `~/.openclaw/agents/*/sessions/sessions.json` to discover agents and sessions
+2. **Chokidar** watches each session's `.jsonl` file for new messages
+3. **Server** parses JSONL entries (`user`, `assistant`, `toolResult`) and broadcasts via SSE
+4. **Browser** renders minions, updates bubbles in real-time
+5. **Direct Chat** sends messages through `openclaw agent` CLI → Gateway → agent processes → writes to JSONL → SSE update
+
+## Quick Start
+
+### Prerequisites
+
+- Node.js 18+
+- OpenClaw installed and configured (`~/.openclaw`)
+- A running OpenClaw Gateway
+
+### Install
+
+```bash
+git clone https://github.com/ccperdst-lab/openclaw-monitor.git
+cd openclaw-monitor
+./install.sh install
+```
+
+This will:
+- Install npm dependencies
+- Build the JS bundle (via esbuild)
+- Create a systemd user service
+- Start the monitor on the configured port
+
+### Manual Run
+
+```bash
+npm install
+cd /tmp && mkdir -p esbuild-fix
+cp public/monitor-app.js esbuild-fix/app.js
+cd esbuild-fix && npx esbuild app.js --bundle --format=esm --outfile=../public/bundle.js
+cd ../.. && node server.js
+```
+
+## Configuration
+
+Edit `config.yaml`:
+
+```yaml
+openclawRoot: ~/.openclaw    # Path to OpenClaw state directory
+
+server:
+  port: 7777                  # Monitor server port
+  host: 0.0.0.0               # Bind address
+
+display:
+  showCron: false             # Show cron session minions
+  showSubagent: false         # Show subagent session minions
+  recentMinutes: 10           # Show thinking/tool messages from last N minutes
+```
+
+## Controls
+
+| Input | Action |
+|-------|--------|
+| WASD | Move camera |
+| Mouse drag | Rotate view |
+| Scroll wheel | Zoom in/out |
+| Space / Shift | Up / Down |
+| Click minion | Toggle conversation bubble |
+| Bubble input + Enter | Send direct message to agent |
+
+## API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/world` | Full world state (agents, sessions) |
+| GET | `/api/events` | SSE stream for real-time events |
+| GET | `/api/messages/:sessionId` | Recent messages from session JSONL |
+| POST | `/api/chat/:sessionId` | Send direct message to agent |
+| GET | `/api/config` | Current server config |
+| GET | `/api/resolve/:id` | Resolve Feishu user/group ID to name |
+| GET | `/api/minion-profiles` | Minion profiles (name, color, size) |
+| POST | `/api/minion-profiles` | Update minion profiles |
+
+## Service Management
+
+```bash
+# Status
+./install.sh status
+# or: systemctl --user status openclaw-monitor
+
+# Restart
+./install.sh restart
+# or: systemctl --user restart openclaw-monitor
+
+# Logs
+journalctl --user -u openclaw-monitor -f
+
+# Uninstall
+./install.sh uninstall
+```
+
+## Session Types
+
+Minions are labeled based on their session key:
+
+| Session Key Pattern | Type | Label |
+|---------------------|------|-------|
+| `agent:main:main` | Main session | 🏠 主会话 |
+| `agent:main:feishu:group:oc_xxx` | Feishu group | 💬 飞书群 |
+| `agent:main:feishu:dm:ou_xxx` | Feishu DM | 📩 飞书私信 |
+| `agent:main:cron:uuid` | Cron job | ⏰ 定时任务 |
+| `agent:main:subagent:uuid` | Subagent | 🤖 子代理 |
+
+## Tech Stack
+
+- **Frontend**: Three.js (3D rendering), vanilla JS (DOM bubbles), SSE (real-time events)
+- **Backend**: Express.js, chokidar (file watching), yaml (config)
+- **Build**: esbuild (bundle)
+- **Runtime**: OpenClaw CLI (`openclaw agent`) for direct chat delivery
+
+## License
+
+MIT
