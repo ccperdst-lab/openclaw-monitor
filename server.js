@@ -568,3 +568,54 @@ app.post('/api/cli', (req, res) => {
     res.json({ output: stdout || stderr || 'Done' });
   });
 });
+
+// Direct chat: inject message into session JSONL
+app.post('/api/chat/:sessionId', (req, res) => {
+  const sessionId = req.params.sessionId;
+  const text = (req.body.text || '').trim();
+  if (!text) return res.status(400).json({ error: 'Empty message' });
+
+  let filePath = null, agentName = null, sessionKey = null;
+  for (const [an, info] of Object.entries(agentState)) {
+    for (const [key, sess] of Object.entries(info.sessions)) {
+      if (sess.sessionId === sessionId) {
+        filePath = path.join(AGENTS_DIR, an, 'sessions', sessionId + '.jsonl');
+        agentName = an; sessionKey = key;
+        break;
+      }
+    }
+    if (filePath) break;
+  }
+  if (!filePath) return res.status(404).json({ error: 'Session not found' });
+
+  try {
+    const entry = {
+      type: 'message',
+      id: Math.random().toString(36).slice(2, 10),
+      parentId: null,
+      timestamp: new Date().toISOString(),
+      message: {
+        role: 'user',
+        content: [{ type: 'text', text: `[Direct Chat from Monitor] ${text}` }],
+      }
+    };
+    fs.appendFileSync(filePath, JSON.stringify(entry) + '\n');
+
+    // Also broadcast to SSE clients
+    broadcast({
+      type: 'event',
+      data: {
+        type: 'user_msg',
+        agent: agentName,
+        session: sessionKey,
+        msg: text,
+        userName: '🖥️ Monitor',
+        ts: new Date().toISOString(),
+      }
+    });
+
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});

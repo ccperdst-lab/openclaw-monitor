@@ -466,7 +466,8 @@ function getOrCreateBubble(sessionKey) {
   if (!el) {
     el = document.createElement('div');
     el.className = 'bubble3d';
-    el.innerHTML = `<div class="bub-hd"><span class="bub-avatar">🟡</span><span class="bub-user"></span><button class="bub-close" onclick="this.closest('.bubble3d').classList.remove('show');this.closest('.bubble3d')._dismissed=true">✕</button></div><div class="bub-msg"></div><div class="bub-acts collapsed" onclick="this.classList.toggle('collapsed')"><div class="bub-acts-hd"><span class="bub-acts-tri">▶</span><span class="bub-acts-lbl">思考过程</span><span class="bub-acts-cnt">0</span></div><div class="bub-acts-body"></div></div><div class="bub-foot"></div>`;
+    const sk = sessionKey;
+    el.innerHTML = `<div class="bub-hd"><span class="bub-avatar">🟡</span><span class="bub-user"></span><button class="bub-close" onclick="this.closest('.bubble3d').classList.remove('show');this.closest('.bubble3d')._dismissed=true">✕</button></div><div class="bub-msg"></div><div class="bub-acts collapsed" onclick="this.classList.toggle('collapsed')"><div class="bub-acts-hd"><span class="bub-acts-tri">▶</span><span class="bub-acts-lbl">思考过程</span><span class="bub-acts-cnt">0</span></div><div class="bub-acts-body"></div></div><div class="bub-chat"><input class="bub-chat-in" placeholder="直接对话..." onkeydown="if(event.key==='Enter'){event.stopPropagation();sendDirectChat('${sk}',this)}"/></div><div class="bub-foot"></div>`;
     document.body.appendChild(el);
     bubbles[sessionKey] = el;
   }
@@ -502,8 +503,15 @@ function updateBubbleContent(m) {
   // Thinking/tools
   const actsBody = el.querySelector('.bub-acts-body');
   const items = [];
-  for (const t of ud.thinkLog) items.push(`<div class="bact bact-think"><span>💭</span><span>${esc(t)}</span></div>`);
-  for (const t of ud.toolLog) items.push(`<div class="bact bact-tool"><span>🔧</span><span>${esc(t.name)} <em>${esc(t.args || '')}</em></span></div>`);
+  for (const t of ud.thinkLog) {
+    const text = typeof t === 'string' ? t : t.text;
+    const time = typeof t === 'string' ? '' : t.time;
+    items.push(`<div class="bact bact-think"><span>💭</span><span>${esc(text)}${time ? ` <em style="color:#999;font-size:9px">${esc(time)}</em>` : ''}</span></div>`);
+  }
+  for (const t of ud.toolLog) {
+    const time = t.time || '';
+    items.push(`<div class="bact bact-tool"><span>🔧</span><span>${esc(t.name)} <em>${esc(t.args || '')}</em>${time ? ` <em style="color:#999;font-size:9px">${esc(time)}</em>` : ''}</span></div>`);
+  }
   if (ud.replyText) items.push(`<div class="bact bact-reply"><span>💬</span><span>${esc(ud.replyText)}</span></div>`);
   actsBody.innerHTML = items.slice(-20).join('');
   el.querySelector('.bub-acts-cnt').textContent = ud.thinkLog.length + ud.toolLog.length;
@@ -562,16 +570,19 @@ function handleEvent(ev) {
     const b = bubbles[ud.sessionKey]; if (b) b._dismissed = false;
     showBubble(m);
   } else if (ev.type === 'thinking') {
-    ud.thinkLog.push((ev.thinking || '').slice(0, 150));
+    const now = new Date();
+    ud.thinkLog.push({ text: (ev.thinking || '').slice(0, 150), time: now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) });
     ud.state = 'thinking'; ud.lastEventTime = Date.now();
     const b = bubbles[ud.sessionKey]; if (b) b._dismissed = false;
     showBubble(m);
   } else if (ev.type === 'tool_use') {
-    ud.toolLog.push({ name: ev.tool, args: ev.args });
+    const now = new Date();
+    ud.toolLog.push({ name: ev.tool, args: ev.args, time: now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) });
     ud.state = 'thinking'; ud.lastEventTime = Date.now();
     showBubble(m);
   } else if (ev.type === 'tool_result') {
-    ud.toolLog.push({ name: ev.tool + ' ✓', args: ev.result });
+    const now = new Date();
+    ud.toolLog.push({ name: ev.tool + ' ✓', args: ev.result, time: now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) });
     showBubble(m);
   } else if (ev.type === 'reply_text') {
     ud.replyText = ev.text || '';
@@ -648,8 +659,8 @@ function animate() {
 
   // Camera movement (must match lookAt direction: sin(yaw), 0, cos(yaw))
   const forward = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
-  // right = up × forward (right-handed system)
-  const right = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), forward).normalize();
+  // right = forward × up (right-handed: if looking at +Z, right = +X)
+  const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize();
   const speed = moveSpeed * dt;
   if (keys.w) camera.position.addScaledVector(forward, speed);
   if (keys.s) camera.position.addScaledVector(forward, -speed);
@@ -737,6 +748,31 @@ window.runCmd = function() {
 };
 
 // ===== Helper =====
+// ===== Direct Chat =====
+window.sendDirectChat = function(sessionKey, inputEl) {
+  const text = inputEl.value.trim();
+  if (!text) return;
+  inputEl.value = '';
+  const minion = minions.find(m => m.userData.sessionKey === sessionKey);
+  if (!minion) return;
+  const sessionId = minion.userData.sessionId;
+
+  // Show in bubble immediately
+  const ud = minion.userData;
+  ud.userMsg = text;
+  ud.userName = '🖥️ Monitor';
+  ud.thinkLog = []; ud.toolLog = []; ud.replyText = '';
+  ud.state = 'thinking'; ud.lastEventTime = Date.now();
+  showBubble(minion);
+
+  // Send to server
+  fetch(`/api/chat/${sessionId}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text })
+  }).catch(e => console.error('Chat error:', e));
+};
+
 function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
 
 // ===== Resize =====
