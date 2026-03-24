@@ -65,7 +65,8 @@
   .bub-user{flex:1;font-size:12px;font-weight:700;color:#111;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .bub-close{background:none;border:none;cursor:pointer;color:#bbb;font-size:16px;font-weight:300;width:24px;height:24px;border-radius:6px;display:flex;align-items:center;justify-content:center;transition:background .15s,color .15s;flex-shrink:0;line-height:1}
   .bub-close:hover{background:#f3f4f6;color:#555}
-  .bub-msg{padding:9px 13px 7px;font-size:12px;color:#1f2937;line-height:1.6;word-break:break-word;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;border-bottom:1px solid #f3f4f6}
+  .bub-msg{padding:9px 13px 7px;font-size:12px;color:#1f2937;line-height:1.6;word-break:break-word;max-height:100px;overflow-y:auto;border-bottom:1px solid #f3f4f6}
+  .bub-msg::-webkit-scrollbar{width:3px}.bub-msg::-webkit-scrollbar-thumb{background:#d1d5db;border-radius:2px}
   .bub-acts{border-bottom:1px solid #f3f4f6}
   .bub-acts-hd{display:flex;align-items:center;gap:5px;padding:5px 13px;cursor:pointer;font-size:10px;color:#6b7280;transition:background .12s;user-select:none}
   .bub-acts-hd:hover{background:#f9fafb}

@@ -463,7 +463,7 @@ function updateBubblePosition(m, time) {
   const el = bubbles[m.userData.sessionKey];
   if (!el || !el.classList.contains('show')) return;
 
-  const pos = new THREE.Vector3(m.position.x, m.position.y + 3, m.position.z);
+  const pos = new THREE.Vector3(m.position.x, m.position.y + 2.2, m.position.z);
   const sp = pos.clone().project(camera);
   if (sp.z > 1) { el.classList.remove('show'); return; }
   const x = (sp.x * 0.5 + 0.5) * window.innerWidth;
