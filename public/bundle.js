@@ -28116,19 +28116,8 @@ function updateBubbles() {
       if (!el) {
         el = document.createElement("div");
         el.className = "bubble3d";
-        el.innerHTML = '<div class="bx">\u2715</div><div class="bc"></div>';
-        el.querySelector(".bx").addEventListener("click", function(e) {
-          el.classList.remove("show");
-          e.preventDefault();
-          e.stopPropagation();
-        });
-        el.addEventListener("pointerdown", function(e) {
-          e.stopPropagation();
-        }, false);
-        el.addEventListener("pointerup", (e) => e.stopPropagation(), false);
-        el.addEventListener("click", (e) => e.stopPropagation(), false);
+        el.innerHTML = `<div class="bx" onclick="this.classList.remove('show');this.parentNode._dismissed=true">\u2715</div><div class="bc"></div>`;
         el.addEventListener("wheel", (e) => e.stopPropagation(), { passive: true });
-        el.style.touchAction = "pan-y";
         document.body.appendChild(el);
         bubbles[key] = el;
       }
@@ -28145,7 +28134,7 @@ function updateBubbles() {
       if (camDist < 15 && !blocked && screenPos.z < 1) {
         el.style.left = Math.max(10, Math.min(window.innerWidth - 370, x - 120)) + "px";
         el.style.top = Math.max(10, Math.min(window.innerHeight - 300, y - 140)) + "px";
-        el.classList.add("show");
+        if (!el._dismissed) el.classList.add("show");
         const bc = el.querySelector(".bc");
         const thinkLog = ud.thinkLog || [];
         const toolLog = ud.toolLog || [];
@@ -28159,7 +28148,7 @@ function updateBubbles() {
           const totalSteps = thinkLog.length + toolLog.length;
           if (totalSteps > 0) {
             h += '<div class="b3d-section b3d-section-s2">';
-            h += `<div class="b3d-header collapsible">\u{1F9E0} \u601D\u8003\u8FC7\u7A0B (${thinkLog.length}\u6B65, ${toolLog.length}\u5DE5\u5177)</div>`;
+            h += `<div class="b3d-header collapsible" onclick="this.classList.toggle('collapsed');var b=this.nextElementSibling;if(b)b.classList.toggle('collapsed')">\u{1F9E0} \u601D\u8003\u8FC7\u7A0B (${thinkLog.length}\u6B65, ${toolLog.length}\u5DE5\u5177)</div>`;
             h += `<div class="b3d-body" style="max-height:180px;overflow-y:auto">`;
             const items = [];
             thinkLog.forEach((t) => items.push({ type: "think", data: t }));
@@ -28197,14 +28186,6 @@ function updateBubbles() {
           h += `</div></div>`;
         }
         bc.innerHTML = h;
-        bc.querySelectorAll(".b3d-header.collapsible").forEach((header) => {
-          header.addEventListener("click", function(e) {
-            e.stopPropagation();
-            this.classList.toggle("collapsed");
-            const body = this.nextElementSibling;
-            if (body) body.classList.toggle("collapsed");
-          });
-        });
       } else {
         el.classList.remove("show");
       }
@@ -28329,6 +28310,8 @@ function addLog(ev) {
       m.userData.thinkLog = [];
       m.userData.toolLog = [];
       m.userData.replyCount = 0;
+      const b = bubbles[m.userData.id];
+      if (b) b._dismissed = false;
     });
   }
   if (ev.type === "thinking_content") {
