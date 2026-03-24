@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const chokidar = require('chokidar');
 const YAML = require('yaml');
+const { execSync, exec } = require('child_process');
 
 // ===== Config =====
 const CONFIG_FILE = path.join(__dirname, 'config.yaml');
@@ -569,53 +570,53 @@ app.post('/api/cli', (req, res) => {
   });
 });
 
-// Direct chat: inject message into session JSONL
+// Direct chat: inject message via OpenClaw Gateway API
 app.post('/api/chat/:sessionId', (req, res) => {
   const sessionId = req.params.sessionId;
   const text = (req.body.text || '').trim();
   if (!text) return res.status(400).json({ error: 'Empty message' });
 
-  let filePath = null, agentName = null, sessionKey = null;
+  let agentName = null, sessionKey = null;
   for (const [an, info] of Object.entries(agentState)) {
     for (const [key, sess] of Object.entries(info.sessions)) {
       if (sess.sessionId === sessionId) {
-        filePath = path.join(AGENTS_DIR, an, 'sessions', sessionId + '.jsonl');
         agentName = an; sessionKey = key;
         break;
       }
     }
-    if (filePath) break;
+    if (sessionKey) break;
   }
-  if (!filePath) return res.status(404).json({ error: 'Session not found' });
+  if (!sessionKey) return res.status(404).json({ error: 'Session not found' });
 
-  try {
-    const entry = {
-      type: 'message',
-      id: Math.random().toString(36).slice(2, 10),
-      parentId: null,
-      timestamp: new Date().toISOString(),
-      message: {
-        role: 'user',
-        content: [{ type: 'text', text: `[Direct Chat from Monitor] ${text}` }],
-      }
-    };
-    fs.appendFileSync(filePath, JSON.stringify(entry) + '\n');
+  // Broadcast to SSE clients immediately so the bubble updates
+  broadcast({
+    type: 'event',
+    data: {
+      type: 'user_msg',
+      agent: agentName,
+      session: sessionKey,
+      msg: text,
+      userName: '🖥️ Monitor',
+      ts: new Date().toISOString(),
+    }
+  });
 
-    // Also broadcast to SSE clients
-    broadcast({
-      type: 'event',
-      data: {
-        type: 'user_msg',
-        agent: agentName,
-        session: sessionKey,
-        msg: text,
-        userName: '🖥️ Monitor',
-        ts: new Date().toISOString(),
-      }
-    });
+  // Send via Gateway API (same as `openclaw agent --session-id ... --message ...`)
+  const gwPort = config.gateway?.port || 18789;
+  const gwUrl = `http://127.0.0.1:${gwPort}/api/agent/message`;
 
-    res.json({ ok: true });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+  log('info', `Direct chat → session=${sessionId}, text="${text.slice(0, 80)}"`);
+
+  // Use async exec to avoid blocking the response
+  const safeText = text.replace(/"/g, '\\"').replace(/\n/g, '\\n');
+  const cmd = `openclaw agent --session-id "${sessionId}" --message "[Direct Chat from Monitor] ${safeText}" --json`;
+  exec(cmd, { timeout: 60000, env: { ...process.env } }, (err, stdout, stderr) => {
+    if (err) {
+      log('error', `Direct chat agent error: ${stderr || err.message}`);
+    } else {
+      log('info', `Direct chat agent response: ${(stdout || '').slice(0, 200)}`);
+    }
+  });
+
+  res.json({ ok: true, method: 'gateway' });
 });
