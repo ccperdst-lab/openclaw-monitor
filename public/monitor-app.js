@@ -21,41 +21,36 @@ container.appendChild(renderer.domElement);
 // Controls - FPS-style creative mode camera
 let yaw = 0, pitch = 0;
 let moveSpeed = 12;
-let pointerLocked = false;
 const keys = { w: false, a: false, s: false, d: false, space: false, shift: false };
 
-// Pointer lock: click overlay to lock, click canvas (locked) or ESC to unlock
-const clickCatcher = document.getElementById('click-catcher');
-clickCatcher.addEventListener('click', () => {
-  clickCatcher.classList.add('hidden');
-  renderer.domElement.requestPointerLock();
+// Mouse drag to rotate camera (no pointer lock - allows HTML interaction)
+let isDragging = false;
+let lastMX = 0, lastMY = 0;
+renderer.domElement.addEventListener('mousedown', e => {
+  if (e.button !== 0) return;
+  isDragging = true;
+  lastMX = e.clientX;
+  lastMY = e.clientY;
+  renderer.domElement.classList.add('dragging');
+  e.preventDefault();
 });
-document.addEventListener('pointerlockchange', () => {
-  pointerLocked = document.pointerLockElement === renderer.domElement;
-  document.body.style.cursor = pointerLocked ? 'none' : 'default';
-  if (!pointerLocked) clickCatcher.classList.remove('hidden');
-});
-// Canvas click when locked = unlock
-renderer.domElement.addEventListener('click', () => {
-  if (pointerLocked) document.exitPointerLock();
-});
-
-document.addEventListener('pointerlockchange', () => {
-  pointerLocked = document.pointerLockElement === renderer.domElement;
-  document.body.style.cursor = pointerLocked ? 'none' : 'default';
-});
-
-// Mouse look
-document.addEventListener('mousemove', e => {
-  if (!pointerLocked) return;
-  yaw -= e.movementX * 0.002;
-  pitch -= e.movementY * 0.002;
+window.addEventListener('mousemove', e => {
+  if (!isDragging) return;
+  const dx = e.clientX - lastMX;
+  const dy = e.clientY - lastMY;
+  yaw -= dx * 0.003;
+  pitch -= dy * 0.003;
   pitch = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, pitch));
+  lastMX = e.clientX;
+  lastMY = e.clientY;
+});
+window.addEventListener('mouseup', () => {
+  isDragging = false;
+  renderer.domElement.classList.remove('dragging');
 });
 
 // Keyboard
 window.addEventListener('keydown', e => {
-  // Skip game controls when typing in input/textarea
   const tag = e.target.tagName;
   if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable) return;
   if (e.key.toLowerCase() === 'w') keys.w = true;
@@ -64,11 +59,6 @@ window.addEventListener('keydown', e => {
   if (e.key.toLowerCase() === 'd') keys.d = true;
   if (e.key === ' ') { keys.space = true; e.preventDefault(); }
   if (e.key === 'Shift') { keys.shift = true; e.preventDefault(); }
-  // Ctrl+Tab releases mouse lock
-  if (e.key === 'Tab' && e.ctrlKey) {
-    e.preventDefault();
-    if (pointerLocked) document.exitPointerLock();
-  }
 });
 window.addEventListener('keyup', e => {
   const tag = e.target.tagName;
@@ -1186,7 +1176,6 @@ function updateBubbles() {
 
         // Capture ALL pointer events on bubble - exit pointer lock and consume events
         el.addEventListener('pointerdown', function(e) {
-          if (document.pointerLockElement) document.exitPointerLock();
           e.stopPropagation();
         }, false);
         el.addEventListener('pointerup', e => e.stopPropagation(), false);
@@ -1457,23 +1446,17 @@ function animate() {
   const dt = clock.getDelta();
   const time = clock.getElapsedTime();
 
-  // FPS camera movement
-  if (pointerLocked) {
-    const speed = moveSpeed * dt;
-    // Forward/back in the direction we're looking (horizontal only)
-    const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
-    const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
-
-    if (keys.w) camera.position.addScaledVector(forward, speed);
-    if (keys.s) camera.position.addScaledVector(forward, -speed);
-    if (keys.a) camera.position.addScaledVector(right, -speed);
-    if (keys.d) camera.position.addScaledVector(right, speed);
-    if (keys.space) camera.position.y += speed;
-    if (keys.shift) camera.position.y -= speed;
-
-    // Clamp camera y (don't go underground)
-    camera.position.y = Math.max(0.5, camera.position.y);
-  }
+  // Camera movement (WASD always active, drag to look)
+  const speed = moveSpeed * dt;
+  const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
+  const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
+  if (keys.w) camera.position.addScaledVector(forward, speed);
+  if (keys.s) camera.position.addScaledVector(forward, -speed);
+  if (keys.a) camera.position.addScaledVector(right, -speed);
+  if (keys.d) camera.position.addScaledVector(right, speed);
+  if (keys.space) camera.position.y += speed;
+  if (keys.shift) camera.position.y -= speed;
+  camera.position.y = Math.max(0.5, camera.position.y);
 
   // Apply look direction
   const lookDir = new THREE.Vector3(

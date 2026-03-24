@@ -27105,30 +27105,31 @@ container.appendChild(renderer.domElement);
 var yaw = 0;
 var pitch = 0;
 var moveSpeed = 12;
-var pointerLocked = false;
 var keys = { w: false, a: false, s: false, d: false, space: false, shift: false };
-var clickCatcher = document.getElementById("click-catcher");
-clickCatcher.addEventListener("click", () => {
-  clickCatcher.classList.add("hidden");
-  renderer.domElement.requestPointerLock();
+var isDragging = false;
+var lastMX = 0;
+var lastMY = 0;
+renderer.domElement.addEventListener("mousedown", (e) => {
+  if (e.button !== 0) return;
+  isDragging = true;
+  lastMX = e.clientX;
+  lastMY = e.clientY;
+  renderer.domElement.classList.add("dragging");
+  e.preventDefault();
 });
-document.addEventListener("pointerlockchange", () => {
-  pointerLocked = document.pointerLockElement === renderer.domElement;
-  document.body.style.cursor = pointerLocked ? "none" : "default";
-  if (!pointerLocked) clickCatcher.classList.remove("hidden");
-});
-renderer.domElement.addEventListener("click", () => {
-  if (pointerLocked) document.exitPointerLock();
-});
-document.addEventListener("pointerlockchange", () => {
-  pointerLocked = document.pointerLockElement === renderer.domElement;
-  document.body.style.cursor = pointerLocked ? "none" : "default";
-});
-document.addEventListener("mousemove", (e) => {
-  if (!pointerLocked) return;
-  yaw -= e.movementX * 2e-3;
-  pitch -= e.movementY * 2e-3;
+window.addEventListener("mousemove", (e) => {
+  if (!isDragging) return;
+  const dx = e.clientX - lastMX;
+  const dy = e.clientY - lastMY;
+  yaw -= dx * 3e-3;
+  pitch -= dy * 3e-3;
   pitch = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, pitch));
+  lastMX = e.clientX;
+  lastMY = e.clientY;
+});
+window.addEventListener("mouseup", () => {
+  isDragging = false;
+  renderer.domElement.classList.remove("dragging");
 });
 window.addEventListener("keydown", (e) => {
   const tag = e.target.tagName;
@@ -27144,10 +27145,6 @@ window.addEventListener("keydown", (e) => {
   if (e.key === "Shift") {
     keys.shift = true;
     e.preventDefault();
-  }
-  if (e.key === "Tab" && e.ctrlKey) {
-    e.preventDefault();
-    if (pointerLocked) document.exitPointerLock();
   }
 });
 window.addEventListener("keyup", (e) => {
@@ -28126,7 +28123,6 @@ function updateBubbles() {
           e.stopPropagation();
         });
         el.addEventListener("pointerdown", function(e) {
-          if (document.pointerLockElement) document.exitPointerLock();
           e.stopPropagation();
         }, false);
         el.addEventListener("pointerup", (e) => e.stopPropagation(), false);
@@ -28412,18 +28408,16 @@ function animate() {
   requestAnimationFrame(animate);
   const dt = clock.getDelta();
   const time = clock.getElapsedTime();
-  if (pointerLocked) {
-    const speed = moveSpeed * dt;
-    const forward = new Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
-    const right = new Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
-    if (keys.w) camera.position.addScaledVector(forward, speed);
-    if (keys.s) camera.position.addScaledVector(forward, -speed);
-    if (keys.a) camera.position.addScaledVector(right, -speed);
-    if (keys.d) camera.position.addScaledVector(right, speed);
-    if (keys.space) camera.position.y += speed;
-    if (keys.shift) camera.position.y -= speed;
-    camera.position.y = Math.max(0.5, camera.position.y);
-  }
+  const speed = moveSpeed * dt;
+  const forward = new Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
+  const right = new Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
+  if (keys.w) camera.position.addScaledVector(forward, speed);
+  if (keys.s) camera.position.addScaledVector(forward, -speed);
+  if (keys.a) camera.position.addScaledVector(right, -speed);
+  if (keys.d) camera.position.addScaledVector(right, speed);
+  if (keys.space) camera.position.y += speed;
+  if (keys.shift) camera.position.y -= speed;
+  camera.position.y = Math.max(0.5, camera.position.y);
   const lookDir = new Vector3(
     -Math.sin(yaw) * Math.cos(pitch),
     Math.sin(pitch),

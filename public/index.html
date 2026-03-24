@@ -9,8 +9,8 @@
   *{margin:0;padding:0;box-sizing:border-box}
   body{background:#0a0a1a;color:#e0e0e0;font-family:'Press Start 2P',monospace;overflow:hidden;height:100vh;user-select:none}
   #scene3d{position:fixed;top:0;left:0;width:100%;height:100%;z-index:1}
-  #click-catcher{position:fixed;top:0;left:0;width:100%;height:100%;z-index:2;cursor:crosshair}
-  #click-catcher.hidden{display:none}
+  #scene3d canvas{cursor:grab}
+  #scene3d canvas.dragging{cursor:grabbing}
 
   /* Drawer */
   #drawer{position:fixed;top:0;left:0;height:100vh;width:380px;background:rgba(8,8,24,0.93);backdrop-filter:blur(16px);border-right:2px solid rgba(83,216,251,0.2);z-index:100;transform:translateX(0);transition:transform 0.4s cubic-bezier(0.4,0,0.2,1);display:flex;flex-direction:column;box-shadow:6px 0 40px rgba(0,0,0,0.6)}
@@ -63,7 +63,6 @@
 </head>
 <body>
 <div id="scene3d"></div>
-<div id="click-catcher"></div>
 <div id="hud"><div class="hud"><span class="hd"></span>Online</div><div class="hud" id="h-rooms">Rooms: 0</div><div class="hud" id="h-sess">Sessions: 0</div></div>
 <div id="drawer">
   <div class="dh"><h1>🟢 OPENCLAW 3D</h1><div class="sub">Three.js Agent Monitor</div></div>
