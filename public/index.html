@@ -152,7 +152,7 @@
   <div class="dh"><h1>🟢 OPENCLAW 3D</h1><div class="sub">Agent Monitor — Direct FS</div></div>
   <div class="db">
     <div class="sec" id="sec-agents"><div class="sec-h">🏠 Agents <span class="arr">▼</span></div><div class="sec-b" id="b-agents"></div></div>
-    <div class="sec" id="sec-sessions"><div class="sec-h">📡 Sessions <span class="arr">▼</span></div><div class="sec-b" id="b-sessions"></div></div>
+    <div class="sec" id="sec-sessions"><div class="sec-h">📡 Sessions <span class="arr">▼</span></div><div class="sec-b"><input class="cmd-input" id="session-search" placeholder="🔍 搜索会话..." style="margin-bottom:6px" /><div id="b-sessions"></div></div></div>
     <div class="sec" id="sec-logs"><div class="sec-h">📋 Events <span class="arr">▼</span></div><div class="sec-b" id="b-logs" style="max-height:260px;overflow-y:auto"></div></div>
     <div class="sec" id="sec-cli"><div class="sec-h">⌨️ CLI <span class="arr">▼</span></div><div class="sec-b">
       <input class="cmd-input" id="cmd-in" placeholder="openclaw status ..." />
@@ -162,7 +162,8 @@
 </div>
 <button id="toggle">☰</button>
 <canvas id="minimap" width="200" height="200" style="position:fixed;bottom:14px;right:14px;z-index:90;background:rgba(8,8,24,0.75);border:2px solid rgba(83,216,251,0.3);border-radius:6px;cursor:pointer"></canvas>
-<div id="help">WASD 移动 · 鼠标拖拽转向 · 滚轮缩放 · 点击小黄人查看详情 · R 下雨</div>
+<div id="fps-badge" style="position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:90;font-size:7px;padding:3px 10px;border-radius:10px;background:rgba(8,8,24,0.7);border:1px solid rgba(83,216,251,0.15);color:#889;font-family:monospace;pointer-events:none">-- FPS</div>
+<div id="help">WASD 移动 · 鼠标拖拽转向 · 滚轮缩放 · 点击小黄人查看详情 · 双击跟踪 · R 下雨 · F1 截图 · 1-9 跳转大洲</div>
 <script type="module" src="/bundle.js"></script>
 </body>
 </html>

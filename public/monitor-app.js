@@ -25,6 +25,186 @@ let isDragging = false, dragStarted = false, lastMX = 0, lastMY = 0;
 // Focus management: track if user is interacting with a DOM overlay
 let interactingWithOverlay = false;
 
+// ===== Feature: Follow Mode (Double-Click Tracking) =====
+let followMinion = null; // minion being followed, or null
+const FOLLOW_OFFSET = new THREE.Vector3(0, 4, 5); // above and behind
+
+// ===== Feature: Screenshot Mode =====
+let screenshotMode = false;
+
+// ===== Feature: FPS Counter =====
+let fpsFrames = 0, fpsLastTime = performance.now(), fpsValue = 0;
+
+// ===== Feature: Number Key Camera Transition =====
+let cameraTransition = null; // { startPos, endPos, progress, duration }
+
+// ===== Feature: Spawn Effects =====
+const spawnEffects = []; // { ring, life, maxLife }
+
+function createSpawnEffect(x, z) {
+  // Outer expanding ring
+  const ringGeo = new THREE.RingGeometry(0.1, 0.3, 32);
+  const ringMat = new THREE.MeshBasicMaterial({
+    color: 0xffd700, transparent: true, opacity: 0.8,
+    side: THREE.DoubleSide, depthWrite: false
+  });
+  const ring = new THREE.Mesh(ringGeo, ringMat);
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.set(x, 0.05, z);
+  scene.add(ring);
+
+  // Inner glow ring
+  const innerGeo = new THREE.RingGeometry(0.05, 0.15, 32);
+  const innerMat = new THREE.MeshBasicMaterial({
+    color: 0xffffff, transparent: true, opacity: 0.9,
+    side: THREE.DoubleSide, depthWrite: false
+  });
+  const inner = new THREE.Mesh(innerGeo, innerMat);
+  inner.rotation.x = -Math.PI / 2;
+  inner.position.set(x, 0.06, z);
+  scene.add(inner);
+
+  // Rising particles (small spheres)
+  const particles = [];
+  for (let i = 0; i < 8; i++) {
+    const angle = (i / 8) * Math.PI * 2;
+    const pGeo = new THREE.SphereGeometry(0.04, 6, 6);
+    const pMat = new THREE.MeshBasicMaterial({
+      color: 0xffd700, transparent: true, opacity: 0.8
+    });
+    const p = new THREE.Mesh(pGeo, pMat);
+    p.position.set(x + Math.cos(angle) * 0.3, 0.1, z + Math.sin(angle) * 0.3);
+    p.userData = { angle, speed: 1.5 + Math.random() * 0.5, riseSpeed: 1 + Math.random() * 0.5 };
+    scene.add(p);
+    particles.push(p);
+  }
+
+  spawnEffects.push({ ring, inner, particles, life: 1.5, maxLife: 1.5 });
+}
+
+function updateSpawnEffects(dt) {
+  for (let i = spawnEffects.length - 1; i >= 0; i--) {
+    const se = spawnEffects[i];
+    se.life -= dt;
+    const progress = 1 - se.life / se.maxLife; // 0→1
+
+    // Expand ring
+    const scale = 1 + progress * 4;
+    se.ring.scale.set(scale, scale, 1);
+    se.ring.material.opacity = 0.8 * (1 - progress);
+
+    // Inner ring
+    const innerScale = 1 + progress * 2.5;
+    se.inner.scale.set(innerScale, innerScale, 1);
+    se.inner.material.opacity = 0.9 * (1 - progress);
+
+    // Particles rise and spread
+    for (const p of se.particles) {
+      const ud = p.userData;
+      const dist = progress * 1.5 * ud.speed;
+      p.position.x = se.ring.position.x + Math.cos(ud.angle) * (0.3 + dist);
+      p.position.z = se.ring.position.z + Math.sin(ud.angle) * (0.3 + dist);
+      p.position.y = 0.1 + progress * 1.5 * ud.riseSpeed;
+      p.material.opacity = 0.8 * (1 - progress);
+    }
+
+    if (se.life <= 0) {
+      scene.remove(se.ring); se.ring.geometry.dispose(); se.ring.material.dispose();
+      scene.remove(se.inner); se.inner.geometry.dispose(); se.inner.material.dispose();
+      for (const p of se.particles) { scene.remove(p); p.geometry.dispose(); p.material.dispose(); }
+      spawnEffects.splice(i, 1);
+    }
+  }
+}
+
+// ===== Feature: Seasonal Theme =====
+const currentMonth = new Date().getMonth() + 1; // 1-12
+const season = currentMonth >= 3 && currentMonth <= 5 ? 'spring' :
+               currentMonth >= 6 && currentMonth <= 8 ? 'summer' :
+               currentMonth >= 9 && currentMonth <= 11 ? 'autumn' : 'winter';
+
+// ===== Feature: Snow particles (winter) =====
+const snowParticles = [];
+function initSnowSystem() {
+  if (season !== 'winter') return;
+  const snowGeo = new THREE.SphereGeometry(0.03, 4, 4);
+  const snowMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7 });
+  for (let i = 0; i < 150; i++) {
+    const snow = new THREE.Mesh(snowGeo, snowMat.clone());
+    snow.position.set(
+      (Math.random() - 0.5) * 100,
+      2 + Math.random() * 18,
+      (Math.random() - 0.5) * 100
+    );
+    snow.userData = {
+      speed: 0.3 + Math.random() * 0.4,
+      wobble: Math.random() * Math.PI * 2,
+      drift: (Math.random() - 0.5) * 0.3,
+    };
+    scene.add(snow);
+    snowParticles.push(snow);
+  }
+}
+
+function updateSnow(dt, time) {
+  for (const s of snowParticles) {
+    const ud = s.userData;
+    s.position.y -= ud.speed * dt;
+    s.position.x += Math.sin(time * 0.8 + ud.wobble) * ud.drift * dt;
+    s.position.z += Math.cos(time * 0.6 + ud.wobble) * ud.drift * dt * 0.5;
+    if (s.position.y < 0) {
+      s.position.y = 15 + Math.random() * 5;
+      s.position.x = (Math.random() - 0.5) * 100;
+      s.position.z = (Math.random() - 0.5) * 100;
+    }
+  }
+}
+
+function applySeasonalTheme() {
+  // Apply seasonal color shifts to materials
+  switch (season) {
+    case 'spring':
+      mat.grass.color.set(0x7ed984);       // lighter green
+      mat.grassDark.color.set(0x5cb86a);
+      mat.flowerPink.color.set(0xffb6c1);   // pinker flowers
+      mat.flowerRed.color.set(0xff6b81);
+      break;
+    case 'summer':
+      mat.grass.color.set(0x5ec269);        // bright colors (default)
+      mat.grassDark.color.set(0x48a854);
+      break;
+    case 'autumn':
+      mat.grass.color.set(0xc4a235);         // golden grass
+      mat.grassDark.color.set(0xa68628);
+      mat.leafGreen.color.set(0xd4880f);     // orange leaves
+      mat.leafDark.color.set(0x8b5e14);
+      mat.bushGreen.color.set(0xb87333);     // brown bushes
+      mat.flowerRed.color.set(0xcc5500);     // autumn flowers
+      mat.flowerPink.color.set(0xd4837a);
+      break;
+    case 'winter':
+      mat.grass.color.set(0xd4dde6);         // white/blue tint
+      mat.grassDark.color.set(0xb8c5d4);
+      mat.leafGreen.color.set(0x8faabc);     // frosted leaves
+      mat.leafDark.color.set(0x6d8a9e);
+      mat.bushGreen.color.set(0x9ab0bf);
+      break;
+  }
+
+  // Sky tint for seasons
+  if (season === 'autumn') {
+    scene.background = new THREE.Color(0xd4a574);
+    scene.fog.color.set(0xd4a574);
+  } else if (season === 'winter') {
+    scene.background = new THREE.Color(0xb8cfe0);
+    scene.fog.color.set(0xb8cfe0);
+  }
+}
+
+// Apply theme immediately
+applySeasonalTheme();
+initSnowSystem();
+
 // ===== Day/Night Cycle =====
 let gameTime = 0; // 0-120s cycle
 const DAY_CYCLE = 120;
@@ -61,6 +241,25 @@ renderer.domElement.addEventListener('mousedown', e => {
   });
   e.preventDefault();
 });
+
+// Double-click: follow minion
+renderer.domElement.addEventListener('dblclick', e => {
+  e.preventDefault();
+  const mouse = new THREE.Vector2(
+    (e.clientX / window.innerWidth) * 2 - 1,
+    -(e.clientY / window.innerHeight) * 2 + 1
+  );
+  raycaster.setFromCamera(mouse, camera);
+  const hits = raycaster.intersectObjects(clickables, true);
+  if (hits.length > 0) {
+    let target = hits[0].object;
+    while (target.parent && !target.userData.sessionKey) target = target.parent;
+    if (target.userData.sessionKey) {
+      followMinion = target;
+    }
+  }
+});
+
 window.addEventListener('mousemove', e => {
   if (!isDragging) return;
   const dx = e.clientX - lastMX, dy = e.clientY - lastMY;
@@ -86,7 +285,59 @@ function isInputFocused() {
   return tag === 'INPUT' || tag === 'TEXTAREA';
 }
 window.addEventListener('keydown', e => {
+  // Escape: exit follow mode (works even when interacting with overlay)
+  if (e.code === 'Escape') {
+    if (followMinion) { followMinion = null; return; }
+  }
+
   if (isInputFocused() || interactingWithOverlay) return;
+
+  // F1: screenshot mode toggle
+  if (e.code === 'F1') {
+    e.preventDefault();
+    screenshotMode = !screenshotMode;
+    const els = ['drawer', 'toggle', 'hud', 'help'];
+    els.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.style.display = screenshotMode ? 'none' : '';
+    });
+    const fpsEl = document.getElementById('fps-badge');
+    if (fpsEl) fpsEl.style.display = screenshotMode ? 'none' : '';
+    const minimap = document.getElementById('minimap');
+    if (minimap) minimap.style.display = screenshotMode ? 'none' : '';
+    // Toggle bubbles
+    Object.values(bubbles).forEach(b => {
+      if (screenshotMode) b.style.display = 'none';
+      else b.style.display = '';
+    });
+    Object.values(mcpBubbles).forEach(b => {
+      if (b) { if (screenshotMode) b.style.display = 'none'; else b.style.display = ''; }
+    });
+    return;
+  }
+
+  // Number keys 1-9: jump to continent
+  if (e.code >= 'Digit1' && e.code <= 'Digit9') {
+    const idx = parseInt(e.key) - 1;
+    if (idx < agents.length) {
+      const cols = Math.ceil(Math.sqrt(agents.length));
+      const col = idx % cols, row = Math.floor(idx / cols);
+      const W2 = 22, D = 22;
+      const ox = col * (W2 + 6) - (cols - 1) * (W2 + 6) / 2;
+      const oz = row * (D + 6) - (Math.ceil(agents.length / cols) - 1) * (D + 6) / 2;
+      const cx = ox + W2 / 2, cz = oz + D / 2;
+      cameraTransition = {
+        startPos: camera.position.clone(),
+        endPos: new THREE.Vector3(cx + 5, 20, cz + 15),
+        progress: 0,
+        duration: 0.5
+      };
+      // Exit follow mode when jumping
+      followMinion = null;
+    }
+    return;
+  }
+
   if (e.code === 'KeyW') keys.w = true;
   else if (e.code === 'KeyA') keys.a = true;
   else if (e.code === 'KeyS') keys.s = true;
@@ -716,6 +967,9 @@ function parseSessionKey(key) {
   return { type: parts[2] || 'session', label: key.slice(0, 30), icon: '❓' };
 }
 
+// ===== Feature: Known session keys for spawn detection =====
+const knownSessionKeys = new Set();
+
 // ===== Init World =====
 function initWorld(worldData) {
   // Save existing minion positions & state before clearing
@@ -821,6 +1075,12 @@ function initWorld(worldData) {
       minions.push(m);
       clickables.push(m);
 
+      // Spawn effect for new minions
+      if (!knownSessionKeys.has(sess.key)) {
+        knownSessionKeys.add(sess.key);
+        createSpawnEffect(m.position.x, m.position.z);
+      }
+
       // Restore bubble state if it was open
       const sb = savedBubbles[sess.key];
       if (sb && sb.show) {
@@ -847,10 +1107,21 @@ function initWorld(worldData) {
 
   // Drawer: sessions
   const sessEl = document.getElementById('b-sessions');
-  sessEl.innerHTML = agents.flatMap(a => a.sessions.map(s => {
+  sessEl.innerHTML = agents.flatMap((a, ai) => a.sessions.map(s => {
     const p = parseSessionKey(s.key);
-    return `<div class="row"><span>${p.icon} ${esc(s.label || p.label)}</span><span style="color:#556;font-size:7px">${esc(a.name)}</span></div>`;
+    const profile = s.profile || {};
+    const searchText = `${s.label || p.label} ${s.key} ${profile.name || ''}`.replace(/"/g, '&quot;');
+    return `<div class="row sess-row" data-agent-index="${ai}" data-search-text="${searchText}" style="cursor:pointer"><span>${p.icon} ${esc(s.label || p.label)}</span><span style="color:#556;font-size:7px">${esc(a.name)}</span></div>`;
   })).join('');
+
+  // Add click handlers to session rows for teleport
+  sessEl.querySelectorAll('.sess-row').forEach(row => {
+    row.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const agentIdx = parseInt(row.dataset.agentIndex);
+      teleportToContinent(agentIdx);
+    });
+  });
 }
 
 // ===== Bubbles =====
@@ -1462,6 +1733,44 @@ window.addEventListener('click', (e) => {
   }
 });
 
+// ===== Feature: Minion Expressions =====
+function updateMinionExpressions() {
+  for (const m of minions) {
+    const ud = m.userData;
+    // Find pupil meshes (they use mat.pupil material)
+    m.children.forEach(child => {
+      if (child.material === mat.pupil) {
+        switch (ud.state) {
+          case 'thinking':
+            // Pupils slightly larger, looking up
+            child.scale.set(1.2, 1.2, 1.2);
+            child.position.y += 0; // position.y already set; adjust relative via userData
+            // Offset pupil upward slightly
+            child.userData._baseY = child.userData._baseY || child.position.y;
+            child.position.y = child.userData._baseY + 0.01;
+            break;
+          case 'done':
+            // Normal size, slight smile effect via slightly wider pupils
+            child.scale.set(1.0, 0.9, 1.0);
+            child.userData._baseY = child.userData._baseY || child.position.y;
+            child.position.y = child.userData._baseY;
+            break;
+          case 'streaming':
+            child.scale.set(1.15, 1.15, 1.15);
+            child.userData._baseY = child.userData._baseY || child.position.y;
+            child.position.y = child.userData._baseY + 0.005;
+            break;
+          default: // idle
+            child.scale.set(1.0, 1.0, 1.0);
+            child.userData._baseY = child.userData._baseY || child.position.y;
+            child.position.y = child.userData._baseY;
+            break;
+        }
+      }
+    });
+  }
+}
+
 // ===== Animation Loop =====
 function animate() {
   requestAnimationFrame(animate);
@@ -1668,6 +1977,74 @@ function animate() {
   // Report positions to server periodically
   reportPositions();
 
+  // ===== Feature: Follow Mode Camera =====
+  if (followMinion) {
+    const targetPos = new THREE.Vector3(
+      followMinion.position.x + FOLLOW_OFFSET.x,
+      followMinion.position.y + FOLLOW_OFFSET.y,
+      followMinion.position.z + FOLLOW_OFFSET.z
+    );
+    camera.position.lerp(targetPos, 0.05);
+    const lookAt = new THREE.Vector3(followMinion.position.x, followMinion.position.y + 1, followMinion.position.z);
+    camera.lookAt(lookAt);
+    // Update yaw/pitch to match
+    const dir = new THREE.Vector3().subVectors(lookAt, camera.position).normalize();
+    yaw = Math.atan2(dir.x, dir.z);
+    pitch = Math.asin(dir.y);
+
+    // Show pin indicator on followed minion label (only once)
+    if (!followMinion.userData._hasPin) {
+      followMinion.userData._hasPin = true;
+      const parsed = parseSessionKey(followMinion.userData.sessionKey);
+      const labelLine = `📌 ${parsed.icon} ${followMinion.userData.sessionLabel || parsed.label}`;
+      addNameLabel(followMinion, labelLine, followMinion.userData.chineseName);
+    }
+  } else if (minions.some(m => m.userData._hasPin)) {
+    // Remove pin from any minion that had it
+    for (const m of minions) {
+      if (m.userData._hasPin) {
+        m.userData._hasPin = false;
+        const parsed = parseSessionKey(m.userData.sessionKey);
+        const labelLine = `${parsed.icon} ${m.userData.sessionLabel || parsed.label}`;
+        addNameLabel(m, labelLine, m.userData.chineseName);
+      }
+    }
+  }
+
+  // ===== Feature: Camera Transition (number keys) =====
+  if (cameraTransition) {
+    cameraTransition.progress += dt / cameraTransition.duration;
+    if (cameraTransition.progress >= 1) {
+      camera.position.copy(cameraTransition.endPos);
+      cameraTransition = null;
+    } else {
+      // Smooth ease in-out
+      const t = cameraTransition.progress;
+      const ease = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+      camera.position.lerpVectors(cameraTransition.startPos, cameraTransition.endPos, ease);
+    }
+  }
+
+  // ===== Feature: Spawn Effects =====
+  updateSpawnEffects(dt);
+
+  // ===== Feature: Snow =====
+  if (season === 'winter') updateSnow(dt, time);
+
+  // ===== Feature: FPS Counter =====
+  fpsFrames++;
+  const now = performance.now();
+  if (now - fpsLastTime >= 500) {
+    fpsValue = Math.round(fpsFrames / ((now - fpsLastTime) / 1000));
+    fpsFrames = 0;
+    fpsLastTime = now;
+    const fpsEl = document.getElementById('fps-badge');
+    if (fpsEl) fpsEl.textContent = fpsValue + ' FPS';
+  }
+
+  // ===== Feature: Minion Expressions =====
+  updateMinionExpressions();
+
   // Update floating petals
   updatePetals(dt, time);
 
@@ -1701,7 +2078,54 @@ function animate() {
     }
   }
 
+  // Update canopy shader time uniforms
+  scene.traverse(obj => {
+    if (obj.material?.uniforms?.uTime && obj.material !== grassInstances[0]?.mat && !window._waterMeshes?.includes(obj)) {
+      obj.material.uniforms.uTime.value = time;
+    }
+  });
+
+  // Seasonal sky override (reapply in case day/night changed it)
+  if (season === 'autumn' || season === 'winter') {
+    // Blend seasonal tint with day/night cycle
+    const seasonTint = season === 'autumn' ? new THREE.Color(0xd4a574) : new THREE.Color(0xb8cfe0);
+    scene.background.lerp(seasonTint, 0.3);
+    scene.fog.color.lerp(seasonTint, 0.3);
+  }
+
   renderer.render(scene, camera);
+}
+
+// ===== Session Search Filter =====
+function filterSessions(query) {
+  const sessEl = document.getElementById('b-sessions');
+  if (!sessEl) return;
+  if (!query) {
+    // Show all
+    sessEl.querySelectorAll('.sess-row').forEach(r => r.style.display = '');
+    return;
+  }
+  sessEl.querySelectorAll('.sess-row').forEach(r => {
+    const searchText = (r.dataset.searchText || '').toLowerCase();
+    r.style.display = searchText.includes(query) ? '' : 'none';
+  });
+}
+
+function teleportToContinent(agentIndex) {
+  if (agentIndex < 0 || agentIndex >= agents.length) return;
+  const cols = Math.ceil(Math.sqrt(agents.length));
+  const col = agentIndex % cols, row = Math.floor(agentIndex / cols);
+  const W2 = 22, D = 22;
+  const ox = col * (W2 + 6) - (cols - 1) * (W2 + 6) / 2;
+  const oz = row * (D + 6) - (Math.ceil(agents.length / cols) - 1) * (D + 6) / 2;
+  const cx = ox + W2 / 2, cz = oz + D / 2;
+  cameraTransition = {
+    startPos: camera.position.clone(),
+    endPos: new THREE.Vector3(cx + 5, 20, cz + 15),
+    progress: 0,
+    duration: 0.5
+  };
+  followMinion = null;
 }
 
 // ===== CLI =====
@@ -1794,6 +2218,21 @@ window.addEventListener('resize', () => {
   // Drawer body: stop mouse events from reaching canvas
   drawer.addEventListener('mousedown', (e) => e.stopPropagation());
   drawer.addEventListener('mouseup', (e) => e.stopPropagation());
+
+  // Session search filter
+  const searchInput = document.getElementById('session-search');
+  if (searchInput) {
+    searchInput.addEventListener('input', () => {
+      filterSessions(searchInput.value.trim().toLowerCase());
+    });
+    searchInput.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Escape') { searchInput.blur(); }
+    });
+    searchInput.addEventListener('focus', () => { interactingWithOverlay = true; });
+    searchInput.addEventListener('blur', () => { interactingWithOverlay = false; });
+    searchInput.addEventListener('mousedown', (e) => e.stopPropagation());
+  }
 })();
 
 // ===== Clouds (sky decoration) =====
