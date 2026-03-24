@@ -24,18 +24,23 @@ let moveSpeed = 12;
 let pointerLocked = false;
 const keys = { w: false, a: false, s: false, d: false, space: false, shift: false };
 
-// Request pointer lock on click (only on canvas, not on UI elements)
+// Pointer lock: click canvas to lock, click again to unlock
+let lockClicks = 0;
 renderer.domElement.addEventListener('click', () => {
-  if (!pointerLocked && !document.querySelector('.bubble3d.show')) {
-    renderer.domElement.requestPointerLock();
+  if (pointerLocked) {
+    document.exitPointerLock();
+    lockClicks = 0;
+  } else {
+    lockClicks++;
+    if (lockClicks === 1) {
+      renderer.domElement.requestPointerLock();
+    }
   }
 });
-// Auto-exit pointer lock when interacting with UI
-function exitLockIfActive() {
-  if (document.pointerLockElement) document.exitPointerLock();
-}
-document.getElementById('drawer').addEventListener('pointerdown', exitLockIfActive);
-document.getElementById('toggle').addEventListener('pointerdown', exitLockIfActive);
+// ESC to exit pointer lock
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && pointerLocked) document.exitPointerLock();
+});
 
 document.addEventListener('pointerlockchange', () => {
   pointerLocked = document.pointerLockElement === renderer.domElement;
