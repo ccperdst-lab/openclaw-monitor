@@ -27384,31 +27384,94 @@ function buildRoom(ox, oz, w, d, label) {
   scene.add(group);
   return group;
 }
-function addNameLabel(minion, name) {
+var MINION_NAMES = [
+  "\u5C0F\u660E",
+  "\u963F\u82B1",
+  "\u5927\u58EE",
+  "\u5C0F\u7F8E",
+  "\u963F\u798F",
+  "\u5C0F\u9F99",
+  "\u5927\u5B9D",
+  "\u5C0F\u96EA",
+  "\u963F\u6770",
+  "\u5C0F\u82B3",
+  "\u963F\u5F3A",
+  "\u5C0F\u7EA2",
+  "\u5927\u4F1F",
+  "\u5C0F\u73B2",
+  "\u963F\u4EAE",
+  "\u5C0F\u9752",
+  "\u5927\u5175",
+  "\u5C0F\u6708",
+  "\u963F\u6D9B",
+  "\u5C0F\u71D5",
+  "\u963F\u98DE",
+  "\u5C0F\u4E91",
+  "\u5927\u5C71",
+  "\u5C0F\u96E8",
+  "\u963F\u519B",
+  "\u5C0F\u661F",
+  "\u5927\u9F99",
+  "\u5C0F\u971E",
+  "\u963F\u5CF0",
+  "\u5C0F\u7389",
+  "\u963F\u6587",
+  "\u5C0F\u5170",
+  "\u5927\u6D77",
+  "\u5C0F\u51E4",
+  "\u963F\u52C7",
+  "\u5C0F\u83B2",
+  "\u5927\u9E4F",
+  "\u5C0F\u7434",
+  "\u963F\u534E",
+  "\u5C0F\u83CA"
+];
+var usedMinionNames = /* @__PURE__ */ new Set();
+function getRandomChineseName() {
+  const available = MINION_NAMES.filter((n) => !usedMinionNames.has(n));
+  const pool = available.length > 0 ? available : MINION_NAMES;
+  const name = pool[Math.floor(Math.random() * pool.length)];
+  usedMinionNames.add(name);
+  return name;
+}
+function addNameLabel(minion, feishuName, chineseName) {
   const old = minion.children.find((c) => c.userData && c.userData.isNameLabel);
   if (old) minion.remove(old);
   const canvas = document.createElement("canvas");
   canvas.width = 256;
-  canvas.height = 64;
+  canvas.height = 96;
   const ctx = canvas.getContext("2d");
-  ctx.clearRect(0, 0, 256, 64);
-  ctx.fillStyle = "rgba(0,0,0,0.6)";
-  const w = Math.min(240, ctx.measureText(name).width + 40);
+  ctx.clearRect(0, 0, 256, 96);
+  ctx.font = "bold 20px sans-serif";
+  const topW = ctx.measureText(feishuName || "").width;
+  ctx.font = "14px sans-serif";
+  const botW = ctx.measureText(chineseName || "").width;
+  const pillW = Math.min(240, Math.max(topW, botW) + 40);
+  ctx.fillStyle = "rgba(0,0,0,0.65)";
   ctx.beginPath();
-  ctx.roundRect(128 - w / 2, 10, w, 44, 12);
+  ctx.roundRect(128 - pillW / 2, 6, pillW, 84, 14);
   ctx.fill();
-  ctx.fillStyle = "#fff";
-  ctx.font = "bold 22px sans-serif";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(name.slice(0, 12), 128, 32);
+  if (feishuName) {
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 20px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(feishuName.slice(0, 14), 128, 32);
+  }
+  if (chineseName) {
+    ctx.fillStyle = "#b0d4f1";
+    ctx.font = "14px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(chineseName, 128, 62);
+  }
   const tex = new CanvasTexture(canvas);
   tex.needsUpdate = true;
   const label = new Mesh(
-    new PlaneGeometry(2, 0.5),
+    new PlaneGeometry(2.2, 0.8),
     new MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, side: DoubleSide })
   );
-  label.position.set(0, 2.2, 0);
+  label.position.set(0, 2.5, 0);
   label.userData.isNameLabel = true;
   label.onBeforeRender = function(renderer2, scene2, camera2) {
     this.quaternion.copy(camera2.quaternion);
@@ -27418,84 +27481,121 @@ function addNameLabel(minion, name) {
 function createMinion(colorHex) {
   const group = new Group();
   const bodyMat = new MeshStandardMaterial({ color: colorHex || 16109619, roughness: 0.5 });
-  const body = new Mesh(new CylinderGeometry(0.35, 0.38, 1.2, 16), bodyMat);
-  body.position.y = 0.9;
+  const heightScale = 0.8 + Math.random() * 0.4;
+  const widthScale = 0.9 + Math.random() * 0.2;
+  const bodyRadius = 0.35 * widthScale;
+  const bodyHeight = 1.2 * heightScale;
+  group.userData.heightScale = heightScale;
+  group.userData.widthScale = widthScale;
+  const body = new Mesh(new CylinderGeometry(bodyRadius, bodyRadius * 1.08, bodyHeight, 16), bodyMat);
+  body.position.y = 0.5 + bodyHeight / 2;
   body.castShadow = true;
   group.add(body);
-  const overalls = new Mesh(new CylinderGeometry(0.37, 0.39, 0.5, 16), mat.minionBlue);
-  overalls.position.y = 0.5;
+  const overalls = new Mesh(new CylinderGeometry(bodyRadius * 1.05, bodyRadius * 1.1, bodyHeight * 0.4, 16), mat.minionBlue);
+  overalls.position.y = 0.5 + bodyHeight * 0.2;
   group.add(overalls);
-  const strap = new Mesh(new TorusGeometry(0.36, 0.04, 8, 32), mat.minionGoggle);
-  strap.position.y = 1.25;
+  const strap = new Mesh(new TorusGeometry(bodyRadius * 1.02, 0.04, 8, 32), mat.minionGoggle);
+  strap.position.y = 0.5 + bodyHeight * 0.78;
   strap.rotation.x = Math.PI / 2;
   group.add(strap);
+  const headRadius = bodyRadius * (0.65 + Math.random() * 0.15);
+  const head = new Mesh(new SphereGeometry(headRadius, 16, 12), bodyMat);
+  head.position.y = 0.5 + bodyHeight + headRadius * 0.5;
+  head.castShadow = true;
+  group.add(head);
   const isOneEye = Math.random() > 0.5;
+  const eyeY = 0.5 + bodyHeight * 0.82;
   if (isOneEye) {
     const goggleRing = new Mesh(new TorusGeometry(0.18, 0.04, 8, 16), mat.minionGoggle);
-    goggleRing.position.set(0, 1.28, 0.32);
+    goggleRing.position.set(0, eyeY, bodyRadius * 0.92);
     group.add(goggleRing);
     const goggleGlass = new Mesh(new CircleGeometry(0.17, 16), mat.minionGoggleGlass);
-    goggleGlass.position.set(0, 1.28, 0.33);
+    goggleGlass.position.set(0, eyeY, bodyRadius * 0.94);
     group.add(goggleGlass);
     const eyeWhite = new Mesh(new CircleGeometry(0.14, 16), new MeshStandardMaterial({ color: 16777215 }));
-    eyeWhite.position.set(0, 1.28, 0.34);
+    eyeWhite.position.set(0, eyeY, bodyRadius * 0.96);
     group.add(eyeWhite);
     const iris = new Mesh(new CircleGeometry(0.09, 16), mat.minionEye);
-    iris.position.set(0, 1.28, 0.35);
+    iris.position.set(0, eyeY, bodyRadius * 0.98);
     iris.name = "iris";
     group.add(iris);
     const pupil = new Mesh(new CircleGeometry(0.04, 16), mat.minionPupil);
-    pupil.position.set(0, 1.28, 0.36);
+    pupil.position.set(0, eyeY, bodyRadius * 1);
     group.add(pupil);
   } else {
     [-0.12, 0.12].forEach((x) => {
       const goggleRing = new Mesh(new TorusGeometry(0.12, 0.03, 8, 16), mat.minionGoggle);
-      goggleRing.position.set(x, 1.28, 0.33);
+      goggleRing.position.set(x, eyeY, bodyRadius * 0.95);
       group.add(goggleRing);
       const eyeWhite = new Mesh(new CircleGeometry(0.1, 16), new MeshStandardMaterial({ color: 16777215 }));
-      eyeWhite.position.set(x, 1.28, 0.34);
+      eyeWhite.position.set(x, eyeY, bodyRadius * 0.97);
       group.add(eyeWhite);
       const iris = new Mesh(new CircleGeometry(0.06, 16), mat.minionEye);
-      iris.position.set(x, 1.28, 0.35);
+      iris.position.set(x, eyeY, bodyRadius * 0.99);
       iris.name = "iris";
       group.add(iris);
       const pupil = new Mesh(new CircleGeometry(0.03, 16), mat.minionPupil);
-      pupil.position.set(x, 1.28, 0.36);
+      pupil.position.set(x, eyeY, bodyRadius * 1.01);
       group.add(pupil);
     });
   }
   const mouth = new Mesh(new TorusGeometry(0.1, 0.02, 8, 16, Math.PI), mat.minionMouth);
-  mouth.position.set(0, 1.05, 0.34);
+  mouth.position.set(0, 0.5 + bodyHeight * 0.55, bodyRadius * 0.95);
   mouth.rotation.x = Math.PI;
   mouth.name = "mouth";
   group.add(mouth);
-  for (let i = 0; i < 5; i++) {
-    const hair = new Mesh(new CylinderGeometry(0.01, 0.01, 0.2 + Math.random() * 0.15, 4), mat.minionHair);
-    const angle = i / 5 * Math.PI * 2;
-    hair.position.set(Math.cos(angle) * 0.1, 1.6 + Math.random() * 0.1, Math.sin(angle) * 0.1);
-    hair.rotation.z = (Math.random() - 0.5) * 0.5;
+  const hairCount = 3 + Math.floor(Math.random() * 4);
+  for (let i = 0; i < hairCount; i++) {
+    const hair = new Mesh(new CylinderGeometry(0.01, 0.01, 0.15 + Math.random() * 0.12, 4), mat.minionHair);
+    const angle = i / hairCount * Math.PI * 2;
+    hair.position.set(Math.cos(angle) * headRadius * 0.4, 0.5 + bodyHeight + headRadius + 0.08, Math.sin(angle) * headRadius * 0.4);
+    hair.rotation.z = (Math.random() - 0.5) * 0.6;
     group.add(hair);
   }
-  [-0.42, 0.42].forEach((x) => {
-    const arm = new Mesh(new CylinderGeometry(0.06, 0.05, 0.6, 8), bodyMat);
-    arm.position.set(x, 0.85, 0);
-    arm.rotation.z = x > 0 ? -0.3 : 0.3;
-    arm.name = x > 0 ? "armR" : "armL";
-    group.add(arm);
-    const glove = new Mesh(new SphereGeometry(0.07, 8, 8), mat.minionGlove);
-    glove.position.set(x + (x > 0 ? -0.15 : 0.15), 0.55, 0);
-    group.add(glove);
+  [-bodyRadius * 1.15, bodyRadius * 1.15].forEach((x) => {
+    const armPivot = new Group();
+    armPivot.position.set(x, 0.5 + bodyHeight * 0.65, 0);
+    armPivot.name = x > 0 ? "armR" : "armL";
+    const arm = new Mesh(new CylinderGeometry(0.055, 0.045, 0.55 * heightScale, 8), bodyMat);
+    arm.position.y = -0.27 * heightScale;
+    armPivot.add(arm);
+    const glove = new Mesh(new SphereGeometry(0.065, 8, 8), mat.minionGlove);
+    glove.position.y = -0.55 * heightScale;
+    armPivot.add(glove);
+    group.add(armPivot);
   });
   [-0.12, 0.12].forEach((x) => {
-    const leg = new Mesh(new CylinderGeometry(0.07, 0.06, 0.4, 8), bodyMat);
-    leg.position.set(x, 0.2, 0);
-    leg.name = x > 0 ? "legR" : "legL";
-    group.add(leg);
-    const shoe = new Mesh(new BoxGeometry(0.14, 0.08, 0.22), mat.minionShoe);
-    shoe.position.set(x, 0.04, 0.04);
-    group.add(shoe);
+    const legPivot = new Group();
+    legPivot.position.set(x, 0.5, 0);
+    legPivot.name = x > 0 ? "legR" : "legL";
+    const leg = new Mesh(new CylinderGeometry(0.065, 0.055, 0.38 * heightScale, 8), bodyMat);
+    leg.position.y = -0.19 * heightScale;
+    legPivot.add(leg);
+    const shoe = new Mesh(new BoxGeometry(0.13, 0.07, 0.2), mat.minionShoe);
+    shoe.position.set(0, -0.38 * heightScale, 0.03);
+    legPivot.add(shoe);
+    group.add(legPivot);
   });
-  group.userData = { state: "idle", targetX: 0, targetZ: 0, speed: 0, bobPhase: Math.random() * Math.PI * 2, userMsg: "", userName: "", thinkLog: [], toolLog: [], replyCount: 0 };
+  const chineseName = getRandomChineseName();
+  group.userData = {
+    state: "idle",
+    targetX: 0,
+    targetZ: 0,
+    speed: 0,
+    bobPhase: Math.random() * Math.PI * 2,
+    userMsg: "",
+    userName: "",
+    thinkLog: [],
+    toolLog: [],
+    replyCount: 0,
+    chineseName,
+    // Idle animation state
+    idleTimer: 0,
+    idleAction: "stand",
+    idleActionTimer: 0,
+    // Sitting state
+    isSitting: false
+  };
   return group;
 }
 var minions = [];
@@ -27506,18 +27606,6 @@ var wallMeshes = [];
 var HOUSE_SPACING = 22;
 var ROOM_W = 12;
 var ROOM_D = 10;
-var BASE_FURNITURE = [
-  { x: 6, z: 5, label: "\u5750\u5750", cx: 6, cz: 5, cr: 1.5 },
-  { x: 4, z: 5, label: "\u5750\u5750", cx: 4, cz: 5, cr: 0.5 },
-  { x: 8, z: 5, label: "\u5750\u5750", cx: 8, cz: 5, cr: 0.5 },
-  { x: 2.5, z: 2, label: "\u4F11\u606F", cx: 2.5, cz: 2, cr: 1.3 },
-  { x: 10, z: 3, label: "\u505A\u996D", cx: 10, cz: 3, cr: 0.9 },
-  { x: 9, z: 1, label: "\u770B\u4E66", cx: 9, cz: 1, cr: 0.7 },
-  { x: 2, z: 8, label: "\u7167\u660E", cx: 2, cz: 8, cr: 0.3 },
-  { x: 10, z: 8, label: "\u7EFF\u690D", cx: 10, cz: 8, cr: 0.4 },
-  { x: 6, z: 1, label: "\u88C5\u9970", cx: 6, cz: 1, cr: 0.4 },
-  { x: 5, z: 8, label: "\u6C99\u53D1", cx: 5, cz: 8, cr: 1 }
-];
 var lastInitKey = "";
 function init(d) {
   cfg = d;
@@ -27609,19 +27697,22 @@ function init(d) {
       };
       m.userData.houseOffset = { ox, oz };
       const feishuId = (sess.key || "").match(/(oc_\w+|ou_\w+)/)?.[1];
+      const cName = m.userData.chineseName;
       if (feishuId) {
         fetch(`/api/resolve/${feishuId}`).then((r) => r.json()).then((d2) => {
           if (d2.name && d2.name !== feishuId) {
             m.userData.displayName = d2.name;
-            addNameLabel(m, d2.name);
+            addNameLabel(m, d2.name, cName);
+          } else {
+            addNameLabel(m, sess.name || "session", cName);
           }
         }).catch(() => {
+          addNameLabel(m, sess.name || "session", cName);
         });
-      }
-      if (!feishuId) {
+      } else {
         const fallbackName = sess.name || sess.type || "session";
         m.userData.displayName = fallbackName;
-        addNameLabel(m, fallbackName);
+        addNameLabel(m, fallbackName, cName);
       }
       scene.add(m);
       minions.push(m);
@@ -27630,59 +27721,158 @@ function init(d) {
   updateUI(d);
 }
 function getFurnitureForMinion(m) {
+  return getFurnitureAABBForMinion(m);
+}
+var MINION_COLLISION_RADIUS = 0.4;
+function collidesAABB(px, pz, radius, boxMinX, boxMaxX, boxMinZ, boxMaxZ) {
+  const closestX = Math.max(boxMinX, Math.min(px, boxMaxX));
+  const closestZ = Math.max(boxMinZ, Math.min(pz, boxMaxZ));
+  const dx = px - closestX;
+  const dz = pz - closestZ;
+  return dx * dx + dz * dz < radius * radius;
+}
+var BASE_FURNITURE_AABB = [
+  { x: 6, z: 5, label: "\u5750\u5750", halfW: 1, halfD: 0.8 },
+  // table
+  { x: 4, z: 5, label: "\u5750\u5750", halfW: 0.35, halfD: 0.35 },
+  // chair left
+  { x: 8, z: 5, label: "\u5750\u5750", halfW: 0.35, halfD: 0.35 },
+  // chair right
+  { x: 2.5, z: 2, label: "\u4F11\u606F", halfW: 1.1, halfD: 0.8 },
+  // bed
+  { x: 10, z: 3, label: "\u505A\u996D", halfW: 0.4, halfD: 1.1 },
+  // kitchen counter
+  { x: 9, z: 1, label: "\u770B\u4E66", halfW: 0.8, halfD: 0.3 },
+  // bookshelf
+  { x: 2, z: 8, label: "\u7167\u660E", halfW: 0.25, halfD: 0.25 },
+  // lamp
+  { x: 10, z: 8, label: "\u7EFF\u690D", halfW: 0.25, halfD: 0.25 },
+  // plant
+  { x: 6, z: 1, label: "\u88C5\u9970", halfW: 0.3, halfD: 0.3 },
+  // decoration
+  { x: 5, z: 8, label: "\u6C99\u53D1", halfW: 0.8, halfD: 0.5 }
+  // sofa area
+];
+function getFurnitureAABBForMinion(m) {
   const off = m.userData.houseOffset || { ox: 0, oz: 0 };
-  return BASE_FURNITURE.map((f) => ({
+  return BASE_FURNITURE_AABB.map((f) => ({
     x: f.x + off.ox,
     z: f.z + off.oz,
     label: f.label,
-    cx: f.cx + off.ox,
-    cz: f.cz + off.oz,
-    cr: f.cr
+    minX: f.x + off.ox - f.halfW,
+    maxX: f.x + off.ox + f.halfW,
+    minZ: f.z + off.oz - f.halfD,
+    maxZ: f.z + off.oz + f.halfD
   }));
 }
-var FURNITURE = BASE_FURNITURE;
-function collidesWithFurniture(x, z, excludeLabel, furn) {
-  const list = furn || FURNITURE;
-  for (const f of list) {
-    if (f.label === excludeLabel) continue;
-    const dx = x - f.cx, dz = z - f.cz;
-    if (Math.sqrt(dx * dx + dz * dz) < f.cr) return true;
+function collidesWithWall(x, z, radius) {
+  for (const wall of wallMeshes) {
+    if (wall.userData.isRoof) continue;
+    const wp = wall.position;
+    const ws = wall.geometry.parameters;
+    if (!ws) continue;
+    const halfX = ws.width / 2;
+    const halfZ = ws.depth / 2;
+    if (collidesAABB(x, z, radius, wp.x - halfX, wp.x + halfX, wp.z - halfZ, wp.z + halfZ)) {
+      return true;
+    }
   }
   return false;
 }
+function collidesWithFurniture(x, z, excludeLabel, furn) {
+  const list = furn || getFurnitureAABBForMinion({ userData: { houseOffset: { ox: 0, oz: 0 } } });
+  for (const f of list) {
+    if (f.label === excludeLabel) continue;
+    if (collidesAABB(x, z, MINION_COLLISION_RADIUS, f.minX, f.maxX, f.minZ, f.maxZ)) return true;
+  }
+  if (collidesWithWall(x, z, MINION_COLLISION_RADIUS)) return true;
+  return false;
+}
+function collidesWithOtherMinions(x, z, excludeMinion) {
+  for (const other of minions) {
+    if (other === excludeMinion) continue;
+    const dx = x - other.position.x;
+    const dz = z - other.position.z;
+    if (Math.sqrt(dx * dx + dz * dz) < MINION_COLLISION_RADIUS * 2) return true;
+  }
+  return false;
+}
+var FURNITURE = BASE_FURNITURE_AABB.map((f) => ({ x: f.x, z: f.z, label: f.label, cx: f.x, cz: f.z, cr: f.halfW }));
 function animateMinions(time, dt) {
   minions.forEach((m) => {
     const ud = m.userData;
-    const bob = Math.sin(time * 3 + ud.bobPhase);
     const furn = getFurnitureForMinion(m);
+    const hScale = ud.heightScale || 1;
     if (ud.state === "idle") {
       const dx = ud.targetX - m.position.x;
       const dz = ud.targetZ - m.position.z;
       const dist = Math.sqrt(dx * dx + dz * dz);
       if (dist < 0.3) {
-        if (Math.random() < 0.3) {
-          const f = furn[Math.floor(Math.random() * furn.length)];
-          const angle = Math.random() * Math.PI * 2;
-          const approachDist = f.cr + 0.5 + Math.random() * 0.5;
-          ud.targetX = f.x + Math.cos(angle) * approachDist;
-          ud.targetZ = f.z + Math.sin(angle) * approachDist;
-          ud.interactLabel = f.label;
-        } else {
-          ud.targetX = ud.bounds.minX + Math.random() * (ud.bounds.maxX - ud.bounds.minX);
-          ud.targetZ = ud.bounds.minZ + Math.random() * (ud.bounds.maxZ - ud.bounds.minZ);
-          ud.interactLabel = "";
+        ud.idleTimer = (ud.idleTimer || 0) + dt;
+        if (!ud.idleActionTimer || ud.idleActionTimer <= 0) {
+          const r = Math.random();
+          if (r < 0.25) {
+            const f = furn[Math.floor(Math.random() * furn.length)];
+            const angle = Math.random() * Math.PI * 2;
+            const approachDist = 0.8 + Math.random() * 0.5;
+            ud.targetX = f.x + Math.cos(angle) * approachDist;
+            ud.targetZ = f.z + Math.sin(angle) * approachDist;
+            ud.interactLabel = f.label;
+            ud.idleAction = "walk";
+            ud.idleActionTimer = 2 + Math.random() * 3;
+          } else if (r < 0.45) {
+            ud.targetX = ud.bounds.minX + 1 + Math.random() * (ud.bounds.maxX - ud.bounds.minX - 2);
+            ud.targetZ = ud.bounds.minZ + 1 + Math.random() * (ud.bounds.maxZ - ud.bounds.minZ - 2);
+            ud.interactLabel = "";
+            ud.idleAction = "walk";
+            ud.idleActionTimer = 3 + Math.random() * 4;
+          } else if (r < 0.65) {
+            ud.idleAction = "lookAround";
+            ud.idleActionTimer = 2 + Math.random() * 3;
+          } else if (r < 0.8) {
+            ud.idleAction = "stretch";
+            ud.idleActionTimer = 1.5 + Math.random() * 1;
+          } else {
+            ud.idleAction = "stand";
+            ud.idleActionTimer = 2 + Math.random() * 3;
+          }
+          ud.targetX = Math.max(ud.bounds.minX + 0.5, Math.min(ud.bounds.maxX - 0.5, ud.targetX));
+          ud.targetZ = Math.max(ud.bounds.minZ + 0.5, Math.min(ud.bounds.maxZ - 0.5, ud.targetZ));
         }
-        ud.targetX = Math.max(ud.bounds.minX + 0.5, Math.min(ud.bounds.maxX - 0.5, ud.targetX));
-        ud.targetZ = Math.max(ud.bounds.minZ + 0.5, Math.min(ud.bounds.maxZ - 0.5, ud.targetZ));
+        ud.idleActionTimer -= dt;
+        if (ud.idleAction === "lookAround") {
+          m.rotation.y += Math.sin(time * 0.8 + ud.bobPhase) * 0.01;
+          m.position.y = Math.sin(time * 1.2 + ud.bobPhase) * 0.01;
+          m.children.forEach((c) => {
+            if (c.name === "armL") c.rotation.x = Math.sin(time * 0.5) * 0.05;
+            if (c.name === "armR") c.rotation.x = Math.sin(time * 0.5 + 1) * 0.05;
+            if (c.name === "legL" || c.name === "legR") c.rotation.x = 0;
+          });
+        } else if (ud.idleAction === "stretch") {
+          const stretchT = 1 - ud.idleActionTimer / 2.5;
+          const armAngle = Math.sin(stretchT * Math.PI) * 0.8;
+          m.children.forEach((c) => {
+            if (c.name === "armL") c.rotation.x = -armAngle;
+            if (c.name === "armR") c.rotation.x = -armAngle;
+            if (c.name === "legL" || c.name === "legR") c.rotation.x = 0;
+          });
+          m.position.y = Math.sin(stretchT * Math.PI) * 0.05;
+        } else {
+          m.position.y = Math.sin(time * 1 + ud.bobPhase) * 0.015;
+          m.children.forEach((c) => {
+            if (c.name === "armL" || c.name === "armR") c.rotation.x *= 0.9;
+            if (c.name === "legL" || c.name === "legR") c.rotation.x = 0;
+          });
+        }
       } else {
-        const speed = Math.min(1.5 * dt, dist * 0.5);
-        let moveX = dx / dist * speed;
-        let moveZ = dz / dist * speed;
+        const walkSpeed = Math.min(0.8 * dt, dist * 0.4);
+        let moveX = dx / dist * walkSpeed;
+        let moveZ = dz / dist * walkSpeed;
         let newX = m.position.x + moveX;
         let newZ = m.position.z + moveZ;
         newX = Math.max(ud.bounds.minX + 0.3, Math.min(ud.bounds.maxX - 0.3, newX));
         newZ = Math.max(ud.bounds.minZ + 0.3, Math.min(ud.bounds.maxZ - 0.3, newZ));
-        if (!collidesWithFurniture(newX, newZ, ud.interactLabel, furn)) {
+        if (!collidesWithFurniture(newX, newZ, ud.interactLabel, furn) && !collidesWithOtherMinions(newX, newZ, m)) {
           m.position.x = newX;
           m.position.z = newZ;
         } else {
@@ -27692,10 +27882,12 @@ function animateMinions(time, dt) {
           const alt1Z = Math.max(ud.bounds.minZ + 0.3, Math.min(ud.bounds.maxZ - 0.3, m.position.z + perpZ1));
           const alt2X = Math.max(ud.bounds.minX + 0.3, Math.min(ud.bounds.maxX - 0.3, m.position.x + perpX2));
           const alt2Z = Math.max(ud.bounds.minZ + 0.3, Math.min(ud.bounds.maxZ - 0.3, m.position.z + perpZ2));
-          if (!collidesWithFurniture(alt1X, alt1Z, "", furn)) {
+          const canGo1 = !collidesWithFurniture(alt1X, alt1Z, "", furn) && !collidesWithOtherMinions(alt1X, alt1Z, m);
+          const canGo2 = !collidesWithFurniture(alt2X, alt2Z, "", furn) && !collidesWithOtherMinions(alt2X, alt2Z, m);
+          if (canGo1) {
             m.position.x = alt1X;
             m.position.z = alt1Z;
-          } else if (!collidesWithFurniture(alt2X, alt2Z, "", furn)) {
+          } else if (canGo2) {
             m.position.x = alt2X;
             m.position.z = alt2Z;
           } else {
@@ -27710,42 +27902,44 @@ function animateMinions(time, dt) {
           }
         }
         m.rotation.y = Math.atan2(dx, dz);
-        m.position.y = Math.abs(Math.sin(time * 8)) * 0.05;
+        const walkCycle = time * 5;
+        m.position.y = Math.abs(Math.sin(walkCycle)) * 0.02;
         m.children.forEach((c) => {
-          if (c.name === "legL") c.rotation.x = Math.sin(time * 8) * 0.3;
-          if (c.name === "legR") c.rotation.x = Math.sin(time * 8 + Math.PI) * 0.3;
-          if (c.name === "armL") c.rotation.x = Math.sin(time * 8 + Math.PI) * 0.2;
-          if (c.name === "armR") c.rotation.x = Math.sin(time * 8) * 0.2;
+          if (c.name === "legL") c.rotation.x = Math.sin(walkCycle) * 0.2;
+          if (c.name === "legR") c.rotation.x = Math.sin(walkCycle + Math.PI) * 0.2;
+          if (c.name === "armL") c.rotation.x = Math.sin(walkCycle + Math.PI) * 0.15;
+          if (c.name === "armR") c.rotation.x = Math.sin(walkCycle) * 0.15;
         });
       }
     } else if (ud.state === "thinking") {
-      m.position.y = bob * 0.05;
-      m.position.x += Math.sin(time * 0.5 + ud.bobPhase) * 2e-3;
-      m.position.z += Math.cos(time * 0.3 + ud.bobPhase) * 2e-3;
+      m.position.y = Math.sin(time * 1 + ud.bobPhase) * 0.015;
+      m.position.x += Math.sin(time * 0.3 + ud.bobPhase) * 1e-3;
+      m.position.z += Math.cos(time * 0.2 + ud.bobPhase) * 1e-3;
       m.position.x = Math.max(ud.bounds.minX + 0.3, Math.min(ud.bounds.maxX - 0.3, m.position.x));
       m.position.z = Math.max(ud.bounds.minZ + 0.3, Math.min(ud.bounds.maxZ - 0.3, m.position.z));
       m.children.forEach((c) => {
-        if (c.name === "armR") c.rotation.x = -0.8;
-        if (c.name === "armL") c.rotation.x = 0;
+        if (c.name === "armR") c.rotation.x = -0.6;
+        if (c.name === "armL") c.rotation.x = 0.05;
+        if (c.name === "legL" || c.name === "legR") c.rotation.x = 0;
       });
     } else if (ud.state === "streaming") {
-      m.position.y = bob * 0.04;
-      m.position.x += Math.sin(time * 2 + ud.bobPhase) * 5e-3;
-      m.position.z += Math.cos(time * 1.5 + ud.bobPhase) * 3e-3;
+      m.position.y = Math.sin(time * 1 + ud.bobPhase) * 0.015;
+      m.position.x += Math.sin(time * 1.5 + ud.bobPhase) * 3e-3;
+      m.position.z += Math.cos(time * 1 + ud.bobPhase) * 2e-3;
       m.position.x = Math.max(ud.bounds.minX + 0.3, Math.min(ud.bounds.maxX - 0.3, m.position.x));
       m.position.z = Math.max(ud.bounds.minZ + 0.3, Math.min(ud.bounds.maxZ - 0.3, m.position.z));
       m.children.forEach((c) => {
-        if (c.name === "armR") c.rotation.x = Math.sin(time * 5) * 0.3;
-        if (c.name === "armL") c.rotation.x = Math.sin(time * 5 + 1) * 0.3;
+        if (c.name === "armR") c.rotation.x = Math.sin(time * 3) * 0.15;
+        if (c.name === "armL") c.rotation.x = Math.sin(time * 3 + 1) * 0.15;
       });
     } else if (ud.state === "responding") {
-      m.position.y = Math.abs(Math.sin(time * 6)) * 0.15;
+      m.position.y = Math.abs(Math.sin(time * 4)) * 0.04;
       m.children.forEach((c) => {
-        if (c.name === "armR") c.rotation.x = Math.sin(time * 8) * 0.5;
-        if (c.name === "armL") c.rotation.x = Math.sin(time * 8 + Math.PI) * 0.5;
+        if (c.name === "armR") c.rotation.x = Math.sin(time * 5) * 0.25;
+        if (c.name === "armL") c.rotation.x = Math.sin(time * 5 + Math.PI) * 0.25;
       });
     } else if (ud.state === "error") {
-      m.position.x += Math.sin(time * 30) * 0.01;
+      m.position.x += Math.sin(time * 20) * 5e-3;
     }
   });
 }

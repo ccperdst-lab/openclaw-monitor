@@ -382,37 +382,73 @@ function buildRoom(ox, oz, w, d, label) {
   return group;
 }
 
+// ===== Minion Chinese Name Pool =====
+const MINION_NAMES = [
+  '小明', '阿花', '大壮', '小美', '阿福', '小龙', '大宝', '小雪', '阿杰', '小芳',
+  '阿强', '小红', '大伟', '小玲', '阿亮', '小青', '大兵', '小月', '阿涛', '小燕',
+  '阿飞', '小云', '大山', '小雨', '阿军', '小星', '大龙', '小霞', '阿峰', '小玉',
+  '阿文', '小兰', '大海', '小凤', '阿勇', '小莲', '大鹏', '小琴', '阿华', '小菊',
+];
+// Track used names per session to avoid duplicates
+const usedMinionNames = new Set();
+function getRandomChineseName() {
+  const available = MINION_NAMES.filter(n => !usedMinionNames.has(n));
+  const pool = available.length > 0 ? available : MINION_NAMES;
+  const name = pool[Math.floor(Math.random() * pool.length)];
+  usedMinionNames.add(name);
+  return name;
+}
+
 // ===== Build Minion Character =====
-// Add a floating name label above a minion
-function addNameLabel(minion, name) {
+// Add a floating name label above a minion (two-line: Feishu name + Chinese name)
+function addNameLabel(minion, feishuName, chineseName) {
   // Remove old label if any
   const old = minion.children.find(c => c.userData && c.userData.isNameLabel);
   if (old) minion.remove(old);
 
   const canvas = document.createElement('canvas');
-  canvas.width = 256; canvas.height = 64;
+  canvas.width = 256; canvas.height = 96;
   const ctx = canvas.getContext('2d');
-  ctx.clearRect(0, 0, 256, 64);
+  ctx.clearRect(0, 0, 256, 96);
+
+  // Measure text to size the pill
+  ctx.font = 'bold 20px sans-serif';
+  const topW = ctx.measureText(feishuName || '').width;
+  ctx.font = '14px sans-serif';
+  const botW = ctx.measureText(chineseName || '').width;
+  const pillW = Math.min(240, Math.max(topW, botW) + 40);
+
   // Background pill
-  ctx.fillStyle = 'rgba(0,0,0,0.6)';
-  const w = Math.min(240, ctx.measureText(name).width + 40);
+  ctx.fillStyle = 'rgba(0,0,0,0.65)';
   ctx.beginPath();
-  ctx.roundRect(128 - w/2, 10, w, 44, 12);
+  ctx.roundRect(128 - pillW/2, 6, pillW, 84, 14);
   ctx.fill();
-  // Text
-  ctx.fillStyle = '#fff';
-  ctx.font = 'bold 22px sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(name.slice(0, 12), 128, 32);
+
+  // Top line: Feishu name (bold, larger)
+  if (feishuName) {
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 20px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(feishuName.slice(0, 14), 128, 32);
+  }
+
+  // Bottom line: Chinese name (smaller, lighter)
+  if (chineseName) {
+    ctx.fillStyle = '#b0d4f1';
+    ctx.font = '14px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(chineseName, 128, 62);
+  }
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.needsUpdate = true;
   const label = new THREE.Mesh(
-    new THREE.PlaneGeometry(2, 0.5),
+    new THREE.PlaneGeometry(2.2, 0.8),
     new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, side: THREE.DoubleSide })
   );
-  label.position.set(0, 2.2, 0); // above minion head
+  label.position.set(0, 2.5, 0); // above minion head
   label.userData.isNameLabel = true;
   // Make label always face camera (billboard)
   label.onBeforeRender = function(renderer, scene, camera) {
@@ -421,109 +457,151 @@ function addNameLabel(minion, name) {
   minion.add(label);
 }
 
+// Randomize minion appearance with variations
 function createMinion(colorHex) {
   const group = new THREE.Group();
   const bodyMat = new THREE.MeshStandardMaterial({ color: colorHex || 0xf5d033, roughness: 0.5 });
 
-  // Body (cylinder)
-  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.38, 1.2, 16), bodyMat);
-  body.position.y = 0.9;
+  // Randomize size variations
+  const heightScale = 0.8 + Math.random() * 0.4; // 0.8x - 1.2x
+  const widthScale = 0.9 + Math.random() * 0.2;  // 0.9x - 1.1x
+  const bodyRadius = 0.35 * widthScale;
+  const bodyHeight = 1.2 * heightScale;
+  group.userData.heightScale = heightScale;
+  group.userData.widthScale = widthScale;
+
+  // Body (rounded cylinder)
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(bodyRadius, bodyRadius * 1.08, bodyHeight, 16), bodyMat);
+  body.position.y = 0.5 + bodyHeight / 2;
   body.castShadow = true;
   group.add(body);
 
-  // Overalls (blue bottom)
-  const overalls = new THREE.Mesh(new THREE.CylinderGeometry(0.37, 0.39, 0.5, 16), mat.minionBlue);
-  overalls.position.y = 0.5;
+  // Overalls (blue bottom half)
+  const overalls = new THREE.Mesh(new THREE.CylinderGeometry(bodyRadius * 1.05, bodyRadius * 1.1, bodyHeight * 0.4, 16), mat.minionBlue);
+  overalls.position.y = 0.5 + bodyHeight * 0.2;
   group.add(overalls);
 
   // Goggle strap
-  const strap = new THREE.Mesh(new THREE.TorusGeometry(0.36, 0.04, 8, 32), mat.minionGoggle);
-  strap.position.y = 1.25;
+  const strap = new THREE.Mesh(new THREE.TorusGeometry(bodyRadius * 1.02, 0.04, 8, 32), mat.minionGoggle);
+  strap.position.y = 0.5 + bodyHeight * 0.78;
   strap.rotation.x = Math.PI / 2;
   group.add(strap);
 
+  // Head (sphere on top of body)
+  const headRadius = bodyRadius * (0.65 + Math.random() * 0.15); // slight head size variation
+  const head = new THREE.Mesh(new THREE.SphereGeometry(headRadius, 16, 12), bodyMat);
+  head.position.y = 0.5 + bodyHeight + headRadius * 0.5;
+  head.castShadow = true;
+  group.add(head);
+
   // Eye(s) - single eye for Stuart-like, or double
   const isOneEye = Math.random() > 0.5;
+  const eyeY = 0.5 + bodyHeight * 0.82;
 
   if (isOneEye) {
     // Single big eye
     const goggleRing = new THREE.Mesh(new THREE.TorusGeometry(0.18, 0.04, 8, 16), mat.minionGoggle);
-    goggleRing.position.set(0, 1.28, 0.32);
+    goggleRing.position.set(0, eyeY, bodyRadius * 0.92);
     group.add(goggleRing);
     const goggleGlass = new THREE.Mesh(new THREE.CircleGeometry(0.17, 16), mat.minionGoggleGlass);
-    goggleGlass.position.set(0, 1.28, 0.33);
+    goggleGlass.position.set(0, eyeY, bodyRadius * 0.94);
     group.add(goggleGlass);
     const eyeWhite = new THREE.Mesh(new THREE.CircleGeometry(0.14, 16), new THREE.MeshStandardMaterial({ color: 0xffffff }));
-    eyeWhite.position.set(0, 1.28, 0.34);
+    eyeWhite.position.set(0, eyeY, bodyRadius * 0.96);
     group.add(eyeWhite);
     const iris = new THREE.Mesh(new THREE.CircleGeometry(0.09, 16), mat.minionEye);
-    iris.position.set(0, 1.28, 0.35);
+    iris.position.set(0, eyeY, bodyRadius * 0.98);
     iris.name = 'iris';
     group.add(iris);
     const pupil = new THREE.Mesh(new THREE.CircleGeometry(0.04, 16), mat.minionPupil);
-    pupil.position.set(0, 1.28, 0.36);
+    pupil.position.set(0, eyeY, bodyRadius * 1.0);
     group.add(pupil);
   } else {
     // Two eyes
     [-0.12, 0.12].forEach(x => {
       const goggleRing = new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.03, 8, 16), mat.minionGoggle);
-      goggleRing.position.set(x, 1.28, 0.33);
+      goggleRing.position.set(x, eyeY, bodyRadius * 0.95);
       group.add(goggleRing);
       const eyeWhite = new THREE.Mesh(new THREE.CircleGeometry(0.1, 16), new THREE.MeshStandardMaterial({ color: 0xffffff }));
-      eyeWhite.position.set(x, 1.28, 0.34);
+      eyeWhite.position.set(x, eyeY, bodyRadius * 0.97);
       group.add(eyeWhite);
       const iris = new THREE.Mesh(new THREE.CircleGeometry(0.06, 16), mat.minionEye);
-      iris.position.set(x, 1.28, 0.35);
+      iris.position.set(x, eyeY, bodyRadius * 0.99);
       iris.name = 'iris';
       group.add(iris);
       const pupil = new THREE.Mesh(new THREE.CircleGeometry(0.03, 16), mat.minionPupil);
-      pupil.position.set(x, 1.28, 0.36);
+      pupil.position.set(x, eyeY, bodyRadius * 1.01);
       group.add(pupil);
     });
   }
 
   // Mouth
   const mouth = new THREE.Mesh(new THREE.TorusGeometry(0.1, 0.02, 8, 16, Math.PI), mat.minionMouth);
-  mouth.position.set(0, 1.05, 0.34);
+  mouth.position.set(0, 0.5 + bodyHeight * 0.55, bodyRadius * 0.95);
   mouth.rotation.x = Math.PI;
   mouth.name = 'mouth';
   group.add(mouth);
 
-  // Hair (springs)
-  for (let i = 0; i < 5; i++) {
-    const hair = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.2 + Math.random() * 0.15, 4), mat.minionHair);
-    const angle = (i / 5) * Math.PI * 2;
-    hair.position.set(Math.cos(angle) * 0.1, 1.6 + Math.random() * 0.1, Math.sin(angle) * 0.1);
-    hair.rotation.z = (Math.random() - 0.5) * 0.5;
+  // Hair (springs on top of head)
+  const hairCount = 3 + Math.floor(Math.random() * 4);
+  for (let i = 0; i < hairCount; i++) {
+    const hair = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.15 + Math.random() * 0.12, 4), mat.minionHair);
+    const angle = (i / hairCount) * Math.PI * 2;
+    hair.position.set(Math.cos(angle) * headRadius * 0.4, 0.5 + bodyHeight + headRadius + 0.08, Math.sin(angle) * headRadius * 0.4);
+    hair.rotation.z = (Math.random() - 0.5) * 0.6;
     group.add(hair);
   }
 
-  // Arms
-  [-0.42, 0.42].forEach(x => {
-    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.05, 0.6, 8), bodyMat);
-    arm.position.set(x, 0.85, 0);
-    arm.rotation.z = x > 0 ? -0.3 : 0.3;
-    arm.name = x > 0 ? 'armR' : 'armL';
-    group.add(arm);
-    // Glove
-    const glove = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 8), mat.minionGlove);
-    glove.position.set(x + (x > 0 ? -0.15 : 0.15), 0.55, 0);
-    group.add(glove);
+  // Arms (cylinders that swing when walking)
+  [-bodyRadius * 1.15, bodyRadius * 1.15].forEach(x => {
+    // Shoulder pivot
+    const armPivot = new THREE.Group();
+    armPivot.position.set(x, 0.5 + bodyHeight * 0.65, 0);
+    armPivot.name = x > 0 ? 'armR' : 'armL';
+
+    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.045, 0.55 * heightScale, 8), bodyMat);
+    arm.position.y = -0.27 * heightScale;
+    armPivot.add(arm);
+
+    // Glove/hand
+    const glove = new THREE.Mesh(new THREE.SphereGeometry(0.065, 8, 8), mat.minionGlove);
+    glove.position.y = -0.55 * heightScale;
+    armPivot.add(glove);
+
+    group.add(armPivot);
   });
 
-  // Legs
+  // Legs (cylinders with pivot at top)
   [-0.12, 0.12].forEach(x => {
-    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.06, 0.4, 8), bodyMat);
-    leg.position.set(x, 0.2, 0);
-    leg.name = x > 0 ? 'legR' : 'legL';
-    group.add(leg);
+    const legPivot = new THREE.Group();
+    legPivot.position.set(x, 0.5, 0);
+    legPivot.name = x > 0 ? 'legR' : 'legL';
+
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.055, 0.38 * heightScale, 8), bodyMat);
+    leg.position.y = -0.19 * heightScale;
+    legPivot.add(leg);
+
     // Shoe
-    const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.08, 0.22), mat.minionShoe);
-    shoe.position.set(x, 0.04, 0.04);
-    group.add(shoe);
+    const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.07, 0.2), mat.minionShoe);
+    shoe.position.set(0, -0.38 * heightScale, 0.03);
+    legPivot.add(shoe);
+
+    group.add(legPivot);
   });
 
-  group.userData = { state: 'idle', targetX: 0, targetZ: 0, speed: 0, bobPhase: Math.random() * Math.PI * 2, userMsg: '', userName: '', thinkLog: [], toolLog: [], replyCount: 0 };
+  // Assign random Chinese name
+  const chineseName = getRandomChineseName();
+
+  group.userData = {
+    state: 'idle', targetX: 0, targetZ: 0, speed: 0,
+    bobPhase: Math.random() * Math.PI * 2,
+    userMsg: '', userName: '', thinkLog: [], toolLog: [], replyCount: 0,
+    chineseName: chineseName,
+    // Idle animation state
+    idleTimer: 0, idleAction: 'stand', idleActionTimer: 0,
+    // Sitting state
+    isSitting: false,
+  };
   return group;
 }
 
@@ -536,19 +614,7 @@ let wallMeshes = []; // Track wall meshes for transparency
 let HOUSE_SPACING = 22; // distance between house centers
 let ROOM_W = 12, ROOM_D = 10;
 
-// Base furniture layout (relative to house origin 0,0)
-const BASE_FURNITURE = [
-  { x: 6, z: 5, label: '坐坐', cx: 6, cz: 5, cr: 1.5 },
-  { x: 4, z: 5, label: '坐坐', cx: 4, cz: 5, cr: 0.5 },
-  { x: 8, z: 5, label: '坐坐', cx: 8, cz: 5, cr: 0.5 },
-  { x: 2.5, z: 2, label: '休息', cx: 2.5, cz: 2, cr: 1.3 },
-  { x: 10, z: 3, label: '做饭', cx: 10, cz: 3, cr: 0.9 },
-  { x: 9, z: 1, label: '看书', cx: 9, cz: 1, cr: 0.7 },
-  { x: 2, z: 8, label: '照明', cx: 2, cz: 8, cr: 0.3 },
-  { x: 10, z: 8, label: '绿植', cx: 10, cz: 8, cr: 0.4 },
-  { x: 6, z: 1, label: '装饰', cx: 6, cz: 1, cr: 0.4 },
-  { x: 5, z: 8, label: '沙发', cx: 5, cz: 8, cr: 1.0 },
-];
+// (Furniture defined as AABB below collision functions)
 
 // ===== Init =====
 let lastInitKey = '';
@@ -647,21 +713,24 @@ function init(d) {
       };
       m.userData.houseOffset = { ox, oz };
 
-      // Resolve and display Feishu name label
+      // Resolve and display Feishu name + Chinese name label
       const feishuId = (sess.key || '').match(/(oc_\w+|ou_\w+)/)?.[1];
+      const cName = m.userData.chineseName;
       if (feishuId) {
         fetch(`/api/resolve/${feishuId}`).then(r => r.json()).then(d => {
           if (d.name && d.name !== feishuId) {
             m.userData.displayName = d.name;
-            addNameLabel(m, d.name);
+            addNameLabel(m, d.name, cName);
+          } else {
+            addNameLabel(m, sess.name || 'session', cName);
           }
-        }).catch(() => {});
-      }
-      // Fallback label from session name
-      if (!feishuId) {
+        }).catch(() => {
+          addNameLabel(m, sess.name || 'session', cName);
+        });
+      } else {
         const fallbackName = sess.name || sess.type || 'session';
         m.userData.displayName = fallbackName;
-        addNameLabel(m, fallbackName);
+        addNameLabel(m, fallbackName, cName);
       }
 
       scene.add(m);
@@ -673,35 +742,99 @@ function init(d) {
 }
 
 // ===== Minion Animation =====
-// Dynamic furniture: offset by house position
+// Dynamic furniture: offset by house position (AABB version)
 function getFurnitureForMinion(m) {
+  return getFurnitureAABBForMinion(m);
+}
+
+// ===== Collision System =====
+const MINION_COLLISION_RADIUS = 0.4; // matches body width
+
+// AABB collision check: minion at (x,z) with radius vs an AABB box
+function collidesAABB(px, pz, radius, boxMinX, boxMaxX, boxMinZ, boxMaxZ) {
+  // Find closest point on AABB to the minion center
+  const closestX = Math.max(boxMinX, Math.min(px, boxMaxX));
+  const closestZ = Math.max(boxMinZ, Math.min(pz, boxMaxZ));
+  const dx = px - closestX;
+  const dz = pz - closestZ;
+  return (dx * dx + dz * dz) < (radius * radius);
+}
+
+// Furniture boxes defined as AABB (center +/- half-size)
+// Format: { x, z, label, halfW, halfD } where (x,z) is center, halfW/halfD are half-extents
+const BASE_FURNITURE_AABB = [
+  { x: 6, z: 5, label: '坐坐', halfW: 1.0, halfD: 0.8 },  // table
+  { x: 4, z: 5, label: '坐坐', halfW: 0.35, halfD: 0.35 }, // chair left
+  { x: 8, z: 5, label: '坐坐', halfW: 0.35, halfD: 0.35 }, // chair right
+  { x: 2.5, z: 2, label: '休息', halfW: 1.1, halfD: 0.8 }, // bed
+  { x: 10, z: 3, label: '做饭', halfW: 0.4, halfD: 1.1 },  // kitchen counter
+  { x: 9, z: 1, label: '看书', halfW: 0.8, halfD: 0.3 },   // bookshelf
+  { x: 2, z: 8, label: '照明', halfW: 0.25, halfD: 0.25 }, // lamp
+  { x: 10, z: 8, label: '绿植', halfW: 0.25, halfD: 0.25 },// plant
+  { x: 6, z: 1, label: '装饰', halfW: 0.3, halfD: 0.3 },   // decoration
+  { x: 5, z: 8, label: '沙发', halfW: 0.8, halfD: 0.5 },   // sofa area
+];
+
+// Get furniture AABB boxes for a minion (offset by house)
+function getFurnitureAABBForMinion(m) {
   const off = m.userData.houseOffset || { ox: 0, oz: 0 };
-  return BASE_FURNITURE.map(f => ({
+  return BASE_FURNITURE_AABB.map(f => ({
     x: f.x + off.ox, z: f.z + off.oz,
     label: f.label,
-    cx: f.cx + off.ox, cz: f.cz + off.oz, cr: f.cr
+    minX: f.x + off.ox - f.halfW, maxX: f.x + off.ox + f.halfW,
+    minZ: f.z + off.oz - f.halfD, maxZ: f.z + off.oz + f.halfD,
   }));
 }
 
-// Keep FURNITURE for backward compat (used by first house or when no offset)
-const FURNITURE = BASE_FURNITURE;
-
-// Check if position collides with furniture (per-minion)
-function collidesWithFurniture(x, z, excludeLabel, furn) {
-  const list = furn || FURNITURE;
-  for (const f of list) {
-    if (f.label === excludeLabel) continue;
-    const dx = x - f.cx, dz = z - f.cz;
-    if (Math.sqrt(dx * dx + dz * dz) < f.cr) return true;
+// Wall collision: check if point is within wall thickness of any wall
+function collidesWithWall(x, z, radius) {
+  for (const wall of wallMeshes) {
+    if (wall.userData.isRoof) continue; // skip roof
+    const wp = wall.position;
+    const ws = wall.geometry.parameters;
+    if (!ws) continue;
+    // Each wall mesh is a box; compute its half-extents
+    const halfX = ws.width / 2;
+    const halfZ = ws.depth / 2;
+    if (collidesAABB(x, z, radius, wp.x - halfX, wp.x + halfX, wp.z - halfZ, wp.z + halfZ)) {
+      return true;
+    }
   }
   return false;
 }
 
+// Combined collision: furniture + walls
+function collidesWithFurniture(x, z, excludeLabel, furn) {
+  // AABB furniture check
+  const list = furn || getFurnitureAABBForMinion({ userData: { houseOffset: { ox: 0, oz: 0 } } });
+  for (const f of list) {
+    if (f.label === excludeLabel) continue;
+    if (collidesAABB(x, z, MINION_COLLISION_RADIUS, f.minX, f.maxX, f.minZ, f.maxZ)) return true;
+  }
+  // Wall collision
+  if (collidesWithWall(x, z, MINION_COLLISION_RADIUS)) return true;
+  return false;
+}
+
+// Minion-to-minion collision
+function collidesWithOtherMinions(x, z, excludeMinion) {
+  for (const other of minions) {
+    if (other === excludeMinion) continue;
+    const dx = x - other.position.x;
+    const dz = z - other.position.z;
+    if (Math.sqrt(dx * dx + dz * dz) < MINION_COLLISION_RADIUS * 2) return true;
+  }
+  return false;
+}
+
+// Keep old FURNITURE for backward compat
+const FURNITURE = BASE_FURNITURE_AABB.map(f => ({ x: f.x, z: f.z, label: f.label, cx: f.x, cz: f.z, cr: f.halfW }));
+
 function animateMinions(time, dt) {
   minions.forEach(m => {
     const ud = m.userData;
-    const bob = Math.sin(time * 3 + ud.bobPhase);
     const furn = getFurnitureForMinion(m);
+    const hScale = ud.heightScale || 1;
 
     if (ud.state === 'idle') {
       const dx = ud.targetX - m.position.x;
@@ -709,51 +842,115 @@ function animateMinions(time, dt) {
       const dist = Math.sqrt(dx * dx + dz * dz);
 
       if (dist < 0.3) {
-        if (Math.random() < 0.3) {
-          const f = furn[Math.floor(Math.random() * furn.length)];
-          const angle = Math.random() * Math.PI * 2;
-          const approachDist = f.cr + 0.5 + Math.random() * 0.5;
-          ud.targetX = f.x + Math.cos(angle) * approachDist;
-          ud.targetZ = f.z + Math.sin(angle) * approachDist;
-          ud.interactLabel = f.label;
-        } else {
-          ud.targetX = ud.bounds.minX + Math.random() * (ud.bounds.maxX - ud.bounds.minX);
-          ud.targetZ = ud.bounds.minZ + Math.random() * (ud.bounds.maxZ - ud.bounds.minZ);
-          ud.interactLabel = '';
-        }
-        // Clamp target to room bounds
-        ud.targetX = Math.max(ud.bounds.minX + 0.5, Math.min(ud.bounds.maxX - 0.5, ud.targetX));
-        ud.targetZ = Math.max(ud.bounds.minZ + 0.5, Math.min(ud.bounds.maxZ - 0.5, ud.targetZ));
-      } else {
-        // Smooth easing movement with steering avoidance
-        const speed = Math.min(1.5 * dt, dist * 0.5);
-        let moveX = (dx / dist) * speed;
-        let moveZ = (dz / dist) * speed;
+        // === Arrived at target: pick idle behavior ===
+        ud.idleTimer = (ud.idleTimer || 0) + dt;
 
-        // Check direct path
+        // Every few seconds, choose a new action
+        if (!ud.idleActionTimer || ud.idleActionTimer <= 0) {
+          const r = Math.random();
+          if (r < 0.25) {
+            // Go to furniture
+            const f = furn[Math.floor(Math.random() * furn.length)];
+            const angle = Math.random() * Math.PI * 2;
+            const approachDist = 0.8 + Math.random() * 0.5;
+            ud.targetX = f.x + Math.cos(angle) * approachDist;
+            ud.targetZ = f.z + Math.sin(angle) * approachDist;
+            ud.interactLabel = f.label;
+            ud.idleAction = 'walk';
+            ud.idleActionTimer = 2 + Math.random() * 3;
+          } else if (r < 0.45) {
+            // Random walk
+            ud.targetX = ud.bounds.minX + 1 + Math.random() * (ud.bounds.maxX - ud.bounds.minX - 2);
+            ud.targetZ = ud.bounds.minZ + 1 + Math.random() * (ud.bounds.maxZ - ud.bounds.minZ - 2);
+            ud.interactLabel = '';
+            ud.idleAction = 'walk';
+            ud.idleActionTimer = 3 + Math.random() * 4;
+          } else if (r < 0.65) {
+            // Look around idle
+            ud.idleAction = 'lookAround';
+            ud.idleActionTimer = 2 + Math.random() * 3;
+          } else if (r < 0.8) {
+            // Stretch
+            ud.idleAction = 'stretch';
+            ud.idleActionTimer = 1.5 + Math.random() * 1;
+          } else {
+            // Just stand
+            ud.idleAction = 'stand';
+            ud.idleActionTimer = 2 + Math.random() * 3;
+          }
+          // Clamp target to room bounds
+          ud.targetX = Math.max(ud.bounds.minX + 0.5, Math.min(ud.bounds.maxX - 0.5, ud.targetX));
+          ud.targetZ = Math.max(ud.bounds.minZ + 0.5, Math.min(ud.bounds.maxZ - 0.5, ud.targetZ));
+        }
+
+        ud.idleActionTimer -= dt;
+
+        // === Idle animations ===
+        if (ud.idleAction === 'lookAround') {
+          // Slow head turn left/right
+          m.rotation.y += Math.sin(time * 0.8 + ud.bobPhase) * 0.01;
+          // Very subtle body sway
+          m.position.y = Math.sin(time * 1.2 + ud.bobPhase) * 0.01;
+          // Arms relaxed
+          m.children.forEach(c => {
+            if (c.name === 'armL') c.rotation.x = Math.sin(time * 0.5) * 0.05;
+            if (c.name === 'armR') c.rotation.x = Math.sin(time * 0.5 + 1) * 0.05;
+            if (c.name === 'legL' || c.name === 'legR') c.rotation.x = 0;
+          });
+        } else if (ud.idleAction === 'stretch') {
+          // Arms up stretch
+          const stretchT = 1 - (ud.idleActionTimer / 2.5);
+          const armAngle = Math.sin(stretchT * Math.PI) * 0.8;
+          m.children.forEach(c => {
+            if (c.name === 'armL') c.rotation.x = -armAngle;
+            if (c.name === 'armR') c.rotation.x = -armAngle;
+            if (c.name === 'legL' || c.name === 'legR') c.rotation.x = 0;
+          });
+          // Slight rise on toes
+          m.position.y = Math.sin(stretchT * Math.PI) * 0.05;
+        } else {
+          // Stand idle - very subtle breathing
+          m.position.y = Math.sin(time * 1.0 + ud.bobPhase) * 0.015;
+          m.children.forEach(c => {
+            if (c.name === 'armL' || c.name === 'armR') c.rotation.x *= 0.9; // slowly relax
+            if (c.name === 'legL' || c.name === 'legR') c.rotation.x = 0;
+          });
+        }
+
+      } else {
+        // === Walking toward target (slower, more casual) ===
+        const walkSpeed = Math.min(0.8 * dt, dist * 0.4); // much slower: 0.8 instead of 1.5
+        let moveX = (dx / dist) * walkSpeed;
+        let moveZ = (dz / dist) * walkSpeed;
+
         let newX = m.position.x + moveX;
         let newZ = m.position.z + moveZ;
         newX = Math.max(ud.bounds.minX + 0.3, Math.min(ud.bounds.maxX - 0.3, newX));
         newZ = Math.max(ud.bounds.minZ + 0.3, Math.min(ud.bounds.maxZ - 0.3, newZ));
 
-        if (!collidesWithFurniture(newX, newZ, ud.interactLabel, furn)) {
+        // Check furniture + wall + other minion collision
+        if (!collidesWithFurniture(newX, newZ, ud.interactLabel, furn) &&
+            !collidesWithOtherMinions(newX, newZ, m)) {
           m.position.x = newX;
           m.position.z = newZ;
         } else {
           // Steering: try perpendicular directions
-          const perpX1 = moveZ, perpZ1 = -moveX; // left
-          const perpX2 = -moveZ, perpZ2 = moveX; // right
+          const perpX1 = moveZ, perpZ1 = -moveX;
+          const perpX2 = -moveZ, perpZ2 = moveX;
           const alt1X = Math.max(ud.bounds.minX + 0.3, Math.min(ud.bounds.maxX - 0.3, m.position.x + perpX1));
           const alt1Z = Math.max(ud.bounds.minZ + 0.3, Math.min(ud.bounds.maxZ - 0.3, m.position.z + perpZ1));
           const alt2X = Math.max(ud.bounds.minX + 0.3, Math.min(ud.bounds.maxX - 0.3, m.position.x + perpX2));
           const alt2Z = Math.max(ud.bounds.minZ + 0.3, Math.min(ud.bounds.maxZ - 0.3, m.position.z + perpZ2));
 
-          if (!collidesWithFurniture(alt1X, alt1Z, '', furn)) {
+          const canGo1 = !collidesWithFurniture(alt1X, alt1Z, '', furn) && !collidesWithOtherMinions(alt1X, alt1Z, m);
+          const canGo2 = !collidesWithFurniture(alt2X, alt2Z, '', furn) && !collidesWithOtherMinions(alt2X, alt2Z, m);
+
+          if (canGo1) {
             m.position.x = alt1X; m.position.z = alt1Z;
-          } else if (!collidesWithFurniture(alt2X, alt2Z, '', furn)) {
+          } else if (canGo2) {
             m.position.x = alt2X; m.position.z = alt2Z;
           } else {
-            // Completely stuck - stop and wait, then pick new target after delay
+            // Stuck - pick new target after delay
             if (!ud._stuckTimer) {
               ud._stuckTimer = setTimeout(() => {
                 ud.targetX = ud.bounds.minX + 1 + Math.random() * (ud.bounds.maxX - ud.bounds.minX - 2);
@@ -764,50 +961,60 @@ function animateMinions(time, dt) {
             }
           }
         }
+
         // Face direction of movement
         m.rotation.y = Math.atan2(dx, dz);
-        // Walking bob
-        m.position.y = Math.abs(Math.sin(time * 8)) * 0.05;
-        // Leg animation
+
+        // Subtle walking bob (0.02 amplitude, was 0.05)
+        const walkCycle = time * 5; // slower cycle: 5 instead of 8
+        m.position.y = Math.abs(Math.sin(walkCycle)) * 0.02;
+
+        // Subtle leg and arm swing
         m.children.forEach(c => {
-          if (c.name === 'legL') c.rotation.x = Math.sin(time * 8) * 0.3;
-          if (c.name === 'legR') c.rotation.x = Math.sin(time * 8 + Math.PI) * 0.3;
-          if (c.name === 'armL') c.rotation.x = Math.sin(time * 8 + Math.PI) * 0.2;
-          if (c.name === 'armR') c.rotation.x = Math.sin(time * 8) * 0.2;
+          if (c.name === 'legL') c.rotation.x = Math.sin(walkCycle) * 0.2; // was 0.3
+          if (c.name === 'legR') c.rotation.x = Math.sin(walkCycle + Math.PI) * 0.2;
+          if (c.name === 'armL') c.rotation.x = Math.sin(walkCycle + Math.PI) * 0.15; // was 0.2
+          if (c.name === 'armR') c.rotation.x = Math.sin(walkCycle) * 0.15;
         });
       }
+
     } else if (ud.state === 'thinking') {
-      // Small idle movement while thinking
-      m.position.y = bob * 0.05;
-      m.position.x += Math.sin(time * 0.5 + ud.bobPhase) * 0.002;
-      m.position.z += Math.cos(time * 0.3 + ud.bobPhase) * 0.002;
+      // Very subtle idle movement while thinking
+      m.position.y = Math.sin(time * 1.0 + ud.bobPhase) * 0.015; // was bob * 0.05
+      m.position.x += Math.sin(time * 0.3 + ud.bobPhase) * 0.001; // was 0.002
+      m.position.z += Math.cos(time * 0.2 + ud.bobPhase) * 0.001;
       // Clamp
       m.position.x = Math.max(ud.bounds.minX + 0.3, Math.min(ud.bounds.maxX - 0.3, m.position.x));
       m.position.z = Math.max(ud.bounds.minZ + 0.3, Math.min(ud.bounds.maxZ - 0.3, m.position.z));
-      // Hand on chin
+      // Hand on chin pose
       m.children.forEach(c => {
-        if (c.name === 'armR') c.rotation.x = -0.8;
-        if (c.name === 'armL') c.rotation.x = 0;
+        if (c.name === 'armR') c.rotation.x = -0.6;
+        if (c.name === 'armL') c.rotation.x = 0.05;
+        if (c.name === 'legL' || c.name === 'legR') c.rotation.x = 0;
       });
+
     } else if (ud.state === 'streaming') {
-      // Pacing while responding
-      m.position.y = bob * 0.04;
-      m.position.x += Math.sin(time * 2 + ud.bobPhase) * 0.005;
-      m.position.z += Math.cos(time * 1.5 + ud.bobPhase) * 0.003;
+      // Subtle pacing while responding
+      m.position.y = Math.sin(time * 1.0 + ud.bobPhase) * 0.015;
+      m.position.x += Math.sin(time * 1.5 + ud.bobPhase) * 0.003; // was 0.005
+      m.position.z += Math.cos(time * 1.0 + ud.bobPhase) * 0.002; // was 0.003
       m.position.x = Math.max(ud.bounds.minX + 0.3, Math.min(ud.bounds.maxX - 0.3, m.position.x));
       m.position.z = Math.max(ud.bounds.minZ + 0.3, Math.min(ud.bounds.maxZ - 0.3, m.position.z));
       m.children.forEach(c => {
-        if (c.name === 'armR') c.rotation.x = Math.sin(time * 5) * 0.3;
-        if (c.name === 'armL') c.rotation.x = Math.sin(time * 5 + 1) * 0.3;
+        if (c.name === 'armR') c.rotation.x = Math.sin(time * 3) * 0.15; // was 0.3
+        if (c.name === 'armL') c.rotation.x = Math.sin(time * 3 + 1) * 0.15;
       });
+
     } else if (ud.state === 'responding') {
-      m.position.y = Math.abs(Math.sin(time * 6)) * 0.15;
+      // Celebratory but subtle
+      m.position.y = Math.abs(Math.sin(time * 4)) * 0.04; // was 0.15
       m.children.forEach(c => {
-        if (c.name === 'armR') c.rotation.x = Math.sin(time * 8) * 0.5;
-        if (c.name === 'armL') c.rotation.x = Math.sin(time * 8 + Math.PI) * 0.5;
+        if (c.name === 'armR') c.rotation.x = Math.sin(time * 5) * 0.25; // was 0.5
+        if (c.name === 'armL') c.rotation.x = Math.sin(time * 5 + Math.PI) * 0.25;
       });
+
     } else if (ud.state === 'error') {
-      m.position.x += Math.sin(time * 30) * 0.01;
+      m.position.x += Math.sin(time * 20) * 0.005; // was 0.01
     }
   });
 }
