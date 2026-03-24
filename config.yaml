@@ -1,0 +1,9 @@
+openclawRoot: ~/.openclaw
+
+server:
+  port: 7777
+  host: 0.0.0.0
+
+display:
+  showCron: false
+  showSubagent: false

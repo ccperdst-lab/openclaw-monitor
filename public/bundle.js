@@ -10525,6 +10525,505 @@ var BufferGeometry = class _BufferGeometry extends EventDispatcher {
     this.dispatchEvent({ type: "dispose" });
   }
 };
+var InterleavedBuffer = class {
+  /**
+   * Constructs a new interleaved buffer.
+   *
+   * @param {TypedArray} array - A typed array with a shared buffer storing attribute data.
+   * @param {number} stride - The number of typed-array elements per vertex.
+   */
+  constructor(array, stride) {
+    this.isInterleavedBuffer = true;
+    this.array = array;
+    this.stride = stride;
+    this.count = array !== void 0 ? array.length / stride : 0;
+    this.usage = StaticDrawUsage;
+    this.updateRanges = [];
+    this.version = 0;
+    this.uuid = generateUUID();
+  }
+  /**
+   * A callback function that is executed after the renderer has transferred the attribute array
+   * data to the GPU.
+   */
+  onUploadCallback() {
+  }
+  /**
+   * Flag to indicate that this attribute has changed and should be re-sent to
+   * the GPU. Set this to `true` when you modify the value of the array.
+   *
+   * @type {number}
+   * @default false
+   * @param {boolean} value
+   */
+  set needsUpdate(value) {
+    if (value === true) this.version++;
+  }
+  /**
+   * Sets the usage of this interleaved buffer.
+   *
+   * @param {(StaticDrawUsage|DynamicDrawUsage|StreamDrawUsage|StaticReadUsage|DynamicReadUsage|StreamReadUsage|StaticCopyUsage|DynamicCopyUsage|StreamCopyUsage)} value - The usage to set.
+   * @return {InterleavedBuffer} A reference to this interleaved buffer.
+   */
+  setUsage(value) {
+    this.usage = value;
+    return this;
+  }
+  /**
+   * Adds a range of data in the data array to be updated on the GPU.
+   *
+   * @param {number} start - Position at which to start update.
+   * @param {number} count - The number of components to update.
+   */
+  addUpdateRange(start, count) {
+    this.updateRanges.push({ start, count });
+  }
+  /**
+   * Clears the update ranges.
+   */
+  clearUpdateRanges() {
+    this.updateRanges.length = 0;
+  }
+  /**
+   * Copies the values of the given interleaved buffer to this instance.
+   *
+   * @param {InterleavedBuffer} source - The interleaved buffer to copy.
+   * @return {InterleavedBuffer} A reference to this instance.
+   */
+  copy(source) {
+    this.array = new source.array.constructor(source.array);
+    this.count = source.count;
+    this.stride = source.stride;
+    this.usage = source.usage;
+    return this;
+  }
+  /**
+   * Copies a vector from the given interleaved buffer to this one. The start
+   * and destination position in the attribute buffers are represented by the
+   * given indices.
+   *
+   * @param {number} index1 - The destination index into this interleaved buffer.
+   * @param {InterleavedBuffer} interleavedBuffer - The interleaved buffer to copy from.
+   * @param {number} index2 - The source index into the given interleaved buffer.
+   * @return {InterleavedBuffer} A reference to this instance.
+   */
+  copyAt(index1, interleavedBuffer, index2) {
+    index1 *= this.stride;
+    index2 *= interleavedBuffer.stride;
+    for (let i = 0, l = this.stride; i < l; i++) {
+      this.array[index1 + i] = interleavedBuffer.array[index2 + i];
+    }
+    return this;
+  }
+  /**
+   * Sets the given array data in the interleaved buffer.
+   *
+   * @param {(TypedArray|Array)} value - The array data to set.
+   * @param {number} [offset=0] - The offset in this interleaved buffer's array.
+   * @return {InterleavedBuffer} A reference to this instance.
+   */
+  set(value, offset = 0) {
+    this.array.set(value, offset);
+    return this;
+  }
+  /**
+   * Returns a new interleaved buffer with copied values from this instance.
+   *
+   * @param {Object} [data] - An object with shared array buffers that allows to retain shared structures.
+   * @return {InterleavedBuffer} A clone of this instance.
+   */
+  clone(data) {
+    if (data.arrayBuffers === void 0) {
+      data.arrayBuffers = {};
+    }
+    if (this.array.buffer._uuid === void 0) {
+      this.array.buffer._uuid = generateUUID();
+    }
+    if (data.arrayBuffers[this.array.buffer._uuid] === void 0) {
+      data.arrayBuffers[this.array.buffer._uuid] = this.array.slice(0).buffer;
+    }
+    const array = new this.array.constructor(data.arrayBuffers[this.array.buffer._uuid]);
+    const ib = new this.constructor(array, this.stride);
+    ib.setUsage(this.usage);
+    return ib;
+  }
+  /**
+   * Sets the given callback function that is executed after the Renderer has transferred
+   * the array data to the GPU. Can be used to perform clean-up operations after
+   * the upload when data are not needed anymore on the CPU side.
+   *
+   * @param {Function} callback - The `onUpload()` callback.
+   * @return {InterleavedBuffer} A reference to this instance.
+   */
+  onUpload(callback) {
+    this.onUploadCallback = callback;
+    return this;
+  }
+  /**
+   * Serializes the interleaved buffer into JSON.
+   *
+   * @param {Object} [data] - An optional value holding meta information about the serialization.
+   * @return {Object} A JSON object representing the serialized interleaved buffer.
+   */
+  toJSON(data) {
+    if (data.arrayBuffers === void 0) {
+      data.arrayBuffers = {};
+    }
+    if (this.array.buffer._uuid === void 0) {
+      this.array.buffer._uuid = generateUUID();
+    }
+    if (data.arrayBuffers[this.array.buffer._uuid] === void 0) {
+      data.arrayBuffers[this.array.buffer._uuid] = Array.from(new Uint32Array(this.array.buffer));
+    }
+    return {
+      uuid: this.uuid,
+      buffer: this.array.buffer._uuid,
+      type: this.array.constructor.name,
+      stride: this.stride
+    };
+  }
+};
+var _vector$8 = /* @__PURE__ */ new Vector3();
+var InterleavedBufferAttribute = class _InterleavedBufferAttribute {
+  /**
+   * Constructs a new interleaved buffer attribute.
+   *
+   * @param {InterleavedBuffer} interleavedBuffer - The buffer holding the interleaved data.
+   * @param {number} itemSize - The item size.
+   * @param {number} offset - The attribute offset into the buffer.
+   * @param {boolean} [normalized=false] - Whether the data are normalized or not.
+   */
+  constructor(interleavedBuffer, itemSize, offset, normalized = false) {
+    this.isInterleavedBufferAttribute = true;
+    this.name = "";
+    this.data = interleavedBuffer;
+    this.itemSize = itemSize;
+    this.offset = offset;
+    this.normalized = normalized;
+  }
+  /**
+   * The item count of this buffer attribute.
+   *
+   * @type {number}
+   * @readonly
+   */
+  get count() {
+    return this.data.count;
+  }
+  /**
+   * The array holding the interleaved buffer attribute data.
+   *
+   * @type {TypedArray}
+   */
+  get array() {
+    return this.data.array;
+  }
+  /**
+   * Flag to indicate that this attribute has changed and should be re-sent to
+   * the GPU. Set this to `true` when you modify the value of the array.
+   *
+   * @type {number}
+   * @default false
+   * @param {boolean} value
+   */
+  set needsUpdate(value) {
+    this.data.needsUpdate = value;
+  }
+  /**
+   * Applies the given 4x4 matrix to the given attribute. Only works with
+   * item size `3`.
+   *
+   * @param {Matrix4} m - The matrix to apply.
+   * @return {InterleavedBufferAttribute} A reference to this instance.
+   */
+  applyMatrix4(m) {
+    for (let i = 0, l = this.data.count; i < l; i++) {
+      _vector$8.fromBufferAttribute(this, i);
+      _vector$8.applyMatrix4(m);
+      this.setXYZ(i, _vector$8.x, _vector$8.y, _vector$8.z);
+    }
+    return this;
+  }
+  /**
+   * Applies the given 3x3 normal matrix to the given attribute. Only works with
+   * item size `3`.
+   *
+   * @param {Matrix3} m - The normal matrix to apply.
+   * @return {InterleavedBufferAttribute} A reference to this instance.
+   */
+  applyNormalMatrix(m) {
+    for (let i = 0, l = this.count; i < l; i++) {
+      _vector$8.fromBufferAttribute(this, i);
+      _vector$8.applyNormalMatrix(m);
+      this.setXYZ(i, _vector$8.x, _vector$8.y, _vector$8.z);
+    }
+    return this;
+  }
+  /**
+   * Applies the given 4x4 matrix to the given attribute. Only works with
+   * item size `3` and with direction vectors.
+   *
+   * @param {Matrix4} m - The matrix to apply.
+   * @return {InterleavedBufferAttribute} A reference to this instance.
+   */
+  transformDirection(m) {
+    for (let i = 0, l = this.count; i < l; i++) {
+      _vector$8.fromBufferAttribute(this, i);
+      _vector$8.transformDirection(m);
+      this.setXYZ(i, _vector$8.x, _vector$8.y, _vector$8.z);
+    }
+    return this;
+  }
+  /**
+   * Returns the given component of the vector at the given index.
+   *
+   * @param {number} index - The index into the buffer attribute.
+   * @param {number} component - The component index.
+   * @return {number} The returned value.
+   */
+  getComponent(index, component) {
+    let value = this.array[index * this.data.stride + this.offset + component];
+    if (this.normalized) value = denormalize(value, this.array);
+    return value;
+  }
+  /**
+   * Sets the given value to the given component of the vector at the given index.
+   *
+   * @param {number} index - The index into the buffer attribute.
+   * @param {number} component - The component index.
+   * @param {number} value - The value to set.
+   * @return {InterleavedBufferAttribute} A reference to this instance.
+   */
+  setComponent(index, component, value) {
+    if (this.normalized) value = normalize(value, this.array);
+    this.data.array[index * this.data.stride + this.offset + component] = value;
+    return this;
+  }
+  /**
+   * Sets the x component of the vector at the given index.
+   *
+   * @param {number} index - The index into the buffer attribute.
+   * @param {number} x - The value to set.
+   * @return {InterleavedBufferAttribute} A reference to this instance.
+   */
+  setX(index, x) {
+    if (this.normalized) x = normalize(x, this.array);
+    this.data.array[index * this.data.stride + this.offset] = x;
+    return this;
+  }
+  /**
+   * Sets the y component of the vector at the given index.
+   *
+   * @param {number} index - The index into the buffer attribute.
+   * @param {number} y - The value to set.
+   * @return {InterleavedBufferAttribute} A reference to this instance.
+   */
+  setY(index, y) {
+    if (this.normalized) y = normalize(y, this.array);
+    this.data.array[index * this.data.stride + this.offset + 1] = y;
+    return this;
+  }
+  /**
+   * Sets the z component of the vector at the given index.
+   *
+   * @param {number} index - The index into the buffer attribute.
+   * @param {number} z - The value to set.
+   * @return {InterleavedBufferAttribute} A reference to this instance.
+   */
+  setZ(index, z) {
+    if (this.normalized) z = normalize(z, this.array);
+    this.data.array[index * this.data.stride + this.offset + 2] = z;
+    return this;
+  }
+  /**
+   * Sets the w component of the vector at the given index.
+   *
+   * @param {number} index - The index into the buffer attribute.
+   * @param {number} w - The value to set.
+   * @return {InterleavedBufferAttribute} A reference to this instance.
+   */
+  setW(index, w) {
+    if (this.normalized) w = normalize(w, this.array);
+    this.data.array[index * this.data.stride + this.offset + 3] = w;
+    return this;
+  }
+  /**
+   * Returns the x component of the vector at the given index.
+   *
+   * @param {number} index - The index into the buffer attribute.
+   * @return {number} The x component.
+   */
+  getX(index) {
+    let x = this.data.array[index * this.data.stride + this.offset];
+    if (this.normalized) x = denormalize(x, this.array);
+    return x;
+  }
+  /**
+   * Returns the y component of the vector at the given index.
+   *
+   * @param {number} index - The index into the buffer attribute.
+   * @return {number} The y component.
+   */
+  getY(index) {
+    let y = this.data.array[index * this.data.stride + this.offset + 1];
+    if (this.normalized) y = denormalize(y, this.array);
+    return y;
+  }
+  /**
+   * Returns the z component of the vector at the given index.
+   *
+   * @param {number} index - The index into the buffer attribute.
+   * @return {number} The z component.
+   */
+  getZ(index) {
+    let z = this.data.array[index * this.data.stride + this.offset + 2];
+    if (this.normalized) z = denormalize(z, this.array);
+    return z;
+  }
+  /**
+   * Returns the w component of the vector at the given index.
+   *
+   * @param {number} index - The index into the buffer attribute.
+   * @return {number} The w component.
+   */
+  getW(index) {
+    let w = this.data.array[index * this.data.stride + this.offset + 3];
+    if (this.normalized) w = denormalize(w, this.array);
+    return w;
+  }
+  /**
+   * Sets the x and y component of the vector at the given index.
+   *
+   * @param {number} index - The index into the buffer attribute.
+   * @param {number} x - The value for the x component to set.
+   * @param {number} y - The value for the y component to set.
+   * @return {InterleavedBufferAttribute} A reference to this instance.
+   */
+  setXY(index, x, y) {
+    index = index * this.data.stride + this.offset;
+    if (this.normalized) {
+      x = normalize(x, this.array);
+      y = normalize(y, this.array);
+    }
+    this.data.array[index + 0] = x;
+    this.data.array[index + 1] = y;
+    return this;
+  }
+  /**
+   * Sets the x, y and z component of the vector at the given index.
+   *
+   * @param {number} index - The index into the buffer attribute.
+   * @param {number} x - The value for the x component to set.
+   * @param {number} y - The value for the y component to set.
+   * @param {number} z - The value for the z component to set.
+   * @return {InterleavedBufferAttribute} A reference to this instance.
+   */
+  setXYZ(index, x, y, z) {
+    index = index * this.data.stride + this.offset;
+    if (this.normalized) {
+      x = normalize(x, this.array);
+      y = normalize(y, this.array);
+      z = normalize(z, this.array);
+    }
+    this.data.array[index + 0] = x;
+    this.data.array[index + 1] = y;
+    this.data.array[index + 2] = z;
+    return this;
+  }
+  /**
+   * Sets the x, y, z and w component of the vector at the given index.
+   *
+   * @param {number} index - The index into the buffer attribute.
+   * @param {number} x - The value for the x component to set.
+   * @param {number} y - The value for the y component to set.
+   * @param {number} z - The value for the z component to set.
+   * @param {number} w - The value for the w component to set.
+   * @return {InterleavedBufferAttribute} A reference to this instance.
+   */
+  setXYZW(index, x, y, z, w) {
+    index = index * this.data.stride + this.offset;
+    if (this.normalized) {
+      x = normalize(x, this.array);
+      y = normalize(y, this.array);
+      z = normalize(z, this.array);
+      w = normalize(w, this.array);
+    }
+    this.data.array[index + 0] = x;
+    this.data.array[index + 1] = y;
+    this.data.array[index + 2] = z;
+    this.data.array[index + 3] = w;
+    return this;
+  }
+  /**
+   * Returns a new buffer attribute with copied values from this instance.
+   *
+   * If no parameter is provided, cloning an interleaved buffer attribute will de-interleave buffer data.
+   *
+   * @param {Object} [data] - An object with interleaved buffers that allows to retain the interleaved property.
+   * @return {BufferAttribute|InterleavedBufferAttribute} A clone of this instance.
+   */
+  clone(data) {
+    if (data === void 0) {
+      log("InterleavedBufferAttribute.clone(): Cloning an interleaved buffer attribute will de-interleave buffer data.");
+      const array = [];
+      for (let i = 0; i < this.count; i++) {
+        const index = i * this.data.stride + this.offset;
+        for (let j = 0; j < this.itemSize; j++) {
+          array.push(this.data.array[index + j]);
+        }
+      }
+      return new BufferAttribute(new this.array.constructor(array), this.itemSize, this.normalized);
+    } else {
+      if (data.interleavedBuffers === void 0) {
+        data.interleavedBuffers = {};
+      }
+      if (data.interleavedBuffers[this.data.uuid] === void 0) {
+        data.interleavedBuffers[this.data.uuid] = this.data.clone(data);
+      }
+      return new _InterleavedBufferAttribute(data.interleavedBuffers[this.data.uuid], this.itemSize, this.offset, this.normalized);
+    }
+  }
+  /**
+   * Serializes the buffer attribute into JSON.
+   *
+   * If no parameter is provided, cloning an interleaved buffer attribute will de-interleave buffer data.
+   *
+   * @param {Object} [data] - An optional value holding meta information about the serialization.
+   * @return {Object} A JSON object representing the serialized buffer attribute.
+   */
+  toJSON(data) {
+    if (data === void 0) {
+      log("InterleavedBufferAttribute.toJSON(): Serializing an interleaved buffer attribute will de-interleave buffer data.");
+      const array = [];
+      for (let i = 0; i < this.count; i++) {
+        const index = i * this.data.stride + this.offset;
+        for (let j = 0; j < this.itemSize; j++) {
+          array.push(this.data.array[index + j]);
+        }
+      }
+      return {
+        itemSize: this.itemSize,
+        type: this.array.constructor.name,
+        array,
+        normalized: this.normalized
+      };
+    } else {
+      if (data.interleavedBuffers === void 0) {
+        data.interleavedBuffers = {};
+      }
+      if (data.interleavedBuffers[this.data.uuid] === void 0) {
+        data.interleavedBuffers[this.data.uuid] = this.data.toJSON(data);
+      }
+      return {
+        isInterleavedBufferAttribute: true,
+        itemSize: this.itemSize,
+        data: this.data.uuid,
+        offset: this.offset,
+        normalized: this.normalized
+      };
+    }
+  }
+};
 var _materialId = 0;
 var Material = class extends EventDispatcher {
   /**
@@ -10946,6 +11445,166 @@ var Material = class extends EventDispatcher {
     if (value === true) this.version++;
   }
 };
+var SpriteMaterial = class extends Material {
+  /**
+   * Constructs a new sprite material.
+   *
+   * @param {Object} [parameters] - An object with one or more properties
+   * defining the material's appearance. Any property of the material
+   * (including any property from inherited materials) can be passed
+   * in here. Color values can be passed any type of value accepted
+   * by {@link Color#set}.
+   */
+  constructor(parameters) {
+    super();
+    this.isSpriteMaterial = true;
+    this.type = "SpriteMaterial";
+    this.color = new Color(16777215);
+    this.map = null;
+    this.alphaMap = null;
+    this.rotation = 0;
+    this.sizeAttenuation = true;
+    this.transparent = true;
+    this.fog = true;
+    this.setValues(parameters);
+  }
+  copy(source) {
+    super.copy(source);
+    this.color.copy(source.color);
+    this.map = source.map;
+    this.alphaMap = source.alphaMap;
+    this.rotation = source.rotation;
+    this.sizeAttenuation = source.sizeAttenuation;
+    this.fog = source.fog;
+    return this;
+  }
+};
+var _geometry;
+var _intersectPoint = /* @__PURE__ */ new Vector3();
+var _worldScale = /* @__PURE__ */ new Vector3();
+var _mvPosition = /* @__PURE__ */ new Vector3();
+var _alignedPosition = /* @__PURE__ */ new Vector2();
+var _rotatedPosition = /* @__PURE__ */ new Vector2();
+var _viewWorldMatrix = /* @__PURE__ */ new Matrix4();
+var _vA$1 = /* @__PURE__ */ new Vector3();
+var _vB$1 = /* @__PURE__ */ new Vector3();
+var _vC$1 = /* @__PURE__ */ new Vector3();
+var _uvA = /* @__PURE__ */ new Vector2();
+var _uvB = /* @__PURE__ */ new Vector2();
+var _uvC = /* @__PURE__ */ new Vector2();
+var Sprite = class extends Object3D {
+  /**
+   * Constructs a new sprite.
+   *
+   * @param {(SpriteMaterial|SpriteNodeMaterial)} [material] - The sprite material.
+   */
+  constructor(material = new SpriteMaterial()) {
+    super();
+    this.isSprite = true;
+    this.type = "Sprite";
+    if (_geometry === void 0) {
+      _geometry = new BufferGeometry();
+      const float32Array = new Float32Array([
+        -0.5,
+        -0.5,
+        0,
+        0,
+        0,
+        0.5,
+        -0.5,
+        0,
+        1,
+        0,
+        0.5,
+        0.5,
+        0,
+        1,
+        1,
+        -0.5,
+        0.5,
+        0,
+        0,
+        1
+      ]);
+      const interleavedBuffer = new InterleavedBuffer(float32Array, 5);
+      _geometry.setIndex([0, 1, 2, 0, 2, 3]);
+      _geometry.setAttribute("position", new InterleavedBufferAttribute(interleavedBuffer, 3, 0, false));
+      _geometry.setAttribute("uv", new InterleavedBufferAttribute(interleavedBuffer, 2, 3, false));
+    }
+    this.geometry = _geometry;
+    this.material = material;
+    this.center = new Vector2(0.5, 0.5);
+    this.count = 1;
+  }
+  /**
+   * Computes intersection points between a casted ray and this sprite.
+   *
+   * @param {Raycaster} raycaster - The raycaster.
+   * @param {Array<Object>} intersects - The target array that holds the intersection points.
+   */
+  raycast(raycaster2, intersects) {
+    if (raycaster2.camera === null) {
+      error('Sprite: "Raycaster.camera" needs to be set in order to raycast against sprites.');
+    }
+    _worldScale.setFromMatrixScale(this.matrixWorld);
+    _viewWorldMatrix.copy(raycaster2.camera.matrixWorld);
+    this.modelViewMatrix.multiplyMatrices(raycaster2.camera.matrixWorldInverse, this.matrixWorld);
+    _mvPosition.setFromMatrixPosition(this.modelViewMatrix);
+    if (raycaster2.camera.isPerspectiveCamera && this.material.sizeAttenuation === false) {
+      _worldScale.multiplyScalar(-_mvPosition.z);
+    }
+    const rotation = this.material.rotation;
+    let sin, cos;
+    if (rotation !== 0) {
+      cos = Math.cos(rotation);
+      sin = Math.sin(rotation);
+    }
+    const center = this.center;
+    transformVertex(_vA$1.set(-0.5, -0.5, 0), _mvPosition, center, _worldScale, sin, cos);
+    transformVertex(_vB$1.set(0.5, -0.5, 0), _mvPosition, center, _worldScale, sin, cos);
+    transformVertex(_vC$1.set(0.5, 0.5, 0), _mvPosition, center, _worldScale, sin, cos);
+    _uvA.set(0, 0);
+    _uvB.set(1, 0);
+    _uvC.set(1, 1);
+    let intersect2 = raycaster2.ray.intersectTriangle(_vA$1, _vB$1, _vC$1, false, _intersectPoint);
+    if (intersect2 === null) {
+      transformVertex(_vB$1.set(-0.5, 0.5, 0), _mvPosition, center, _worldScale, sin, cos);
+      _uvB.set(0, 1);
+      intersect2 = raycaster2.ray.intersectTriangle(_vA$1, _vC$1, _vB$1, false, _intersectPoint);
+      if (intersect2 === null) {
+        return;
+      }
+    }
+    const distance = raycaster2.ray.origin.distanceTo(_intersectPoint);
+    if (distance < raycaster2.near || distance > raycaster2.far) return;
+    intersects.push({
+      distance,
+      point: _intersectPoint.clone(),
+      uv: Triangle.getInterpolation(_intersectPoint, _vA$1, _vB$1, _vC$1, _uvA, _uvB, _uvC, new Vector2()),
+      face: null,
+      object: this
+    });
+  }
+  copy(source, recursive) {
+    super.copy(source, recursive);
+    if (source.center !== void 0) this.center.copy(source.center);
+    this.material = source.material;
+    return this;
+  }
+};
+function transformVertex(vertexPosition, mvPosition, center, scale, sin, cos) {
+  _alignedPosition.subVectors(vertexPosition, center).addScalar(0.5).multiply(scale);
+  if (sin !== void 0) {
+    _rotatedPosition.x = cos * _alignedPosition.x - sin * _alignedPosition.y;
+    _rotatedPosition.y = sin * _alignedPosition.x + cos * _alignedPosition.y;
+  } else {
+    _rotatedPosition.copy(_alignedPosition);
+  }
+  vertexPosition.copy(mvPosition);
+  vertexPosition.x += _rotatedPosition.x;
+  vertexPosition.y += _rotatedPosition.y;
+  vertexPosition.applyMatrix4(_viewWorldMatrix);
+}
 var _vector$7 = /* @__PURE__ */ new Vector3();
 var _segCenter = /* @__PURE__ */ new Vector3();
 var _segDir = /* @__PURE__ */ new Vector3();
@@ -11486,7 +12145,7 @@ var Mesh = class extends Object3D {
    * @param {Raycaster} raycaster - The raycaster.
    * @param {Array<Object>} intersects - The target array that holds the intersection points.
    */
-  raycast(raycaster, intersects) {
+  raycast(raycaster2, intersects) {
     const geometry = this.geometry;
     const material = this.material;
     const matrixWorld = this.matrixWorld;
@@ -11494,19 +12153,19 @@ var Mesh = class extends Object3D {
     if (geometry.boundingSphere === null) geometry.computeBoundingSphere();
     _sphere$6.copy(geometry.boundingSphere);
     _sphere$6.applyMatrix4(matrixWorld);
-    _ray$3.copy(raycaster.ray).recast(raycaster.near);
+    _ray$3.copy(raycaster2.ray).recast(raycaster2.near);
     if (_sphere$6.containsPoint(_ray$3.origin) === false) {
       if (_ray$3.intersectSphere(_sphere$6, _sphereHitAt) === null) return;
-      if (_ray$3.origin.distanceToSquared(_sphereHitAt) > (raycaster.far - raycaster.near) ** 2) return;
+      if (_ray$3.origin.distanceToSquared(_sphereHitAt) > (raycaster2.far - raycaster2.near) ** 2) return;
     }
     _inverseMatrix$3.copy(matrixWorld).invert();
-    _ray$3.copy(raycaster.ray).applyMatrix4(_inverseMatrix$3);
+    _ray$3.copy(raycaster2.ray).applyMatrix4(_inverseMatrix$3);
     if (geometry.boundingBox !== null) {
       if (_ray$3.intersectsBox(geometry.boundingBox) === false) return;
     }
-    this._computeIntersections(raycaster, intersects, _ray$3);
+    this._computeIntersections(raycaster2, intersects, _ray$3);
   }
-  _computeIntersections(raycaster, intersects, rayLocalSpace) {
+  _computeIntersections(raycaster2, intersects, rayLocalSpace) {
     let intersection;
     const geometry = this.geometry;
     const material = this.material;
@@ -11528,7 +12187,7 @@ var Mesh = class extends Object3D {
             const a = index.getX(j);
             const b = index.getX(j + 1);
             const c = index.getX(j + 2);
-            intersection = checkGeometryIntersection(this, groupMaterial, raycaster, rayLocalSpace, uv, uv1, normal, a, b, c);
+            intersection = checkGeometryIntersection(this, groupMaterial, raycaster2, rayLocalSpace, uv, uv1, normal, a, b, c);
             if (intersection) {
               intersection.faceIndex = Math.floor(j / 3);
               intersection.face.materialIndex = group.materialIndex;
@@ -11543,7 +12202,7 @@ var Mesh = class extends Object3D {
           const a = index.getX(i);
           const b = index.getX(i + 1);
           const c = index.getX(i + 2);
-          intersection = checkGeometryIntersection(this, material, raycaster, rayLocalSpace, uv, uv1, normal, a, b, c);
+          intersection = checkGeometryIntersection(this, material, raycaster2, rayLocalSpace, uv, uv1, normal, a, b, c);
           if (intersection) {
             intersection.faceIndex = Math.floor(i / 3);
             intersects.push(intersection);
@@ -11561,7 +12220,7 @@ var Mesh = class extends Object3D {
             const a = j;
             const b = j + 1;
             const c = j + 2;
-            intersection = checkGeometryIntersection(this, groupMaterial, raycaster, rayLocalSpace, uv, uv1, normal, a, b, c);
+            intersection = checkGeometryIntersection(this, groupMaterial, raycaster2, rayLocalSpace, uv, uv1, normal, a, b, c);
             if (intersection) {
               intersection.faceIndex = Math.floor(j / 3);
               intersection.face.materialIndex = group.materialIndex;
@@ -11576,7 +12235,7 @@ var Mesh = class extends Object3D {
           const a = i;
           const b = i + 1;
           const c = i + 2;
-          intersection = checkGeometryIntersection(this, material, raycaster, rayLocalSpace, uv, uv1, normal, a, b, c);
+          intersection = checkGeometryIntersection(this, material, raycaster2, rayLocalSpace, uv, uv1, normal, a, b, c);
           if (intersection) {
             intersection.faceIndex = Math.floor(i / 3);
             intersects.push(intersection);
@@ -11586,7 +12245,7 @@ var Mesh = class extends Object3D {
     }
   }
 };
-function checkIntersection$1(object, material, raycaster, ray, pA, pB, pC, point) {
+function checkIntersection$1(object, material, raycaster2, ray, pA, pB, pC, point) {
   let intersect2;
   if (material.side === BackSide) {
     intersect2 = ray.intersectTriangle(pC, pB, pA, true, point);
@@ -11596,19 +12255,19 @@ function checkIntersection$1(object, material, raycaster, ray, pA, pB, pC, point
   if (intersect2 === null) return null;
   _intersectionPointWorld.copy(point);
   _intersectionPointWorld.applyMatrix4(object.matrixWorld);
-  const distance = raycaster.ray.origin.distanceTo(_intersectionPointWorld);
-  if (distance < raycaster.near || distance > raycaster.far) return null;
+  const distance = raycaster2.ray.origin.distanceTo(_intersectionPointWorld);
+  if (distance < raycaster2.near || distance > raycaster2.far) return null;
   return {
     distance,
     point: _intersectionPointWorld.clone(),
     object
   };
 }
-function checkGeometryIntersection(object, material, raycaster, ray, uv, uv1, normal, a, b, c) {
+function checkGeometryIntersection(object, material, raycaster2, ray, uv, uv1, normal, a, b, c) {
   object.getVertexPosition(a, _vA);
   object.getVertexPosition(b, _vB);
   object.getVertexPosition(c, _vC);
-  const intersection = checkIntersection$1(object, material, raycaster, ray, _vA, _vB, _vC, _intersectionPoint);
+  const intersection = checkIntersection$1(object, material, raycaster2, ray, _vA, _vB, _vC, _intersectionPoint);
   if (intersection) {
     const barycoord = new Vector3();
     Triangle.getBarycoord(_intersectionPoint, _vA, _vB, _vC, barycoord);
@@ -12324,69 +12983,6 @@ var BoxGeometry = class _BoxGeometry extends BufferGeometry {
    */
   static fromJSON(data) {
     return new _BoxGeometry(data.width, data.height, data.depth, data.widthSegments, data.heightSegments, data.depthSegments);
-  }
-};
-var CircleGeometry = class _CircleGeometry extends BufferGeometry {
-  /**
-   * Constructs a new circle geometry.
-   *
-   * @param {number} [radius=1] - Radius of the circle.
-   * @param {number} [segments=32] - Number of segments (triangles), minimum = `3`.
-   * @param {number} [thetaStart=0] - Start angle for first segment in radians.
-   * @param {number} [thetaLength=Math.PI*2] - The central angle, often called theta,
-   * of the circular sector in radians. The default value results in a complete circle.
-   */
-  constructor(radius = 1, segments = 32, thetaStart = 0, thetaLength = Math.PI * 2) {
-    super();
-    this.type = "CircleGeometry";
-    this.parameters = {
-      radius,
-      segments,
-      thetaStart,
-      thetaLength
-    };
-    segments = Math.max(3, segments);
-    const indices = [];
-    const vertices = [];
-    const normals = [];
-    const uvs = [];
-    const vertex2 = new Vector3();
-    const uv = new Vector2();
-    vertices.push(0, 0, 0);
-    normals.push(0, 0, 1);
-    uvs.push(0.5, 0.5);
-    for (let s = 0, i = 3; s <= segments; s++, i += 3) {
-      const segment = thetaStart + s / segments * thetaLength;
-      vertex2.x = radius * Math.cos(segment);
-      vertex2.y = radius * Math.sin(segment);
-      vertices.push(vertex2.x, vertex2.y, vertex2.z);
-      normals.push(0, 0, 1);
-      uv.x = (vertices[i] / radius + 1) / 2;
-      uv.y = (vertices[i + 1] / radius + 1) / 2;
-      uvs.push(uv.x, uv.y);
-    }
-    for (let i = 1; i <= segments; i++) {
-      indices.push(i, i + 1, 0);
-    }
-    this.setIndex(indices);
-    this.setAttribute("position", new Float32BufferAttribute(vertices, 3));
-    this.setAttribute("normal", new Float32BufferAttribute(normals, 3));
-    this.setAttribute("uv", new Float32BufferAttribute(uvs, 2));
-  }
-  copy(source) {
-    super.copy(source);
-    this.parameters = Object.assign({}, source.parameters);
-    return this;
-  }
-  /**
-   * Factory method for creating an instance of this class from the given
-   * JSON object.
-   *
-   * @param {Object} data - A JSON object representing the serialized geometry.
-   * @return {CircleGeometry} A new instance.
-   */
-  static fromJSON(data) {
-    return new _CircleGeometry(data.radius, data.segments, data.thetaStart, data.thetaLength);
   }
 };
 var CylinderGeometry = class _CylinderGeometry extends BufferGeometry {
@@ -14178,33 +14774,6 @@ var Light = class extends Object3D {
     return data;
   }
 };
-var HemisphereLight = class extends Light {
-  /**
-   * Constructs a new hemisphere light.
-   *
-   * @param {(number|Color|string)} [skyColor=0xffffff] - The light's sky color.
-   * @param {(number|Color|string)} [groundColor=0xffffff] - The light's ground color.
-   * @param {number} [intensity=1] - The light's strength/intensity.
-   */
-  constructor(skyColor, groundColor, intensity) {
-    super(skyColor, intensity);
-    this.isHemisphereLight = true;
-    this.type = "HemisphereLight";
-    this.position.copy(Object3D.DEFAULT_UP);
-    this.updateMatrix();
-    this.groundColor = new Color(groundColor);
-  }
-  copy(source, recursive) {
-    super.copy(source, recursive);
-    this.groundColor.copy(source.groundColor);
-    return this;
-  }
-  toJSON(meta) {
-    const data = super.toJSON(meta);
-    data.object.groundColor = this.groundColor.getHex();
-    return data;
-  }
-};
 var _projScreenMatrix = /* @__PURE__ */ new Matrix4();
 var _lightPositionWorld = /* @__PURE__ */ new Vector3();
 var _lookTarget = /* @__PURE__ */ new Vector3();
@@ -15601,16 +16170,16 @@ var Raycaster = class {
 function ascSort(a, b) {
   return a.distance - b.distance;
 }
-function intersect(object, raycaster, intersects, recursive) {
+function intersect(object, raycaster2, intersects, recursive) {
   let propagate = true;
-  if (object.layers.test(raycaster.layers)) {
-    const result = object.raycast(raycaster, intersects);
+  if (object.layers.test(raycaster2.layers)) {
+    const result = object.raycast(raycaster2, intersects);
     if (result === false) propagate = false;
   }
   if (propagate === true && recursive === true) {
     const children = object.children;
     for (let i = 0, l = children.length; i < l; i++) {
-      intersect(children[i], raycaster, intersects, true);
+      intersect(children[i], raycaster2, intersects, true);
     }
   }
 }
@@ -20899,7 +21468,7 @@ function WebGLRenderList() {
   const opaque = [];
   const transmissive = [];
   const transparent = [];
-  function init2() {
+  function init() {
     renderItemsIndex = 0;
     opaque.length = 0;
     transmissive.length = 0;
@@ -20980,7 +21549,7 @@ function WebGLRenderList() {
     opaque,
     transmissive,
     transparent,
-    init: init2,
+    init,
     push,
     unshift,
     finish,
@@ -21385,7 +21954,7 @@ function WebGLRenderState(extensions) {
   const lights = new WebGLLights(extensions);
   const lightsArray = [];
   const shadowsArray = [];
-  function init2(camera2) {
+  function init(camera2) {
     state.camera = camera2;
     lightsArray.length = 0;
     shadowsArray.length = 0;
@@ -21410,7 +21979,7 @@ function WebGLRenderState(extensions) {
     transmissionRenderTarget: {}
   };
   return {
-    init: init2,
+    init,
     state,
     setupLights,
     setupLightsView,
@@ -27093,7 +27662,7 @@ var WebGLRenderer = class {
 var container = document.getElementById("scene3d");
 var scene = new Scene();
 scene.background = new Color(8900331);
-scene.fog = new FogExp2(8900331, 0.015);
+scene.fog = new FogExp2(8900331, 0.012);
 var camera = new PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 300);
 camera.position.set(25, 30, 35);
 var renderer = new WebGLRenderer({ antialias: true });
@@ -27103,7 +27672,7 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = PCFSoftShadowMap;
 container.appendChild(renderer.domElement);
 var yaw = 0;
-var pitch = 0;
+var pitch = -0.5;
 var moveSpeed = 12;
 var keys = { w: false, a: false, s: false, d: false, space: false, shift: false };
 var isDragging = false;
@@ -27119,11 +27688,9 @@ renderer.domElement.addEventListener("mousedown", (e) => {
 });
 window.addEventListener("mousemove", (e) => {
   if (!isDragging) return;
-  const dx = e.clientX - lastMX;
-  const dy = e.clientY - lastMY;
-  yaw -= dx * 3e-3;
-  pitch -= dy * 3e-3;
-  pitch = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, pitch));
+  yaw -= (e.clientX - lastMX) * 3e-3;
+  pitch -= (e.clientY - lastMY) * 3e-3;
+  pitch = Math.max(-Math.PI / 2.5, Math.min(-0.1, pitch));
   lastMX = e.clientX;
   lastMY = e.clientY;
 });
@@ -27132,417 +27699,37 @@ window.addEventListener("mouseup", () => {
   renderer.domElement.classList.remove("dragging");
 });
 window.addEventListener("keydown", (e) => {
-  const tag = e.target.tagName;
-  if (tag === "INPUT" || tag === "TEXTAREA" || e.target.isContentEditable) return;
-  if (e.key.toLowerCase() === "w") keys.w = true;
-  if (e.key.toLowerCase() === "a") keys.a = true;
-  if (e.key.toLowerCase() === "s") keys.s = true;
-  if (e.key.toLowerCase() === "d") keys.d = true;
-  if (e.key === " ") {
-    keys.space = true;
-    e.preventDefault();
-  }
-  if (e.key === "Shift") {
-    keys.shift = true;
-    e.preventDefault();
-  }
+  const k = e.key.toLowerCase();
+  if (k in keys) keys[k] = true;
 });
 window.addEventListener("keyup", (e) => {
-  const tag = e.target.tagName;
-  if (tag === "INPUT" || tag === "TEXTAREA" || e.target.isContentEditable) return;
-  if (e.key.toLowerCase() === "w") keys.w = false;
-  if (e.key.toLowerCase() === "a") keys.a = false;
-  if (e.key.toLowerCase() === "s") keys.s = false;
-  if (e.key.toLowerCase() === "d") keys.d = false;
-  if (e.key === " ") keys.space = false;
-  if (e.key === "Shift") keys.shift = false;
+  const k = e.key.toLowerCase();
+  if (k in keys) keys[k] = false;
 });
-camera.position.set(6, 5, 12);
-yaw = Math.PI;
-var hemiLight = new HemisphereLight(8900331, 5917242, 0.5);
-scene.add(hemiLight);
-var ambientLight = new AmbientLight(8952251, 0.6);
-scene.add(ambientLight);
-var sunLight = new DirectionalLight(16774368, 1.2);
-sunLight.position.set(15, 30, 10);
-sunLight.castShadow = true;
-sunLight.shadow.mapSize.set(2048, 2048);
-sunLight.shadow.camera.near = 0.5;
-sunLight.shadow.camera.far = 80;
-sunLight.shadow.camera.left = -20;
-sunLight.shadow.camera.right = 20;
-sunLight.shadow.camera.top = 20;
-sunLight.shadow.camera.bottom = -20;
-scene.add(sunLight);
-var fillLight = new DirectionalLight(16772829, 0.3);
-fillLight.position.set(-10, 10, -5);
-scene.add(fillLight);
-var lampLight = new PointLight(16764006, 0.6, 12);
-lampLight.position.set(2, 3, 1);
-lampLight.castShadow = true;
-scene.add(lampLight);
-var sunGeo = new SphereGeometry(3, 16, 16);
-var sunMat = new MeshBasicMaterial({ color: 16772744 });
-var sunMesh = new Mesh(sunGeo, sunMat);
-sunMesh.position.set(40, 50, -20);
-scene.add(sunMesh);
-var sunGlow = new Mesh(new SphereGeometry(5, 16, 16), new MeshBasicMaterial({ color: 16777130, transparent: true, opacity: 0.3 }));
-sunGlow.position.copy(sunMesh.position);
-scene.add(sunGlow);
-var skyGeo = new SphereGeometry(120, 32, 16);
-var skyMat = new MeshBasicMaterial({
-  color: 8900331,
-  side: BackSide
-});
-var sky = new Mesh(skyGeo, skyMat);
-scene.add(sky);
-var cloudMat = new MeshBasicMaterial({ color: 16777215, transparent: true, opacity: 0.7 });
-for (let i = 0; i < 8; i++) {
-  const cloud = new Mesh(new PlaneGeometry(8 + Math.random() * 12, 2 + Math.random() * 2), cloudMat);
-  cloud.position.set(-30 + Math.random() * 80, 35 + Math.random() * 15, -40 + Math.random() * 60);
-  cloud.rotation.x = -Math.PI / 2;
-  scene.add(cloud);
-}
-function makeCanvasTex(w, h, drawFn) {
-  const c = document.createElement("canvas");
-  c.width = w;
-  c.height = h;
-  const ctx = c.getContext("2d");
-  drawFn(ctx, w, h);
-  const t = new CanvasTexture(c);
-  t.wrapS = t.wrapT = RepeatWrapping;
-  return t;
-}
-function woodTexture(ctx, w, h) {
-  ctx.fillStyle = "#8B6914";
-  ctx.fillRect(0, 0, w, h);
-  for (let i = 0; i < h; i += 3) {
-    ctx.fillStyle = `rgba(${100 + Math.random() * 40},${80 + Math.random() * 30},${20 + Math.random() * 15},0.3)`;
-    ctx.fillRect(0, i, w, 2);
-  }
-  for (let i = 0; i < 5; i++) {
-    ctx.beginPath();
-    ctx.arc(Math.random() * w, Math.random() * h, 3 + Math.random() * 4, 0, Math.PI * 2);
-    ctx.fillStyle = "rgba(60,40,10,0.2)";
-    ctx.fill();
-  }
-}
-function wallTexture(ctx, w, h) {
-  ctx.fillStyle = "#f5e6d3";
-  ctx.fillRect(0, 0, w, h);
-  for (let i = 0; i < 500; i++) {
-    ctx.fillStyle = `rgba(${200 + Math.random() * 55},${180 + Math.random() * 50},${160 + Math.random() * 40},0.15)`;
-    ctx.fillRect(Math.random() * w, Math.random() * h, 2 + Math.random() * 4, 2 + Math.random() * 4);
-  }
-}
-function roofTexture(ctx, w, h) {
-  ctx.fillStyle = "#b84c3a";
-  ctx.fillRect(0, 0, w, h);
-  const tw = 16, th = 10;
-  for (let y = 0; y < h; y += th) {
-    const off = Math.floor(y / th) % 2 * tw / 2;
-    for (let x = -tw; x < w + tw; x += tw) {
-      ctx.strokeStyle = "rgba(80,30,20,0.3)";
-      ctx.lineWidth = 1;
-      ctx.strokeRect(x + off, y, tw - 1, th - 1);
-      ctx.fillStyle = `rgba(${160 + Math.random() * 40},${50 + Math.random() * 20},${40 + Math.random() * 15},0.15)`;
-      ctx.fillRect(x + off + 1, y + 1, tw - 3, th - 3);
-    }
-  }
-}
-function grassTexture(ctx, w, h) {
-  ctx.fillStyle = "#4a8c3f";
-  ctx.fillRect(0, 0, w, h);
-  for (let i = 0; i < 800; i++) {
-    const gx = Math.random() * w, gy = Math.random() * h;
-    ctx.strokeStyle = `rgba(${50 + Math.random() * 40},${100 + Math.random() * 60},${30 + Math.random() * 30},0.4)`;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(gx, gy);
-    ctx.lineTo(gx - 2 + Math.random() * 4, gy - 4 - Math.random() * 6);
-    ctx.stroke();
-  }
-}
-function plankTexture(ctx, w, h) {
-  const pw = w / 6;
-  for (let i = 0; i < 6; i++) {
-    const shade = 130 + Math.random() * 30;
-    ctx.fillStyle = `rgb(${shade},${shade - 30},${shade - 60})`;
-    ctx.fillRect(i * pw, 0, pw - 1, h);
-    for (let j = 0; j < h; j += 2) {
-      ctx.fillStyle = `rgba(${shade - 20},${shade - 40},${shade - 70},0.15)`;
-      ctx.fillRect(i * pw, j, pw - 1, 1);
-    }
-    ctx.strokeStyle = "rgba(60,40,20,0.3)";
-    ctx.lineWidth = 1;
-    ctx.strokeRect(i * pw, 0, pw, h);
-  }
-}
+window.addEventListener("wheel", (e) => {
+  moveSpeed = Math.max(4, Math.min(30, moveSpeed - e.deltaY * 0.01));
+}, { passive: true });
+scene.add(new AmbientLight(16777215, 0.5));
+var sun = new DirectionalLight(16772829, 1.2);
+sun.position.set(30, 50, 20);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+var sc = sun.shadow.camera;
+sc.left = -60;
+sc.right = 60;
+sc.top = 60;
+sc.bottom = -60;
+scene.add(sun);
 var mat = {
-  floor: new MeshStandardMaterial({ map: makeCanvasTex(128, 128, plankTexture), roughness: 0.7 }),
-  floorAlt: new MeshStandardMaterial({ map: makeCanvasTex(128, 128, (c, w, h) => {
-    plankTexture(c, w, h);
-    c.fillStyle = "rgba(0,0,0,0.05)";
-    c.fillRect(0, 0, w, h);
-  }), roughness: 0.7 }),
-  wall: new MeshStandardMaterial({ map: makeCanvasTex(128, 128, wallTexture), roughness: 0.9 }),
-  wallSide: new MeshStandardMaterial({ map: makeCanvasTex(128, 128, wallTexture), roughness: 0.9 }),
-  roof: new MeshStandardMaterial({ map: makeCanvasTex(128, 64, roofTexture), roughness: 0.7 }),
-  roofDark: new MeshStandardMaterial({ color: 10107434, roughness: 0.7 }),
-  wood: new MeshStandardMaterial({ map: makeCanvasTex(64, 64, woodTexture), roughness: 0.6 }),
-  woodDark: new MeshStandardMaterial({ color: 5913114, roughness: 0.7 }),
-  metal: new MeshStandardMaterial({ color: 8947848, metalness: 0.7, roughness: 0.25 }),
-  glass: new MeshStandardMaterial({ color: 13428991, transparent: true, opacity: 0.35, metalness: 0.1, roughness: 0.05 }),
-  fabric: new MeshStandardMaterial({ color: 4878245, roughness: 0.9 }),
-  pillow: new MeshStandardMaterial({ color: 16773344, roughness: 0.95 }),
-  book1: new MeshStandardMaterial({ color: 12597547, roughness: 0.8 }),
-  book2: new MeshStandardMaterial({ color: 2719929, roughness: 0.8 }),
-  book3: new MeshStandardMaterial({ color: 2600544, roughness: 0.8 }),
-  grass: new MeshStandardMaterial({ map: makeCanvasTex(256, 256, grassTexture), roughness: 1 }),
-  grassAlt: new MeshStandardMaterial({ color: 5938255, roughness: 1 }),
-  rug: new MeshStandardMaterial({ color: 9118290, roughness: 0.95 }),
-  door: new MeshStandardMaterial({ color: 7029795, roughness: 0.7 }),
-  wallDecor: new MeshStandardMaterial({ color: 13943976, roughness: 0.9 }),
-  // Minion materials
-  minionYellow: new MeshStandardMaterial({ color: 16109619, roughness: 0.4, metalness: 0.1 }),
-  minionBlue: new MeshStandardMaterial({ color: 3889560, roughness: 0.5 }),
-  minionGoggle: new MeshStandardMaterial({ color: 10066329, metalness: 0.85, roughness: 0.15 }),
-  minionGoggleGlass: new MeshStandardMaterial({ color: 11197951, transparent: true, opacity: 0.5 }),
-  minionEye: new MeshStandardMaterial({ color: 5912613, roughness: 0.3 }),
-  minionPupil: new MeshStandardMaterial({ color: 1118481 }),
-  minionMouth: new MeshStandardMaterial({ color: 9127187 }),
-  minionHair: new MeshStandardMaterial({ color: 2236962 }),
-  minionShoe: new MeshStandardMaterial({ color: 2236962, roughness: 0.8 }),
-  minionGlove: new MeshStandardMaterial({ color: 2236962 }),
-  apple: new MeshStandardMaterial({ color: 15158332, roughness: 0.6 }),
-  pot: new MeshStandardMaterial({ color: 10506797, roughness: 0.8 }),
-  plant: new MeshStandardMaterial({ color: 2600544, roughness: 0.9 }),
-  // Extra colors
-  curtain: new MeshStandardMaterial({ color: 13935988, roughness: 0.9 }),
-  vase: new MeshStandardMaterial({ color: 3447003, roughness: 0.5 }),
-  flower: new MeshStandardMaterial({ color: 15158332, roughness: 0.8 }),
-  yellow: new MeshStandardMaterial({ color: 15844367 }),
-  orange: new MeshStandardMaterial({ color: 15105570 }),
-  teal: new MeshStandardMaterial({ color: 1752220 })
+  grass: new MeshStandardMaterial({ color: 4906624, roughness: 0.9 }),
+  dirt: new MeshStandardMaterial({ color: 9139029, roughness: 1 }),
+  minionYellow: new MeshStandardMaterial({ color: 16109619, roughness: 0.5 }),
+  minionBlue: new MeshStandardMaterial({ color: 3900150, roughness: 0.5 }),
+  goggle: new MeshStandardMaterial({ color: 8947848, metalness: 0.8, roughness: 0.2 }),
+  eye: new MeshStandardMaterial({ color: 16777215 }),
+  pupil: new MeshStandardMaterial({ color: 1118481 }),
+  roofColors: [4886745, 14240330, 4905338, 14264394, 10181046, 1752220]
 };
-function buildRoom(ox, oz, w, d, label) {
-  const group = new Group();
-  const TH = 0.15;
-  for (let x = 0; x < w; x++) {
-    for (let z = 0; z < d; z++) {
-      const tile = new Mesh(new BoxGeometry(1, TH, 1), (x + z) % 2 === 0 ? mat.floor : mat.floorAlt);
-      tile.position.set(ox + x + 0.5, 0, oz + z + 0.5);
-      tile.receiveShadow = true;
-      group.add(tile);
-    }
-  }
-  const rug = new Mesh(new BoxGeometry(w - 3, TH + 0.01, d - 3), mat.rug);
-  rug.position.set(ox + w / 2, TH + 0.01, oz + d / 2);
-  group.add(rug);
-  for (let x = 0; x < w; x++) {
-    if (x === Math.floor(w / 2)) continue;
-    const wall = new Mesh(new BoxGeometry(1, 3, 0.2), mat.wall.clone());
-    wall.position.set(ox + x + 0.5, 1.5, oz + d + 0.1);
-    wall.castShadow = true;
-    wall.userData.isWall = true;
-    wallMeshes.push(wall);
-    group.add(wall);
-  }
-  for (let z = 0; z < d; z++) {
-    const wall = new Mesh(new BoxGeometry(0.2, 3, 1), mat.wallSide.clone());
-    wall.position.set(ox + w + 0.1, 1.5, oz + z + 0.5);
-    wall.castShadow = true;
-    wall.userData.isWall = true;
-    wallMeshes.push(wall);
-    group.add(wall);
-  }
-  for (let x = 0; x < w; x++) {
-    const wall = new Mesh(new BoxGeometry(1, 3, 0.2), mat.wall.clone());
-    wall.position.set(ox + x + 0.5, 1.5, oz - 0.1);
-    wall.userData.isWall = true;
-    wallMeshes.push(wall);
-    group.add(wall);
-  }
-  for (let z = 0; z < d; z++) {
-    const wall = new Mesh(new BoxGeometry(0.2, 3, 1), mat.wallSide.clone());
-    wall.position.set(ox - 0.1, 1.5, oz + z + 0.5);
-    wall.userData.isWall = true;
-    wallMeshes.push(wall);
-    group.add(wall);
-  }
-  for (let x = 2; x < w - 1; x += 3) {
-    const win = new Mesh(new BoxGeometry(0.8, 0.6, 0.05), mat.glass);
-    win.position.set(ox + x + 0.5, 2, oz + d + 0.15);
-    group.add(win);
-    const frame = new Mesh(new BoxGeometry(0.9, 0.7, 0.06), mat.woodDark);
-    frame.position.set(ox + x + 0.5, 2, oz + d + 0.14);
-    group.add(frame);
-  }
-  const door = new Mesh(new BoxGeometry(1.2, 2.2, 0.15), mat.door);
-  door.position.set(ox + w / 2 + 0.5, 1.1, oz + d + 0.1);
-  group.add(door);
-  const knob = new Mesh(new SphereGeometry(0.06, 8, 8), mat.metal);
-  knob.position.set(ox + w / 2 + 0.9, 1, oz + d + 0.2);
-  group.add(knob);
-  const roofGeo = new ConeGeometry(w * 0.8, 2, 4);
-  const roofMat = mat.roof.clone();
-  roofMat.transparent = true;
-  const roof = new Mesh(roofGeo, roofMat);
-  roof.position.set(ox + w / 2, 4, oz + d / 2);
-  roof.rotation.y = Math.PI / 4;
-  roof.castShadow = true;
-  roof.userData.isRoof = true;
-  wallMeshes.push(roof);
-  group.add(roof);
-  const chimney = new Mesh(new BoxGeometry(0.5, 1.5, 0.5), mat.wall);
-  chimney.position.set(ox + w - 1, 4.2, oz + 1);
-  group.add(chimney);
-  const outdoorGround = new Mesh(new PlaneGeometry(80, 80), mat.grass);
-  outdoorGround.rotation.x = -Math.PI / 2;
-  outdoorGround.position.set(6, -0.02, 5);
-  outdoorGround.receiveShadow = true;
-  group.add(outdoorGround);
-  const pathGeo = new PlaneGeometry(2, 8);
-  const pathMat = new MeshStandardMaterial({ color: 12888194, roughness: 0.9 });
-  const path = new Mesh(pathGeo, pathMat);
-  path.rotation.x = -Math.PI / 2;
-  path.position.set(w / 2 + 0.5, 0.01, oz + d + 4);
-  group.add(path);
-  const flowerColors = [15158332, 15844367, 16738740, 10181046, 3447003];
-  for (let i = 0; i < 20; i++) {
-    const fx = -2 + Math.random() * (w + 4);
-    const fz = d + 2 + Math.random() * 6;
-    if (Math.abs(fx - w / 2 - 0.5) < 1.5) continue;
-    const flower2 = new Mesh(new SphereGeometry(0.15, 6, 6), new MeshStandardMaterial({ color: flowerColors[i % 5] }));
-    flower2.position.set(fx, 0.15, fz);
-    group.add(flower2);
-    const stem = new Mesh(new CylinderGeometry(0.02, 0.02, 0.3, 4), mat.plant);
-    stem.position.set(fx, 0.05, fz);
-    group.add(stem);
-  }
-  const tableTop = new Mesh(new BoxGeometry(1.8, 0.1, 1.2), mat.wood);
-  tableTop.position.set(ox + w / 2, 0.9, oz + d / 2);
-  tableTop.castShadow = true;
-  group.add(tableTop);
-  [[-0.7, -0.4], [0.7, -0.4], [-0.7, 0.4], [0.7, 0.4]].forEach(([dx, dz]) => {
-    const leg = new Mesh(new BoxGeometry(0.1, 0.8, 0.1), mat.woodDark);
-    leg.position.set(ox + w / 2 + dx, 0.4, oz + d / 2 + dz);
-    group.add(leg);
-  });
-  const apple = new Mesh(new SphereGeometry(0.12, 8, 8), mat.apple);
-  apple.position.set(ox + w / 2 - 0.3, 1.05, oz + d / 2);
-  group.add(apple);
-  const chairPositions = [[ox + w / 2 - 2, oz + d / 2], [ox + w / 2 + 2, oz + d / 2]];
-  chairPositions.forEach(([cx, cz]) => {
-    const seat = new Mesh(new BoxGeometry(0.6, 0.08, 0.6), mat.wood);
-    seat.position.set(cx, 0.55, cz);
-    group.add(seat);
-    const back = new Mesh(new BoxGeometry(0.6, 0.8, 0.08), mat.wood);
-    back.position.set(cx, 0.95, cz - 0.26);
-    group.add(back);
-    [[-0.22, -0.22], [0.22, -0.22], [-0.22, 0.22], [0.22, 0.22]].forEach(([dx, dz]) => {
-      const leg = new Mesh(new BoxGeometry(0.06, 0.5, 0.06), mat.woodDark);
-      leg.position.set(cx + dx, 0.25, cz + dz);
-      group.add(leg);
-    });
-  });
-  const bedFrame = new Mesh(new BoxGeometry(2, 0.4, 1.5), mat.woodDark);
-  bedFrame.position.set(ox + 2, 0.2, oz + 1.5);
-  group.add(bedFrame);
-  const mattress = new Mesh(new BoxGeometry(1.8, 0.2, 1.3), new MeshStandardMaterial({ color: 15263976 }));
-  mattress.position.set(ox + 2, 0.5, oz + 1.5);
-  group.add(mattress);
-  const pillow = new Mesh(new BoxGeometry(0.6, 0.15, 0.4), mat.pillow);
-  pillow.position.set(ox + 1.5, 0.65, oz + 1.5);
-  group.add(pillow);
-  const blanket = new Mesh(new BoxGeometry(1.2, 0.08, 1.2), mat.fabric);
-  blanket.position.set(ox + 2.3, 0.65, oz + 1.5);
-  group.add(blanket);
-  const shelf = new Mesh(new BoxGeometry(1.5, 2.5, 0.5), mat.woodDark);
-  shelf.position.set(ox + w - 1.5, 1.25, oz + 0.25);
-  group.add(shelf);
-  [0.6, 1.4].forEach((y) => {
-    const s = new Mesh(new BoxGeometry(1.4, 0.06, 0.45), mat.wood);
-    s.position.set(ox + w - 1.5, y, oz + 0.25);
-    group.add(s);
-  });
-  const bookMats = [mat.book1, mat.book2, mat.book3];
-  for (let i = 0; i < 6; i++) {
-    const book = new Mesh(new BoxGeometry(0.15, 0.4, 0.3), bookMats[i % 3]);
-    book.position.set(ox + w - 2 + i * 0.2, 0.85, oz + 0.25);
-    group.add(book);
-  }
-  const counter = new Mesh(new BoxGeometry(0.6, 1, 2), mat.metal);
-  counter.position.set(ox + w - 0.3, 0.5, oz + 3);
-  group.add(counter);
-  const pot = new Mesh(new CylinderGeometry(0.2, 0.18, 0.2, 8), new MeshStandardMaterial({ color: 6710886 }));
-  pot.position.set(ox + w - 0.3, 1.1, oz + 3);
-  group.add(pot);
-  const lampBase = new Mesh(new CylinderGeometry(0.15, 0.2, 0.1, 8), mat.metal);
-  lampBase.position.set(ox + 1.5, 0.05, oz + d - 1);
-  group.add(lampBase);
-  const lampPole = new Mesh(new CylinderGeometry(0.03, 0.03, 2.5, 8), mat.metal);
-  lampPole.position.set(ox + 1.5, 1.3, oz + d - 1);
-  group.add(lampPole);
-  const lampShade = new Mesh(new ConeGeometry(0.4, 0.5, 8, 1, true), new MeshStandardMaterial({ color: 16766720, side: DoubleSide }));
-  lampShade.position.set(ox + 1.5, 2.6, oz + d - 1);
-  group.add(lampShade);
-  const plantPot = new Mesh(new CylinderGeometry(0.15, 0.12, 0.3, 8), mat.pot);
-  plantPot.position.set(ox + w - 1.5, 0.15, oz + d - 1);
-  group.add(plantPot);
-  const plantLeaves = new Mesh(new SphereGeometry(0.3, 8, 8), mat.plant);
-  plantLeaves.position.set(ox + w - 1.5, 0.55, oz + d - 1);
-  group.add(plantLeaves);
-  const frameGeo = new BoxGeometry(0.8, 0.6, 0.05);
-  const frameMat = new MeshStandardMaterial({ color: 4863264, roughness: 0.6 });
-  const frame1 = new Mesh(frameGeo, frameMat);
-  frame1.position.set(ox + 4, 2, oz - 0.05);
-  group.add(frame1);
-  const pic1 = new Mesh(new PlaneGeometry(0.6, 0.4), new MeshStandardMaterial({ color: 8900331 }));
-  pic1.position.set(ox + 4, 2, oz + 0.01);
-  group.add(pic1);
-  const frame2 = new Mesh(frameGeo, frameMat);
-  frame2.position.set(ox + w + 0.05, 2, oz + 6);
-  frame2.rotation.y = Math.PI / 2;
-  group.add(frame2);
-  const clockFace = new Mesh(new CircleGeometry(0.25, 16), new MeshStandardMaterial({ color: 16775399 }));
-  clockFace.position.set(ox + 8, 2.2, oz - 0.05);
-  group.add(clockFace);
-  const clockRim = new Mesh(new TorusGeometry(0.25, 0.03, 8, 16), mat.woodDark);
-  clockRim.position.set(ox + 8, 2.2, oz - 0.04);
-  group.add(clockRim);
-  const sofaSeat = new Mesh(new BoxGeometry(2, 0.3, 0.8), new MeshStandardMaterial({ color: 5996453, roughness: 0.9 }));
-  sofaSeat.position.set(ox + 4, 0.35, oz + d - 0.5);
-  group.add(sofaSeat);
-  const sofaBack = new Mesh(new BoxGeometry(2, 0.6, 0.15), new MeshStandardMaterial({ color: 4877972, roughness: 0.9 }));
-  sofaBack.position.set(ox + 4, 0.65, oz + d - 0.9);
-  group.add(sofaBack);
-  const sofaArm1 = new Mesh(new BoxGeometry(0.15, 0.4, 0.8), new MeshStandardMaterial({ color: 4877972, roughness: 0.9 }));
-  sofaArm1.position.set(ox + 3, 0.5, oz + d - 0.5);
-  group.add(sofaArm1);
-  const sofaArm2 = sofaArm1.clone();
-  sofaArm2.position.x = ox + 5;
-  group.add(sofaArm2);
-  for (let i = 0; i < 4; i++) {
-    const tx = ox - 3 + Math.random() * (w + 6);
-    const tz = oz + d + 4 + Math.random() * 8;
-    if (Math.abs(tx - ox - w / 2 - 0.5) < 2) continue;
-    const trunk = new Mesh(new CylinderGeometry(0.08, 0.12, 1.5, 6), mat.woodDark);
-    trunk.position.set(tx, 0.75, tz);
-    group.add(trunk);
-    const canopy = new Mesh(new SphereGeometry(0.6 + Math.random() * 0.3, 8, 6), mat.plant);
-    canopy.position.set(tx, 1.8 + Math.random() * 0.3, tz);
-    group.add(canopy);
-  }
-  const vase = new Mesh(new CylinderGeometry(0.06, 0.08, 0.25, 8), new MeshStandardMaterial({ color: 13395524, roughness: 0.5 }));
-  vase.position.set(ox + w / 2 + 0.3, 1.1, oz + d / 2);
-  group.add(vase);
-  const flower = new Mesh(new SphereGeometry(0.1, 6, 6), new MeshStandardMaterial({ color: 16738740 }));
-  flower.position.set(ox + w / 2 + 0.3, 1.35, oz + d / 2);
-  group.add(flower);
-  scene.add(group);
-  return group;
-}
 var MINION_NAMES = [
   "\u5C0F\u660E",
   "\u963F\u82B1",
@@ -27585,156 +27772,79 @@ var MINION_NAMES = [
   "\u963F\u534E",
   "\u5C0F\u83CA"
 ];
-var minionProfiles = {};
 var usedMinionNames = /* @__PURE__ */ new Set();
-function getRandomChineseName() {
-  const available = MINION_NAMES.filter((n) => !usedMinionNames.has(n));
-  const pool = available.length > 0 ? available : MINION_NAMES;
-  const name = pool[Math.floor(Math.random() * pool.length)];
-  usedMinionNames.add(name);
-  return name;
+function getRandomName() {
+  const avail = MINION_NAMES.filter((n2) => !usedMinionNames.has(n2));
+  const pool = avail.length > 0 ? avail : MINION_NAMES;
+  const n = pool[Math.floor(Math.random() * pool.length)];
+  usedMinionNames.add(n);
+  return n;
 }
-function addNameLabel(minion, feishuName, chineseName) {
-  const old = minion.children.find((c) => c.userData && c.userData.isNameLabel);
-  if (old) minion.remove(old);
-  const canvas = document.createElement("canvas");
-  canvas.width = 256;
-  canvas.height = 96;
-  const ctx = canvas.getContext("2d");
-  ctx.clearRect(0, 0, 256, 96);
-  ctx.font = "bold 20px sans-serif";
-  const topW = ctx.measureText(feishuName || "").width;
-  ctx.font = "14px sans-serif";
-  const botW = ctx.measureText(chineseName || "").width;
-  const pillW = Math.min(240, Math.max(topW, botW) + 40);
-  ctx.fillStyle = "rgba(0,0,0,0.65)";
-  ctx.beginPath();
-  ctx.roundRect(128 - pillW / 2, 6, pillW, 84, 14);
-  ctx.fill();
-  if (feishuName) {
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 20px sans-serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(feishuName.slice(0, 14), 128, 32);
-  }
-  if (chineseName) {
-    ctx.fillStyle = "#b0d4f1";
-    ctx.font = "14px sans-serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(chineseName, 128, 62);
-  }
-  const tex = new CanvasTexture(canvas);
-  tex.needsUpdate = true;
-  const label = new Mesh(
-    new PlaneGeometry(2.2, 0.8),
-    new MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, depthTest: false, side: DoubleSide })
-  );
-  label.position.set(0, 2.5, 0);
-  label.userData.isNameLabel = true;
-  label.renderOrder = 9999;
-  minion.add(label);
-}
+var agents = [];
+var minions = [];
+var bubbles = {};
+var clock = new Clock();
+var raycaster = new Raycaster();
+var clickables = [];
 function createMinion(profile) {
   const p = profile || {};
   const group = new Group();
   const bodyMat = new MeshStandardMaterial({ color: p.color || 16109619, roughness: 0.5 });
-  const heightScale = p.heightScale || 0.8 + Math.random() * 0.4;
-  const widthScale = p.widthScale || 0.9 + Math.random() * 0.2;
-  const bodyRadius = 0.35 * widthScale;
-  const bodyHeight = 1.2 * heightScale;
-  group.userData.heightScale = heightScale;
-  group.userData.widthScale = widthScale;
-  group.userData.chineseName = p.name || "";
-  const body = new Mesh(new CylinderGeometry(bodyRadius, bodyRadius * 1.08, bodyHeight, 16), bodyMat);
-  body.position.y = 0.5 + bodyHeight / 2;
+  const hs = p.heightScale || 0.8 + Math.random() * 0.4;
+  const ws = p.widthScale || 0.9 + Math.random() * 0.2;
+  const br = 0.35 * ws, bh = 1.2 * hs;
+  const body = new Mesh(new CylinderGeometry(br, br * 1.08, bh, 16), bodyMat);
+  body.position.y = 0.5 + bh / 2;
   body.castShadow = true;
   group.add(body);
-  const overalls = new Mesh(new CylinderGeometry(bodyRadius * 1.05, bodyRadius * 1.1, bodyHeight * 0.4, 16), mat.minionBlue);
-  overalls.position.y = 0.5 + bodyHeight * 0.2;
+  const overalls = new Mesh(new CylinderGeometry(br * 1.05, br * 1.1, bh * 0.4, 16), mat.minionBlue);
+  overalls.position.y = 0.5 + bh * 0.2;
   group.add(overalls);
-  const strap = new Mesh(new TorusGeometry(bodyRadius * 1.02, 0.04, 8, 32), mat.minionGoggle);
-  strap.position.y = 0.5 + bodyHeight * 0.78;
+  const strap = new Mesh(new TorusGeometry(br * 1.02, 0.04, 8, 32), mat.goggle);
+  strap.position.y = 0.5 + bh * 0.72;
   strap.rotation.x = Math.PI / 2;
   group.add(strap);
-  const headRadius = bodyRadius * (0.65 + Math.random() * 0.15);
-  const head = new Mesh(new SphereGeometry(headRadius, 16, 12), bodyMat);
-  head.position.y = 0.5 + bodyHeight + headRadius * 0.5;
+  const hr = br * 0.95;
+  const head = new Mesh(new SphereGeometry(hr, 16, 12), bodyMat);
+  head.position.y = 0.5 + bh + hr * 0.5;
   head.castShadow = true;
   group.add(head);
-  const isOneEye = Math.random() > 0.5;
-  const eyeY = 0.5 + bodyHeight * 0.82;
-  if (isOneEye) {
-    const goggleRing = new Mesh(new TorusGeometry(0.18, 0.04, 8, 16), mat.minionGoggle);
-    goggleRing.position.set(0, eyeY, bodyRadius * 0.92);
-    group.add(goggleRing);
-    const goggleGlass = new Mesh(new CircleGeometry(0.17, 16), mat.minionGoggleGlass);
-    goggleGlass.position.set(0, eyeY, bodyRadius * 0.94);
-    group.add(goggleGlass);
-    const eyeWhite = new Mesh(new CircleGeometry(0.14, 16), new MeshStandardMaterial({ color: 16777215 }));
-    eyeWhite.position.set(0, eyeY, bodyRadius * 0.96);
-    group.add(eyeWhite);
-    const iris = new Mesh(new CircleGeometry(0.09, 16), mat.minionEye);
-    iris.position.set(0, eyeY, bodyRadius * 0.98);
-    iris.name = "iris";
-    group.add(iris);
-    const pupil = new Mesh(new CircleGeometry(0.04, 16), mat.minionPupil);
-    pupil.position.set(0, eyeY, bodyRadius * 1);
+  const eyeCount = Math.random() > 0.3 ? 2 : 1;
+  const eyeR = br * 0.22, pupilR = eyeR * 0.55;
+  const eyeY = 0.5 + bh + hr * 0.65;
+  const eyeSpacing = br * 0.32;
+  for (let i = 0; i < eyeCount; i++) {
+    const ex = eyeCount === 1 ? 0 : i === 0 ? -eyeSpacing : eyeSpacing;
+    const eye = new Mesh(new SphereGeometry(eyeR, 8, 8), mat.eye);
+    eye.position.set(ex, eyeY, br * 0.85);
+    group.add(eye);
+    const pupil = new Mesh(new SphereGeometry(pupilR, 8, 8), mat.pupil);
+    pupil.position.set(ex, eyeY, br * 0.85 + eyeR * 0.5);
     group.add(pupil);
-  } else {
-    [-0.12, 0.12].forEach((x) => {
-      const goggleRing = new Mesh(new TorusGeometry(0.12, 0.03, 8, 16), mat.minionGoggle);
-      goggleRing.position.set(x, eyeY, bodyRadius * 0.95);
-      group.add(goggleRing);
-      const eyeWhite = new Mesh(new CircleGeometry(0.1, 16), new MeshStandardMaterial({ color: 16777215 }));
-      eyeWhite.position.set(x, eyeY, bodyRadius * 0.97);
-      group.add(eyeWhite);
-      const iris = new Mesh(new CircleGeometry(0.06, 16), mat.minionEye);
-      iris.position.set(x, eyeY, bodyRadius * 0.99);
-      iris.name = "iris";
-      group.add(iris);
-      const pupil = new Mesh(new CircleGeometry(0.03, 16), mat.minionPupil);
-      pupil.position.set(x, eyeY, bodyRadius * 1.01);
-      group.add(pupil);
-    });
   }
-  const mouth = new Mesh(new TorusGeometry(0.1, 0.02, 8, 16, Math.PI), mat.minionMouth);
-  mouth.position.set(0, 0.5 + bodyHeight * 0.55, bodyRadius * 0.95);
-  mouth.rotation.x = Math.PI;
-  mouth.name = "mouth";
-  group.add(mouth);
   const hairCount = 3 + Math.floor(Math.random() * 4);
   for (let i = 0; i < hairCount; i++) {
-    const hair = new Mesh(new CylinderGeometry(0.01, 0.01, 0.15 + Math.random() * 0.12, 4), mat.minionHair);
     const angle = i / hairCount * Math.PI * 2;
-    hair.position.set(Math.cos(angle) * headRadius * 0.4, 0.5 + bodyHeight + headRadius + 0.08, Math.sin(angle) * headRadius * 0.4);
-    hair.rotation.z = (Math.random() - 0.5) * 0.6;
+    const hair = new Mesh(new CylinderGeometry(0.02, 0.025, 0.15 + Math.random() * 0.1, 6), bodyMat);
+    hair.position.set(Math.cos(angle) * br * 0.5, 0.5 + bh + hr * 1.3, Math.sin(angle) * br * 0.5);
+    hair.rotation.x = Math.cos(angle) * 0.4;
+    hair.rotation.z = Math.sin(angle) * 0.4;
     group.add(hair);
   }
-  [-bodyRadius * 1.15, bodyRadius * 1.15].forEach((x) => {
-    const armPivot = new Group();
-    armPivot.position.set(x, 0.5 + bodyHeight * 0.65, 0);
-    armPivot.name = x > 0 ? "armR" : "armL";
-    const arm = new Mesh(new CylinderGeometry(0.055, 0.045, 0.55 * heightScale, 8), bodyMat);
-    arm.position.y = -0.27 * heightScale;
-    armPivot.add(arm);
-    const glove = new Mesh(new SphereGeometry(0.065, 8, 8), mat.minionGlove);
-    glove.position.y = -0.55 * heightScale;
-    armPivot.add(glove);
-    group.add(armPivot);
+  [-1, 1].forEach((side) => {
+    const arm = new Mesh(new CylinderGeometry(0.055, 0.045, 0.55 * hs, 8), bodyMat);
+    arm.position.set(side * (br + 0.12), 0.5 + bh * 0.6, 0);
+    arm.userData.isArm = true;
+    arm.userData.side = side;
+    group.add(arm);
   });
-  [-0.12, 0.12].forEach((x) => {
-    const legPivot = new Group();
-    legPivot.position.set(x, 0.5, 0);
-    legPivot.name = x > 0 ? "legR" : "legL";
-    const leg = new Mesh(new CylinderGeometry(0.065, 0.055, 0.38 * heightScale, 8), bodyMat);
-    leg.position.y = -0.19 * heightScale;
-    legPivot.add(leg);
-    const shoe = new Mesh(new BoxGeometry(0.13, 0.07, 0.2), mat.minionShoe);
-    shoe.position.set(0, -0.38 * heightScale, 0.03);
-    legPivot.add(shoe);
-    group.add(legPivot);
+  [-1, 1].forEach((side) => {
+    const leg = new Mesh(new CylinderGeometry(0.065, 0.055, 0.38 * hs, 8), mat.minionBlue);
+    leg.position.set(side * br * 0.45, 0.19 * hs, 0);
+    group.add(leg);
+    const shoe = new Mesh(new BoxGeometry(0.14, 0.08, 0.2), new MeshStandardMaterial({ color: 3355443 }));
+    shoe.position.set(side * br * 0.45, 0.04, 0.04);
+    group.add(shoe);
   });
   group.userData = {
     state: "idle",
@@ -27742,117 +27852,182 @@ function createMinion(profile) {
     targetZ: 0,
     speed: 0,
     bobPhase: Math.random() * Math.PI * 2,
+    heightScale: hs,
+    widthScale: ws,
+    // Session info
+    sessionKey: "",
+    sessionId: "",
+    sessionType: "",
+    sessionLabel: "",
+    agentName: "",
+    // Bubble state
     userMsg: "",
     userName: "",
     thinkLog: [],
     toolLog: [],
+    replyText: "",
     replyCount: 0,
-    chineseName: "",
-    // set in init() after persistence check
-    // Idle animation state
+    lastEventTime: 0,
+    // Movement
     idleTimer: 0,
     idleAction: "stand",
     idleActionTimer: 0,
-    // Sitting state
-    isSitting: false
+    bounds: null,
+    chineseName: p.name || ""
   };
   return group;
 }
-var minions = [];
-var bubbles = {};
-var cfg = {};
-var clock = new Clock();
-var wallMeshes = [];
-var HOUSE_SPACING = 22;
-var ROOM_W = 12;
-var ROOM_D = 10;
-var lastInitKey = "";
-function init(d) {
-  cfg = d;
-  const initKey = (d.agents || []).map((a) => a.id + ":" + (a.sessions || a.channels || []).map((s) => s.key || s.id).join(",")).join("|");
-  if (initKey === lastInitKey && minions.length > 0) return;
-  lastInitKey = initKey;
-  minions.forEach((m) => scene.remove(m));
-  minions = [];
-  wallMeshes = [];
-  scene.children.filter((c) => c.isGroup && c.userData && c.userData.isRoom).forEach((g) => scene.remove(g));
-  const agents = d.agents || [{ id: "default", sessions: d.channels || [] }];
-  const colors = [16109619, 16763904, 15251456, 13935872, 13145615];
-  const roofColors = [12597547, 2719929, 2600544, 9323693, 15105570];
-  const totalW = agents.length * HOUSE_SPACING + 20;
-  const oldGround = scene.children.find((c) => c.geometry && c.geometry.type === "PlaneGeometry" && c.geometry.parameters && c.geometry.parameters.width > 50);
-  if (oldGround) scene.remove(oldGround);
-  const outdoorGround = new Mesh(
-    new PlaneGeometry(totalW + 40, 80),
-    mat.grass
-  );
-  outdoorGround.rotation.x = -Math.PI / 2;
-  outdoorGround.position.set(totalW / 2 - 10, -0.02, 20);
-  outdoorGround.receiveShadow = true;
-  scene.add(outdoorGround);
+function addNameLabel(minion, line1, line2) {
+  const old = minion.children.find((c) => c.userData?.isNameLabel);
+  if (old) minion.remove(old);
+  const canvas = document.createElement("canvas");
+  canvas.width = 512;
+  canvas.height = 128;
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, 512, 128);
+  ctx.font = "bold 28px -apple-system, sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#fff";
+  ctx.strokeStyle = "#000";
+  ctx.lineWidth = 3;
+  ctx.strokeText(line1 || "", 256, 45);
+  ctx.fillText(line1 || "", 256, 45);
+  if (line2) {
+    ctx.font = "22px -apple-system, sans-serif";
+    ctx.fillStyle = "#ffd700";
+    ctx.strokeStyle = "#000";
+    ctx.lineWidth = 2.5;
+    ctx.strokeText(line2, 256, 85);
+    ctx.fillText(line2, 256, 85);
+  }
+  const tex = new CanvasTexture(canvas);
+  tex.minFilter = LinearFilter;
+  const spriteMat = new SpriteMaterial({ map: tex, transparent: true, depthWrite: false });
+  const sprite = new Sprite(spriteMat);
+  sprite.position.y = minion.userData.heightScale ? 2.5 * minion.userData.heightScale * 0.5 + 1.2 : 3;
+  sprite.scale.set(2.5, 0.625, 1);
+  sprite.userData.isNameLabel = true;
+  minion.add(sprite);
+}
+function createContinent(agentName, index) {
+  const W = 18, D = 18;
+  const cols = Math.ceil(Math.sqrt(agents.length));
+  const col = index % cols, row = Math.floor(index / cols);
+  const ox = col * (W + 8) - (cols - 1) * (W + 8) / 2;
+  const oz = row * (D + 8) - (Math.ceil(agents.length / cols) - 1) * (D + 8) / 2;
+  const ground = new Mesh(new BoxGeometry(W, 0.3, D), mat.grass);
+  ground.position.set(ox + W / 2, -0.15, oz + D / 2);
+  ground.receiveShadow = true;
+  scene.add(ground);
+  const houseW = 5, houseD = 5, houseH = 3;
+  const roofColor = mat.roofColors[index % mat.roofColors.length];
+  const hx = ox + W / 2 - houseW / 2, hz = oz + D / 2 - houseD / 2;
+  const wallMat = new MeshStandardMaterial({ color: 15787731 });
+  const walls = new Mesh(new BoxGeometry(houseW, houseH, houseD), wallMat);
+  walls.position.set(hx, houseH / 2, hz);
+  walls.castShadow = true;
+  scene.add(walls);
+  const roofGeo = new ConeGeometry(houseW * 0.85, 2, 4);
+  const roof = new Mesh(roofGeo, new MeshStandardMaterial({ color: roofColor }));
+  roof.position.set(hx, houseH + 1, hz);
+  roof.rotation.y = Math.PI / 4;
+  roof.castShadow = true;
+  scene.add(roof);
+  const signCanvas = document.createElement("canvas");
+  signCanvas.width = 256;
+  signCanvas.height = 64;
+  const sctx = signCanvas.getContext("2d");
+  sctx.fillStyle = "#1a1a2e";
+  sctx.fillRect(0, 0, 256, 64);
+  sctx.font = "bold 24px sans-serif";
+  sctx.textAlign = "center";
+  sctx.fillStyle = "#53d8fb";
+  sctx.fillText(agentName, 128, 42);
+  const signTex = new CanvasTexture(signCanvas);
+  const sign = new Sprite(new SpriteMaterial({ map: signTex, transparent: true }));
+  sign.position.set(hx, houseH + 3.5, hz);
+  sign.scale.set(3, 0.75, 1);
+  scene.add(sign);
+  const table = new Mesh(new BoxGeometry(1.5, 0.08, 0.8), new MeshStandardMaterial({ color: 9136404 }));
+  table.position.set(hx - 1, 0.72, hz + 1);
+  scene.add(table);
+  [-0.6, 0.6].forEach((xo) => [-0.3, 0.3].forEach((zo) => {
+    const leg = new Mesh(new CylinderGeometry(0.04, 0.04, 0.7, 6), new MeshStandardMaterial({ color: 9136404 }));
+    leg.position.set(hx - 1 + xo, 0.35, hz + 1 + zo);
+    scene.add(leg);
+  }));
+  [-1, 1].forEach((side) => {
+    const chair = new Mesh(new BoxGeometry(0.5, 0.5, 0.5), new MeshStandardMaterial({ color: 10506797 }));
+    chair.position.set(hx - 1 + side * 1.2, 0.25, hz + 1);
+    scene.add(chair);
+  });
+  const bed = new Mesh(new BoxGeometry(1.5, 0.3, 2.5), new MeshStandardMaterial({ color: 6000089 }));
+  bed.position.set(hx + 1.5, 0.15, hz - 0.5);
+  scene.add(bed);
+  const pillow = new Mesh(new BoxGeometry(1.2, 0.12, 0.5), new MeshStandardMaterial({ color: 16777215 }));
+  pillow.position.set(hx + 1.5, 0.36, hz - 1.5);
+  scene.add(pillow);
+  const shelf = new Mesh(new BoxGeometry(0.8, 2, 0.4), new MeshStandardMaterial({ color: 9136404 }));
+  shelf.position.set(hx - 2.2, 1, hz - 1);
+  scene.add(shelf);
+  for (let i = 0; i < 4; i++) {
+    const book = new Mesh(new BoxGeometry(0.6, 0.25, 0.3), new MeshStandardMaterial({ color: [12597547, 2719929, 2600544, 15965202][i] }));
+    book.position.set(hx - 2.2, 0.3 + i * 0.45, hz - 1);
+    scene.add(book);
+  }
+  const lampPole = new Mesh(new CylinderGeometry(0.03, 0.03, 1.2, 6), new MeshStandardMaterial({ color: 2184 }));
+  lampPole.position.set(hx + 2, 0.6, hz + 1.5);
+  scene.add(lampPole);
+  const lampShade = new Mesh(new ConeGeometry(0.3, 0.4, 8), new MeshStandardMaterial({ color: 16766720, emissive: 16766720, emissiveIntensity: 0.3 }));
+  lampShade.position.set(hx + 2, 1.4, hz + 1.5);
+  scene.add(lampShade);
+  const lampLight = new PointLight(16766720, 0.5, 5);
+  lampLight.position.set(hx + 2, 1.2, hz + 1.5);
+  scene.add(lampLight);
+  return { ox, oz, W, D, hx, hz, houseH };
+}
+function parseSessionKey(key) {
+  const parts = key.split(":");
+  if (parts[0] !== "agent") return { type: "unknown", label: key.slice(0, 30), icon: "\u2753" };
+  if (parts[2] === "main" && parts.length === 3) return { type: "main", label: "\u4E3B\u4F1A\u8BDD", icon: "\u{1F3E0}" };
+  if (parts[2] === "feishu" && parts[3] === "group") {
+    const gid = parts.slice(4).join(":");
+    return { type: "group", label: gid.length > 16 ? gid.slice(0, 16) + "\u2026" : gid, icon: "\u{1F4AC}" };
+  }
+  if (parts[2] === "feishu" && parts[3] === "dm") {
+    const uid = parts.slice(4).join(":");
+    return { type: "dm", label: uid.length > 16 ? uid.slice(0, 16) + "\u2026" : uid, icon: "\u{1F4E9}" };
+  }
+  if (parts[2] === "cron") return { type: "cron", label: "\u5B9A\u65F6\u4EFB\u52A1", icon: "\u23F0" };
+  if (parts[2] === "subagent") return { type: "subagent", label: "\u5B50\u4EE3\u7406", icon: "\u{1F916}" };
+  return { type: parts[2] || "session", label: key.slice(0, 30), icon: "\u2753" };
+}
+function initWorld(worldData) {
+  for (let i = scene.children.length - 1; i >= 0; i--) {
+    const c = scene.children[i];
+    if (c.isLight) continue;
+    scene.remove(c);
+  }
+  Object.values(bubbles).forEach((el) => el.remove());
+  Object.keys(bubbles).forEach((k) => delete bubbles[k]);
+  minions.length = 0;
+  clickables.length = 0;
+  agents = worldData.agents || [];
+  document.getElementById("h-agents").textContent = `Agents: ${agents.length}`;
+  let totalSess = 0;
+  agents.forEach((a) => totalSess += a.sessions.length);
+  document.getElementById("h-sess").textContent = `Sessions: ${totalSess}`;
+  const agentsEl = document.getElementById("b-agents");
+  agentsEl.innerHTML = agents.map((a) => `<div class="row"><span><span class="dot on"></span>${esc(a.name)}</span><span>${a.sessions.length} sessions</span></div>`).join("");
   agents.forEach((agent, ai) => {
-    const ox = ai * HOUSE_SPACING;
-    const oz = 0;
-    const agentId = agent.id || `agent-${ai}`;
-    const houseGroup = buildRoom(ox, oz, ROOM_W, ROOM_D, agentId);
-    houseGroup.userData.isRoom = true;
-    houseGroup.userData.agentId = agentId;
-    const roof = houseGroup.children.find((c) => c.userData && c.userData.isRoof);
-    if (roof) {
-      roof.material = roof.material.clone();
-      roof.material.color.setHex(roofColors[ai % roofColors.length]);
-    }
-    try {
-      const canvas = document.createElement("canvas");
-      canvas.width = 256;
-      canvas.height = 64;
-      const ctx = canvas.getContext("2d");
-      ctx.fillStyle = "rgba(0,0,0,0.7)";
-      ctx.beginPath();
-      ctx.moveTo(8, 0);
-      ctx.lineTo(248, 0);
-      ctx.quadraticCurveTo(256, 0, 256, 8);
-      ctx.lineTo(256, 56);
-      ctx.quadraticCurveTo(256, 64, 248, 64);
-      ctx.lineTo(8, 64);
-      ctx.quadraticCurveTo(0, 64, 0, 56);
-      ctx.lineTo(0, 8);
-      ctx.quadraticCurveTo(0, 0, 8, 0);
-      ctx.fill();
-      ctx.fillStyle = "#ffffff";
-      ctx.font = "bold 26px sans-serif";
-      ctx.textAlign = "center";
-      ctx.fillText(agentId, 128, 42);
-      const signTex = new CanvasTexture(canvas);
-      const sign = new Mesh(
-        new PlaneGeometry(3, 0.75),
-        new MeshBasicMaterial({ map: signTex, transparent: true, depthWrite: false })
-      );
-      sign.position.set(ox + ROOM_W / 2 + 0.5, 3.5, oz + ROOM_D + 0.2);
-      houseGroup.add(sign);
-    } catch (e) {
-    }
-    const allSessions = agent.sessions || [];
-    const sessions = allSessions.filter((s) => ["group", "dm", "main"].includes(s.type));
-    const display = sessions.length > 0 ? sessions : allSessions.slice(0, 2);
-    const count = Math.max(display.length, 1);
-    const cols = Math.ceil(Math.sqrt(count));
-    const rows = Math.ceil(count / cols);
-    display.forEach((sess, i) => {
-      const col = i % cols;
-      const row = Math.floor(i / cols);
-      const px = ox + 3 + col * (ROOM_W - 6) / Math.max(cols - 1, 1);
-      const pz = oz + 3 + row * (ROOM_D - 6) / Math.max(rows - 1, 1);
-      let profile = minionProfiles[sess.key];
-      const isNew = !profile;
-      if (isNew) {
-        profile = {
-          name: getRandomChineseName(),
-          color: colors[(ai * 3 + i) % colors.length],
-          heightScale: 0.8 + Math.random() * 0.4,
-          widthScale: 0.9 + Math.random() * 0.2
-        };
-        minionProfiles[sess.key] = profile;
+    const continent = createContinent(agent.name, ai);
+    agent.sessions.forEach((sess, si) => {
+      const profile = sess.profile || {};
+      if (!profile.name) {
+        profile.name = getRandomName();
+        if (!profile.color) profile.color = [16109619, 16739179, 5164484, 16770669, 11069135][Math.floor(Math.random() * 5)];
+        if (!profile.heightScale) profile.heightScale = 0.8 + Math.random() * 0.4;
+        if (!profile.widthScale) profile.widthScale = 0.9 + Math.random() * 0.2;
         fetch("/api/minion-profiles", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -27861,623 +28036,288 @@ function init(d) {
         });
       }
       const m = createMinion(profile);
+      const cols = Math.ceil(Math.sqrt(agent.sessions.length));
+      const col = si % cols, row = Math.floor(si / cols);
+      const px = continent.ox + 3 + col * (continent.W - 6) / Math.max(cols - 1, 1);
+      const pz = continent.oz + 3 + row * (continent.D - 6) / Math.max(Math.ceil(agent.sessions.length / cols) - 1, 1);
       m.position.set(px, 0, pz);
-      m.userData.id = sess.key;
-      m.userData.label = sess.name;
-      m.userData.agentId = agentId;
       m.userData.targetX = px;
       m.userData.targetZ = pz;
+      m.userData.sessionKey = sess.key;
+      m.userData.sessionId = sess.sessionId;
+      m.userData.sessionType = sess.type;
+      m.userData.sessionLabel = sess.label;
+      m.userData.agentName = agent.name;
       m.userData.bounds = {
-        minX: ox + 1.5,
-        maxX: ox + ROOM_W - 1.5,
-        minZ: oz + 1.5,
-        maxZ: oz + ROOM_D - 1.5
+        minX: continent.ox + 1,
+        maxX: continent.ox + continent.W - 1,
+        minZ: continent.oz + 1,
+        maxZ: continent.oz + continent.D - 1
       };
-      m.userData.houseOffset = { ox, oz };
-      const feishuId = (sess.key || "").match(/(oc_\w+|ou_\w+)/)?.[1];
-      const cName = profile.name;
-      if (feishuId) {
-        fetch(`/api/resolve/${feishuId}`).then((r) => r.json()).then((d2) => {
-          const fName = d2.name && d2.name !== feishuId ? d2.name : sess.name || "session";
-          m.userData.displayName = fName;
-          addNameLabel(m, fName, cName);
-        }).catch(() => {
-          addNameLabel(m, sess.name || "session", cName);
-        });
-      } else {
-        const fallbackName = sess.name || sess.type || "session";
-        m.userData.displayName = fallbackName;
-        addNameLabel(m, fallbackName, cName);
-      }
+      const parsed = parseSessionKey(sess.key);
+      const labelLine = `${parsed.icon} ${sess.label || parsed.label}`;
+      addNameLabel(m, labelLine, profile.name);
       scene.add(m);
       minions.push(m);
+      clickables.push(m);
     });
   });
-  updateUI(d);
+  const sessEl = document.getElementById("b-sessions");
+  sessEl.innerHTML = agents.flatMap((a) => a.sessions.map((s) => {
+    const p = parseSessionKey(s.key);
+    return `<div class="row"><span>${p.icon} ${esc(s.label || p.label)}</span><span style="color:#556;font-size:7px">${esc(a.name)}</span></div>`;
+  })).join("");
 }
-function getFurnitureForMinion(m) {
-  return getFurnitureAABBForMinion(m);
-}
-var MINION_COLLISION_RADIUS = 0.4;
-function collidesAABB(px, pz, radius, boxMinX, boxMaxX, boxMinZ, boxMaxZ) {
-  const closestX = Math.max(boxMinX, Math.min(px, boxMaxX));
-  const closestZ = Math.max(boxMinZ, Math.min(pz, boxMaxZ));
-  const dx = px - closestX;
-  const dz = pz - closestZ;
-  return dx * dx + dz * dz < radius * radius;
-}
-var BASE_FURNITURE_AABB = [
-  { x: 6, z: 5, label: "\u5750\u5750", halfW: 1, halfD: 0.8 },
-  // table
-  { x: 4, z: 5, label: "\u5750\u5750", halfW: 0.35, halfD: 0.35 },
-  // chair left
-  { x: 8, z: 5, label: "\u5750\u5750", halfW: 0.35, halfD: 0.35 },
-  // chair right
-  { x: 2.5, z: 2, label: "\u4F11\u606F", halfW: 1.1, halfD: 0.8 },
-  // bed
-  { x: 10, z: 3, label: "\u505A\u996D", halfW: 0.4, halfD: 1.1 },
-  // kitchen counter
-  { x: 9, z: 1, label: "\u770B\u4E66", halfW: 0.8, halfD: 0.3 },
-  // bookshelf
-  { x: 2, z: 8, label: "\u7167\u660E", halfW: 0.25, halfD: 0.25 },
-  // lamp
-  { x: 10, z: 8, label: "\u7EFF\u690D", halfW: 0.25, halfD: 0.25 },
-  // plant
-  { x: 6, z: 1, label: "\u88C5\u9970", halfW: 0.3, halfD: 0.3 },
-  // decoration
-  { x: 5, z: 8, label: "\u6C99\u53D1", halfW: 0.8, halfD: 0.5 }
-  // sofa area
-];
-function getFurnitureAABBForMinion(m) {
-  const off = m.userData.houseOffset || { ox: 0, oz: 0 };
-  return BASE_FURNITURE_AABB.map((f) => ({
-    x: f.x + off.ox,
-    z: f.z + off.oz,
-    label: f.label,
-    minX: f.x + off.ox - f.halfW,
-    maxX: f.x + off.ox + f.halfW,
-    minZ: f.z + off.oz - f.halfD,
-    maxZ: f.z + off.oz + f.halfD
-  }));
-}
-function collidesWithWall(x, z, radius) {
-  for (const wall of wallMeshes) {
-    if (wall.userData.isRoof) continue;
-    const wp = wall.position;
-    const ws = wall.geometry.parameters;
-    if (!ws) continue;
-    const halfX = ws.width / 2;
-    const halfZ = ws.depth / 2;
-    if (collidesAABB(x, z, radius, wp.x - halfX, wp.x + halfX, wp.z - halfZ, wp.z + halfZ)) {
-      return true;
-    }
+function getOrCreateBubble(sessionKey) {
+  let el = bubbles[sessionKey];
+  if (el && !document.body.contains(el)) {
+    delete bubbles[sessionKey];
+    el = null;
   }
-  return false;
-}
-function collidesWithFurniture(x, z, excludeLabel, furn) {
-  const list = furn || getFurnitureAABBForMinion({ userData: { houseOffset: { ox: 0, oz: 0 } } });
-  for (const f of list) {
-    if (f.label === excludeLabel) continue;
-    if (collidesAABB(x, z, MINION_COLLISION_RADIUS, f.minX, f.maxX, f.minZ, f.maxZ)) return true;
+  if (!el) {
+    el = document.createElement("div");
+    el.className = "bubble3d";
+    el.innerHTML = `<div class="bub-hd"><span class="bub-avatar">\u{1F7E1}</span><span class="bub-user"></span><button class="bub-close" onclick="this.closest('.bubble3d').classList.remove('show');this.closest('.bubble3d')._dismissed=true">\u2715</button></div><div class="bub-msg"></div><div class="bub-acts collapsed" onclick="this.classList.toggle('collapsed')"><div class="bub-acts-hd"><span class="bub-acts-tri">\u25B6</span><span class="bub-acts-lbl">\u601D\u8003\u8FC7\u7A0B</span><span class="bub-acts-cnt">0</span></div><div class="bub-acts-body"></div></div><div class="bub-foot"></div>`;
+    document.body.appendChild(el);
+    bubbles[sessionKey] = el;
   }
-  if (collidesWithWall(x, z, MINION_COLLISION_RADIUS)) return true;
-  return false;
+  return el;
 }
-function collidesWithOtherMinions(x, z, excludeMinion) {
-  for (const other of minions) {
-    if (other === excludeMinion) continue;
-    const dx = x - other.position.x;
-    const dz = z - other.position.z;
-    if (Math.sqrt(dx * dx + dz * dz) < MINION_COLLISION_RADIUS * 2) return true;
+function updateBubblePosition(m, time) {
+  const el = bubbles[m.userData.sessionKey];
+  if (!el || !el.classList.contains("show")) return;
+  const pos = new Vector3(m.position.x, m.position.y + 3, m.position.z);
+  const sp = pos.clone().project(camera);
+  if (sp.z > 1) {
+    el.classList.remove("show");
+    return;
   }
-  return false;
+  const x = (sp.x * 0.5 + 0.5) * window.innerWidth;
+  const y = (-sp.y * 0.5 + 0.5) * window.innerHeight;
+  el.style.left = x - 30 + "px";
+  el.style.top = y - el.offsetHeight - 15 + "px";
 }
-var FURNITURE = BASE_FURNITURE_AABB.map((f) => ({ x: f.x, z: f.z, label: f.label, cx: f.x, cz: f.z, cr: f.halfW }));
-function animateMinions(time, dt) {
-  minions.forEach((m) => {
-    const ud = m.userData;
-    const furn = getFurnitureForMinion(m);
-    const hScale = ud.heightScale || 1;
-    if (ud.state === "idle") {
-      const dx = ud.targetX - m.position.x;
-      const dz = ud.targetZ - m.position.z;
-      const dist = Math.sqrt(dx * dx + dz * dz);
-      if (dist < 0.3) {
-        ud.idleTimer = (ud.idleTimer || 0) + dt;
-        if (!ud.idleActionTimer || ud.idleActionTimer <= 0) {
-          const r = Math.random();
-          if (r < 0.25) {
-            const f = furn[Math.floor(Math.random() * furn.length)];
-            const angle = Math.random() * Math.PI * 2;
-            const approachDist = 0.8 + Math.random() * 0.5;
-            ud.targetX = f.x + Math.cos(angle) * approachDist;
-            ud.targetZ = f.z + Math.sin(angle) * approachDist;
-            ud.interactLabel = f.label;
-            ud.idleAction = "walk";
-            ud.idleActionTimer = 2 + Math.random() * 3;
-          } else if (r < 0.45) {
-            ud.targetX = ud.bounds.minX + 1 + Math.random() * (ud.bounds.maxX - ud.bounds.minX - 2);
-            ud.targetZ = ud.bounds.minZ + 1 + Math.random() * (ud.bounds.maxZ - ud.bounds.minZ - 2);
-            ud.interactLabel = "";
-            ud.idleAction = "walk";
-            ud.idleActionTimer = 3 + Math.random() * 4;
-          } else if (r < 0.65) {
-            ud.idleAction = "lookAround";
-            ud.idleActionTimer = 2 + Math.random() * 3;
-          } else if (r < 0.8) {
-            ud.idleAction = "stretch";
-            ud.idleActionTimer = 1.5 + Math.random() * 1;
-          } else {
-            ud.idleAction = "stand";
-            ud.idleActionTimer = 2 + Math.random() * 3;
-          }
-          ud.targetX = Math.max(ud.bounds.minX + 0.5, Math.min(ud.bounds.maxX - 0.5, ud.targetX));
-          ud.targetZ = Math.max(ud.bounds.minZ + 0.5, Math.min(ud.bounds.maxZ - 0.5, ud.targetZ));
-        }
-        ud.idleActionTimer -= dt;
-        if (ud.idleAction === "lookAround") {
-          m.rotation.y += Math.sin(time * 0.8 + ud.bobPhase) * 0.01;
-          m.position.y = Math.sin(time * 1.2 + ud.bobPhase) * 0.01;
-          m.children.forEach((c) => {
-            if (c.name === "armL") c.rotation.x = Math.sin(time * 0.5) * 0.05;
-            if (c.name === "armR") c.rotation.x = Math.sin(time * 0.5 + 1) * 0.05;
-            if (c.name === "legL" || c.name === "legR") c.rotation.x = 0;
-          });
-        } else if (ud.idleAction === "stretch") {
-          const stretchT = 1 - ud.idleActionTimer / 2.5;
-          const armAngle = Math.sin(stretchT * Math.PI) * 0.8;
-          m.children.forEach((c) => {
-            if (c.name === "armL") c.rotation.x = -armAngle;
-            if (c.name === "armR") c.rotation.x = -armAngle;
-            if (c.name === "legL" || c.name === "legR") c.rotation.x = 0;
-          });
-          m.position.y = Math.sin(stretchT * Math.PI) * 0.05;
-        } else {
-          m.position.y = Math.sin(time * 1 + ud.bobPhase) * 0.015;
-          m.children.forEach((c) => {
-            if (c.name === "armL" || c.name === "armR") c.rotation.x *= 0.9;
-            if (c.name === "legL" || c.name === "legR") c.rotation.x = 0;
-          });
-        }
-      } else {
-        const walkSpeed = Math.min(0.8 * dt, dist * 0.4);
-        let moveX = dx / dist * walkSpeed;
-        let moveZ = dz / dist * walkSpeed;
-        let newX = m.position.x + moveX;
-        let newZ = m.position.z + moveZ;
-        newX = Math.max(ud.bounds.minX + 0.3, Math.min(ud.bounds.maxX - 0.3, newX));
-        newZ = Math.max(ud.bounds.minZ + 0.3, Math.min(ud.bounds.maxZ - 0.3, newZ));
-        if (!collidesWithFurniture(newX, newZ, ud.interactLabel, furn) && !collidesWithOtherMinions(newX, newZ, m)) {
-          m.position.x = newX;
-          m.position.z = newZ;
-        } else {
-          const perpX1 = moveZ, perpZ1 = -moveX;
-          const perpX2 = -moveZ, perpZ2 = moveX;
-          const alt1X = Math.max(ud.bounds.minX + 0.3, Math.min(ud.bounds.maxX - 0.3, m.position.x + perpX1));
-          const alt1Z = Math.max(ud.bounds.minZ + 0.3, Math.min(ud.bounds.maxZ - 0.3, m.position.z + perpZ1));
-          const alt2X = Math.max(ud.bounds.minX + 0.3, Math.min(ud.bounds.maxX - 0.3, m.position.x + perpX2));
-          const alt2Z = Math.max(ud.bounds.minZ + 0.3, Math.min(ud.bounds.maxZ - 0.3, m.position.z + perpZ2));
-          const canGo1 = !collidesWithFurniture(alt1X, alt1Z, "", furn) && !collidesWithOtherMinions(alt1X, alt1Z, m);
-          const canGo2 = !collidesWithFurniture(alt2X, alt2Z, "", furn) && !collidesWithOtherMinions(alt2X, alt2Z, m);
-          if (canGo1) {
-            m.position.x = alt1X;
-            m.position.z = alt1Z;
-          } else if (canGo2) {
-            m.position.x = alt2X;
-            m.position.z = alt2Z;
-          } else {
-            if (!ud._stuckTimer) {
-              ud._stuckTimer = setTimeout(() => {
-                ud.targetX = ud.bounds.minX + 1 + Math.random() * (ud.bounds.maxX - ud.bounds.minX - 2);
-                ud.targetZ = ud.bounds.minZ + 1 + Math.random() * (ud.bounds.maxZ - ud.bounds.minZ - 2);
-                ud.interactLabel = "";
-                ud._stuckTimer = null;
-              }, 1e3 + Math.random() * 2e3);
-            }
-          }
-        }
-        m.rotation.y = Math.atan2(dx, dz);
-        const walkCycle = time * 5;
-        m.position.y = Math.abs(Math.sin(walkCycle)) * 0.02;
-        m.children.forEach((c) => {
-          if (c.name === "legL") c.rotation.x = Math.sin(walkCycle) * 0.2;
-          if (c.name === "legR") c.rotation.x = Math.sin(walkCycle + Math.PI) * 0.2;
-          if (c.name === "armL") c.rotation.x = Math.sin(walkCycle + Math.PI) * 0.15;
-          if (c.name === "armR") c.rotation.x = Math.sin(walkCycle) * 0.15;
-        });
+function updateBubbleContent(m) {
+  const el = bubbles[m.userData.sessionKey];
+  if (!el) return;
+  const ud = m.userData;
+  const avatar = el.querySelector(".bub-avatar");
+  avatar.textContent = ud.state === "thinking" ? "\u{1F9E0}" : ud.state === "streaming" ? "\u270D\uFE0F" : "\u2705";
+  el.querySelector(".bub-user").textContent = ud.userName || ud.sessionLabel || "Session";
+  el.querySelector(".bub-msg").textContent = ud.userMsg || "";
+  const actsBody = el.querySelector(".bub-acts-body");
+  const items = [];
+  for (const t of ud.thinkLog) items.push(`<div class="bact bact-think"><span>\u{1F4AD}</span><span>${esc(t)}</span></div>`);
+  for (const t of ud.toolLog) items.push(`<div class="bact bact-tool"><span>\u{1F527}</span><span>${esc(t.name)} <em>${esc(t.args || "")}</em></span></div>`);
+  if (ud.replyText) items.push(`<div class="bact bact-reply"><span>\u{1F4AC}</span><span>${esc(ud.replyText)}</span></div>`);
+  actsBody.innerHTML = items.slice(-20).join("");
+  el.querySelector(".bub-acts-cnt").textContent = ud.thinkLog.length + ud.toolLog.length;
+  el.classList.remove("s-think", "s-stream", "s-done", "s-error");
+  if (ud.state === "thinking") el.classList.add("s-think");
+  else if (ud.state === "streaming") el.classList.add("s-stream");
+  else el.classList.add("s-done");
+  el.querySelector(".bub-foot").textContent = ud.state === "thinking" ? `\u{1F9E0} \u601D\u8003\u4E2D (${ud.thinkLog.length}\u6B65, ${ud.toolLog.length}\u5DE5\u5177)...` : ud.state === "streaming" ? `\u270D\uFE0F \u6D41\u5F0F\u8F93\u51FA\u4E2D...` : `\u2705 \u601D\u8003\u4E86${ud.thinkLog.length}\u6B65 \xB7 \u{1F527}${ud.toolLog.length}\u5DE5\u5177 \xB7 \u{1F4E4}${ud.replyCount}\u6761`;
+}
+function showBubble(m) {
+  const el = getOrCreateBubble(m.userData.sessionKey);
+  updateBubbleContent(m);
+  if (!el._dismissed) el.classList.add("show");
+  updateBubblePosition(m, 0);
+}
+var eventSource = null;
+function connectSSE() {
+  if (eventSource) eventSource.close();
+  eventSource = new EventSource("/api/events");
+  eventSource.onmessage = (e) => {
+    try {
+      const msg = JSON.parse(e.data);
+      if (msg.type === "init") {
+        initWorld(msg.data);
+      } else if (msg.type === "event") {
+        handleEvent(msg.data);
       }
-    } else if (ud.state === "thinking") {
-      m.position.y = Math.sin(time * 1 + ud.bobPhase) * 0.015;
-      m.position.x += Math.sin(time * 0.3 + ud.bobPhase) * 1e-3;
-      m.position.z += Math.cos(time * 0.2 + ud.bobPhase) * 1e-3;
-      m.position.x = Math.max(ud.bounds.minX + 0.3, Math.min(ud.bounds.maxX - 0.3, m.position.x));
-      m.position.z = Math.max(ud.bounds.minZ + 0.3, Math.min(ud.bounds.maxZ - 0.3, m.position.z));
-      m.children.forEach((c) => {
-        if (c.name === "armR") c.rotation.x = -0.6;
-        if (c.name === "armL") c.rotation.x = 0.05;
-        if (c.name === "legL" || c.name === "legR") c.rotation.x = 0;
-      });
-    } else if (ud.state === "streaming") {
-      m.position.y = Math.sin(time * 1 + ud.bobPhase) * 0.015;
-      m.position.x += Math.sin(time * 1.5 + ud.bobPhase) * 3e-3;
-      m.position.z += Math.cos(time * 1 + ud.bobPhase) * 2e-3;
-      m.position.x = Math.max(ud.bounds.minX + 0.3, Math.min(ud.bounds.maxX - 0.3, m.position.x));
-      m.position.z = Math.max(ud.bounds.minZ + 0.3, Math.min(ud.bounds.maxZ - 0.3, m.position.z));
-      m.children.forEach((c) => {
-        if (c.name === "armR") c.rotation.x = Math.sin(time * 3) * 0.15;
-        if (c.name === "armL") c.rotation.x = Math.sin(time * 3 + 1) * 0.15;
-      });
-    } else if (ud.state === "responding") {
-      m.position.y = Math.abs(Math.sin(time * 4)) * 0.04;
-      m.children.forEach((c) => {
-        if (c.name === "armR") c.rotation.x = Math.sin(time * 5) * 0.25;
-        if (c.name === "armL") c.rotation.x = Math.sin(time * 5 + Math.PI) * 0.25;
-      });
-    } else if (ud.state === "error") {
-      m.position.x += Math.sin(time * 20) * 5e-3;
+    } catch {
     }
-  });
+  };
+  eventSource.onerror = () => {
+    setTimeout(connectSSE, 3e3);
+  };
 }
-function updateBubbles() {
-  minions.forEach((m) => {
-    const ud = m.userData;
-    const key = ud.id;
-    const hasContent = ud.userMsg && ud.userMsg.length > 0 || ud.thinkLog && ud.thinkLog.length > 0 || ud.toolLog && ud.toolLog.length > 0;
-    const show = (ud.state === "thinking" || ud.state === "streaming" || ud.state === "responding") && hasContent;
-    let el = bubbles[key] || null;
-    if (show) {
-      if (el && !document.body.contains(el)) {
-        delete bubbles[key];
-        el = null;
-      }
-      if (!el) {
-        el = document.createElement("div");
-        el.className = "bubble3d";
-        el.innerHTML = `<div class="bx" onclick="this.parentNode.classList.remove('show');this.parentNode._dismissed=true">\u2715</div><div class="bc"></div>`;
-        el.addEventListener("wheel", (e) => e.stopPropagation(), { passive: true });
-        document.body.appendChild(el);
-        bubbles[key] = el;
-      }
-      const charPos = new Vector3(m.position.x, m.position.y + 2.5, m.position.z);
-      const screenPos = charPos.clone().project(camera);
-      const x = (screenPos.x * 0.5 + 0.5) * window.innerWidth;
-      const y = (-screenPos.y * 0.5 + 0.5) * window.innerHeight;
-      const camDist = camera.position.distanceTo(new Vector3(m.position.x, 1, m.position.z));
-      const raycaster = new Raycaster();
-      raycaster.set(camera.position, new Vector3(m.position.x - camera.position.x, 1 - camera.position.y, m.position.z - camera.position.z).normalize());
-      raycaster.far = camDist;
-      const wallHits = raycaster.intersectObjects(wallMeshes, false);
-      const blocked = wallHits.length > 0 && wallHits[0].distance < camDist - 1;
-      if (camDist < 15 && !blocked && screenPos.z < 1) {
-        el.style.left = Math.max(10, Math.min(window.innerWidth - 370, x - 120)) + "px";
-        el.style.top = Math.max(10, Math.min(window.innerHeight - 300, y - 140)) + "px";
-        if (!el._dismissed) el.classList.add("show");
-        const bc = el.querySelector(".bc");
-        const thinkLog = ud.thinkLog || [];
-        const toolLog = ud.toolLog || [];
-        let h = "";
-        if (ud.state === "thinking") {
-          h += '<div class="b3d-section b3d-section-s1">';
-          h += '<div class="b3d-header">\u{1F4E9} \u6536\u5230\u6D88\u606F</div>';
-          if (ud.userName) h += `<div style="font-size:9px;color:#60a5fa;font-weight:bold;margin-bottom:3px">${esc(ud.userName)}</div>`;
-          if (ud.userMsg) h += `<div class="b3d-section-msg">${esc(ud.userMsg.slice(0, 200))}</div>`;
-          h += "</div>";
-          const totalSteps = thinkLog.length + toolLog.length;
-          if (totalSteps > 0) {
-            h += '<div class="b3d-section b3d-section-s2">';
-            h += `<div class="b3d-header collapsible" onclick="this.classList.toggle('collapsed');var b=this.nextElementSibling;if(b)b.classList.toggle('collapsed')">\u{1F9E0} \u601D\u8003\u8FC7\u7A0B (${thinkLog.length}\u6B65, ${toolLog.length}\u5DE5\u5177)</div>`;
-            h += `<div class="b3d-body" style="max-height:180px;overflow-y:auto">`;
-            const items = [];
-            thinkLog.forEach((t) => items.push({ type: "think", data: t }));
-            toolLog.forEach((t) => items.push({ type: "tool", data: t }));
-            items.slice(-8).forEach((item) => {
-              if (item.type === "think") {
-                h += `<div class="b3d-section-think">${esc((item.data || "").slice(0, 120))}</div>`;
-              } else {
-                h += `<div class="b3d-section-tool">\u{1F527} ${esc(item.data.name)}: ${esc((item.data.args || "").slice(0, 60))}</div>`;
-              }
-            });
-            if (items.length > 8) h += `<div class="b3d-summary">...\u8FD8\u6709 ${items.length - 8} \u6761</div>`;
-            h += "</div></div>";
-          }
-          h += '<div class="b3d-section"><div class="b3d-summary">\u23F3 \u601D\u8003\u4E2D...</div></div>';
-        } else if (ud.state === "streaming") {
-          h += '<div class="b3d-section b3d-section-s1">';
-          h += '<div class="b3d-header">\u{1F4E9} \u6536\u5230\u6D88\u606F</div>';
-          if (ud.userName) h += `<div style="font-size:9px;color:#60a5fa;font-weight:bold">${esc(ud.userName)}</div>`;
-          if (ud.userMsg) h += `<div class="b3d-section-msg" style="max-height:60px;overflow:hidden">${esc(ud.userMsg.slice(0, 100))}</div>`;
-          h += "</div>";
-          h += '<div class="b3d-section b3d-section-s3">';
-          h += '<div class="b3d-header">\u{1F4AC} \u6B63\u5728\u56DE\u590D</div>';
-          h += `<div class="b3d-summary">\u601D\u8003\u4E86 ${thinkLog.length} \u6B65\uFF0C\u8C03\u7528 ${toolLog.length} \u4E2A\u5DE5\u5177</div>`;
-          h += '<div class="b3d-summary">\u6D41\u5F0F\u8F93\u51FA\u4E2D...</div>';
-          h += "</div>";
-        } else if (ud.state === "responding") {
-          h += '<div class="b3d-section b3d-section-s3">';
-          h += '<div class="b3d-header">\u2705 \u56DE\u590D\u5B8C\u6210</div>';
-          if (ud.userName) h += `<div style="font-size:9px;color:#27ae60;font-weight:bold;margin-bottom:3px">\u56DE\u590D\u4E86 ${esc(ud.userName)}</div>`;
-          h += `<div style="font-size:9px;color:#555;line-height:1.7">`;
-          h += `\u{1F4DD} \u601D\u8003 <b>${thinkLog.length}</b> \u6B65 \xB7 `;
-          h += `\u{1F527} <b>${toolLog.length}</b> \u5DE5\u5177 \xB7 `;
-          h += `\u{1F4E4} <b>${ud.replyCount || 0}</b> \u6761`;
-          h += `</div></div>`;
-        }
-        bc.innerHTML = h;
-      } else {
-        el.classList.remove("show");
-      }
-    } else {
-      if (el) el.classList.remove("show");
-    }
-  });
-}
-function esc(s) {
-  return String(s).replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-function cleanThinking(t) {
-  if (!t) return "";
-  t = t.replace(/"sender_id"[^,}]*/g, "");
-  t = t.replace(/"conversation_label"[^,}]*/g, "");
-  t = t.replace(/"message_id"[^,}]*/g, "");
-  t = t.replace(/"timestamp"[^,}]*/g, "");
-  t = t.replace(/"is_group_chat"[^,}]*/g, "");
-  t = t.replace(/"was_mentioned"[^,}]*/g, "");
-  t = t.replace(/"sender"[^,}]*/g, "");
-  t = t.replace(/"group_subject"[^,}]*/g, "");
-  t = t.replace(/\{[^{}]*\}/g, "").trim();
-  t = t.replace(/\s+/g, " ").trim();
-  return t || t;
-}
-function setMinionState(id, state, dur) {
-  const m = minions.find((m2) => m2.userData.id === id);
+function handleEvent(ev) {
+  const m = minions.find((mn) => mn.userData.sessionKey === ev.session);
   if (!m) return;
-  if (m.userData._timer) clearTimeout(m.userData._timer);
-  m.userData.state = state;
-  console.log(`Minion ${id} -> ${state}, msg=${(m.userData.userMsg || "").slice(0, 30)}`);
-  if (state !== "idle" && dur) m.userData._timer = setTimeout(() => {
-    m.userData.state = "idle";
-  }, dur);
+  const ud = m.userData;
+  addLog(ev);
+  if (ev.type === "user_msg") {
+    ud.userMsg = ev.msg || "";
+    ud.userName = ev.userName || "";
+    ud.thinkLog = [];
+    ud.toolLog = [];
+    ud.replyText = "";
+    ud.replyCount = 0;
+    ud.state = "thinking";
+    ud.lastEventTime = Date.now();
+    const b = bubbles[ud.sessionKey];
+    if (b) b._dismissed = false;
+    showBubble(m);
+  } else if (ev.type === "thinking") {
+    ud.thinkLog.push((ev.thinking || "").slice(0, 150));
+    ud.state = "thinking";
+    ud.lastEventTime = Date.now();
+    const b = bubbles[ud.sessionKey];
+    if (b) b._dismissed = false;
+    showBubble(m);
+  } else if (ev.type === "tool_use") {
+    ud.toolLog.push({ name: ev.tool, args: ev.args });
+    ud.state = "thinking";
+    ud.lastEventTime = Date.now();
+    showBubble(m);
+  } else if (ev.type === "tool_result") {
+    ud.toolLog.push({ name: ev.tool + " \u2713", args: ev.result });
+    showBubble(m);
+  } else if (ev.type === "reply_text") {
+    ud.replyText = ev.text || "";
+    ud.replyCount++;
+    ud.state = "done";
+    ud.lastEventTime = Date.now();
+    showBubble(m);
+    setTimeout(() => {
+      if (Date.now() - ud.lastEventTime > 7500) {
+        const b = bubbles[ud.sessionKey];
+        if (b) b.classList.remove("show");
+        ud.state = "idle";
+      }
+    }, 8e3);
+  }
 }
 function addLog(ev) {
   const el = document.getElementById("b-logs");
-  const t = ev.ts ? new Date(ev.ts).toLocaleTimeString("zh-CN") : "";
-  const d = document.createElement("div");
-  d.className = "log t_" + (ev.type || "");
-  let icon = "\u2022", color = "#888", label = "", content = "";
-  switch (ev.type) {
-    case "user_msg":
-      icon = "\u{1F464}";
-      color = "#34d399";
-      label = ev.userName || "\u7528\u6237";
-      content = (ev.msg || "").replace(/\[图片消息\]/g, "\u{1F5BC}\uFE0F \u56FE\u7247").replace(/\[media attached[^\]]*\]/g, "\u{1F4CE} \u9644\u4EF6").slice(0, 60);
-      break;
-    case "thinking_content":
-      icon = "\u{1F4AD}";
-      color = "#a78bfa";
-      label = "\u601D\u8003\u4E2D";
-      content = (ev.thinking || "").slice(0, 50);
-      break;
-    case "tool_detail":
-      icon = "\u{1F527}";
-      color = "#f97316";
-      label = ev.tool || "\u5DE5\u5177";
-      content = (ev.args || "").replace(/[{}\[\]"]/g, "").slice(0, 40);
-      break;
-    case "thinking":
-      icon = "\u{1F4E8}";
-      color = "#60a5fa";
-      label = "\u6536\u5230\u6D88\u606F";
-      content = "";
-      break;
-    case "streaming":
-      icon = "\u{1F4AC}";
-      color = "#3b82f6";
-      label = "\u6B63\u5728\u56DE\u590D";
-      content = "";
-      break;
-    case "idle":
-      icon = "\u2705";
-      color = "#22c55e";
-      label = "\u56DE\u590D\u5B8C\u6210";
-      content = ev.replies ? `${ev.replies} \u6761\u56DE\u590D` : "";
-      break;
-    case "error":
-      icon = "\u274C";
-      color = "#ef4444";
-      label = "\u51FA\u9519";
-      content = (ev.message || ev.raw || "").slice(0, 50);
-      break;
-    case "agent_run":
-      icon = "\u{1F680}";
-      color = "#8b5cf6";
-      label = "\u5F00\u59CB\u6267\u884C";
-      content = "";
-      break;
-    case "agent_done":
-      icon = "\u{1F3C1}";
-      color = "#8b5cf6";
-      label = "\u6267\u884C\u5B8C\u6210";
-      content = "";
-      break;
-    default:
-      icon = "\u2022";
-      color = "#888";
-      label = ev.type || "";
-      content = (ev.raw || "").slice(0, 50);
-  }
-  const timeStr = t ? `<span style="color:#556;font-size:7px">${t}</span> ` : "";
-  const labelHtml = `<span style="color:${color};font-weight:bold">${label}</span>`;
-  const contentHtml = content ? ` <span style="color:#999">${content}</span>` : "";
-  d.innerHTML = `${timeStr}${icon} ${labelHtml}${contentHtml}`;
-  el.prepend(d);
-  while (el.children.length > 40) el.removeChild(el.lastChild);
-  let targets;
-  if (ev.session) {
-    targets = minions.filter((m) => m.userData.id === ev.session);
-  }
-  if (!targets || targets.length === 0) {
-    targets = ev.agentId ? minions.filter((m) => m.userData.agentId === ev.agentId) : minions;
-  }
-  if (targets.length === 0) targets = minions;
-  if (ev.type === "user_msg") {
-    console.log("EVENT user_msg:", ev.userName, ev.msg?.slice(0, 50), "agent:", ev.agentId);
-    targets.forEach((m) => {
-      m.userData.userMsg = ev.msg;
-      m.userData.userName = ev.userName;
-      m.userData.thinkLog = [];
-      m.userData.toolLog = [];
-      m.userData.replyCount = 0;
-      const b = bubbles[m.userData.id];
-      if (b) b._dismissed = false;
-    });
-  }
-  if (ev.type === "thinking_content") {
-    const t2 = cleanThinking(ev.thinking);
-    console.log("EVENT thinking:", t2?.slice(0, 50), "agent:", ev.agentId);
-    targets.forEach((m) => {
-      if (!m.userData.thinkLog) m.userData.thinkLog = [];
-      if (t2) m.userData.thinkLog.push(t2.slice(0, 200));
-      const b = bubbles[m.userData.id];
-      if (b) b._dismissed = false;
-      if (m.userData.state === "idle" && (m.userData.userMsg || m.userData.thinkLog.length > 0)) {
-        setMinionState(m.userData.id, "thinking", 6e4);
-      }
-    });
-  }
-  if (ev.type === "tool_detail") {
-    console.log("EVENT tool:", ev.tool, "agent:", ev.agentId);
-    targets.forEach((m) => {
-      if (!m.userData.toolLog) m.userData.toolLog = [];
-      m.userData.toolLog.push({ name: ev.tool, args: (ev.args || "").slice(0, 100) });
-    });
-  }
-  if (ev.type === "thinking") {
-    console.log("EVENT thinking state", "agent:", ev.agentId);
-    targets.forEach((m) => setMinionState(m.userData.id, "thinking", 6e4));
-  }
-  if (ev.type === "streaming") {
-    console.log("EVENT streaming", "agent:", ev.agentId);
-    targets.forEach((m) => setMinionState(m.userData.id, "streaming", 6e4));
-  }
-  if (ev.type === "idle") {
-    console.log("EVENT idle, replies:", ev.replies, "agent:", ev.agentId);
-    targets.forEach((m) => {
-      m.userData.replyCount = ev.replies || 0;
-      if (m.userData._timer) clearTimeout(m.userData._timer);
-      m.userData._timer = setTimeout(() => {
-        setMinionState(m.userData.id, "responding", 5e3);
-      }, 3e3);
-    });
-  }
-  if (ev.type === "error") targets.forEach((m) => setMinionState(m.userData.id, "error", 6e3));
+  if (!el) return;
+  const cls = `t_${ev.type}`;
+  const icon = { user_msg: "\u{1F464}", thinking: "\u{1F4AD}", tool_use: "\u{1F527}", tool_result: "\u{1F4CB}", reply_text: "\u{1F4AC}" }[ev.type] || "\u{1F4E1}";
+  const text = ev.msg || ev.thinking || ev.text || ev.tool || "";
+  const div = document.createElement("div");
+  div.className = `log ${cls}`;
+  div.textContent = `${icon} ${text.slice(0, 120)}`;
+  el.appendChild(div);
+  if (el.children.length > 80) el.removeChild(el.firstChild);
+  el.scrollTop = el.scrollHeight;
 }
-function updateUI(d) {
-  const agents = d.agents || [];
-  document.getElementById("b-agents").innerHTML = agents.map((a) => {
-    const sessCount = (a.sessions || a.channels || []).length;
-    return `<div class="row"><span><span class="dot on"></span>${a.id}</span><span style="color:#667">${sessCount} sessions</span></div>`;
-  }).join("") || '<div class="row" style="color:#334">\u2014</div>';
-  let sessHtml = "";
-  for (const a of agents) {
-    const sess = a.sessions || a.channels || [];
-    for (const s of sess) {
-      const icon = s.type === "group" ? "\u{1F4AC}" : s.type === "dm" ? "\u{1F464}" : s.type === "cron" ? "\u23F0" : s.type === "main" ? "\u{1F3E0}" : "\u{1F539}";
-      sessHtml += `<div class="row"><span>${icon} ${s.name || s.key || s.id}</span><span style="color:#556">${a.id}</span></div>`;
+window.addEventListener("click", (e) => {
+  if (isDragging) return;
+  const mouse = new Vector2(
+    e.clientX / window.innerWidth * 2 - 1,
+    -(e.clientY / window.innerHeight) * 2 + 1
+  );
+  raycaster.setFromCamera(mouse, camera);
+  const hits = raycaster.intersectObjects(clickables, true);
+  if (hits.length > 0) {
+    let target = hits[0].object;
+    while (target.parent && !target.userData.sessionKey) target = target.parent;
+    if (target.userData.sessionKey) {
+      const b = bubbles[target.userData.sessionKey];
+      if (b && b.classList.contains("show")) {
+        b.classList.remove("show");
+        b._dismissed = true;
+      } else {
+        fetch(`/api/messages/${target.userData.sessionId}`).then((r) => r.json()).then((data) => {
+          if (data.messages) {
+            const last = data.messages.filter((m) => m.role === "user").pop();
+            if (last) target.userData.userMsg = last.text || "";
+            const lastReply = data.messages.filter((m) => m.role === "assistant" && m.texts?.length).pop();
+            if (lastReply) target.userData.replyText = lastReply.texts.join(" ").slice(0, 200);
+            target.userData.thinkLog = data.messages.filter((m) => m.role === "assistant" && m.thinking).slice(-3).map((m) => m.thinking.slice(0, 100));
+            target.userData.toolLog = data.messages.filter((m) => m.role === "toolResult").slice(-5).map((m) => ({ name: m.toolName, args: m.result?.slice(0, 60) }));
+          }
+          const b2 = getOrCreateBubble(target.userData.sessionKey);
+          b2._dismissed = false;
+          showBubble(target);
+        }).catch(() => showBubble(target));
+      }
     }
   }
-  document.getElementById("b-channels").innerHTML = sessHtml || '<div class="row" style="color:#334">\u2014</div>';
-  document.getElementById("b-status").innerHTML = `<div class="row"><span>Bind</span><span>${d.gateway?.bind || "?"}:${d.gateway?.port || "?"}</span></div><div class="row"><span>Rooms</span><span>${agents.length}</span></div>`;
-  const totalSess = agents.reduce((sum, a) => sum + (a.sessions || a.channels || []).length, 0);
-  document.getElementById("h-rooms").textContent = "Rooms: " + agents.length;
-  document.getElementById("h-sess").textContent = "Sessions: " + totalSess;
-}
-async function runCmd() {
-  const inp = document.getElementById("cmd-in"), out = document.getElementById("cmd-out");
-  const cmd = inp.value.trim();
-  if (!cmd) return;
-  out.style.display = "block";
-  out.textContent = "\u6267\u884C\u4E2D...";
-  try {
-    const r = await fetch("/api/exec", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ command: cmd }) });
-    const d = await r.json();
-    out.textContent = d.stdout || d.stderr || `exit: ${d.code}`;
-  } catch (e) {
-    out.textContent = "Error: " + e.message;
-  }
-}
-window.runCmd = runCmd;
+});
 function animate() {
   requestAnimationFrame(animate);
-  const dt = clock.getDelta();
+  const dt = Math.min(clock.getDelta(), 0.05);
   const time = clock.getElapsedTime();
-  const speed = moveSpeed * dt;
   const forward = new Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
   const right = new Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
+  const speed = moveSpeed * dt;
   if (keys.w) camera.position.addScaledVector(forward, speed);
   if (keys.s) camera.position.addScaledVector(forward, -speed);
   if (keys.a) camera.position.addScaledVector(right, -speed);
   if (keys.d) camera.position.addScaledVector(right, speed);
   if (keys.space) camera.position.y += speed;
   if (keys.shift) camera.position.y -= speed;
-  camera.position.y = Math.max(0.5, camera.position.y);
-  const lookDir = new Vector3(
-    -Math.sin(yaw) * Math.cos(pitch),
+  const lookTarget = camera.position.clone().add(new Vector3(
+    Math.sin(yaw) * Math.cos(pitch),
     Math.sin(pitch),
-    -Math.cos(yaw) * Math.cos(pitch)
-  );
-  camera.lookAt(camera.position.clone().add(lookDir));
-  wallMeshes.forEach((wall) => {
-    const dist = camera.position.distanceTo(wall.position);
-    const targetOpacity = dist < 10 ? Math.max(0.1, dist / 10) : 1;
-    wall.material.transparent = true;
-    wall.material.opacity += (targetOpacity - wall.material.opacity) * 0.1;
-  });
-  animateMinions(time, dt);
-  updateBubbles();
+    Math.cos(yaw) * Math.cos(pitch)
+  ));
+  camera.lookAt(lookTarget);
   minions.forEach((m) => {
-    const label = m.children.find((c) => c.userData && c.userData.isNameLabel);
-    if (label) {
-      const worldPos = new Vector3();
-      label.getWorldPosition(worldPos);
-      const target = camera.position.clone();
-      target.y = worldPos.y;
-      label.lookAt(target);
-      label.position.y = 2.5;
+    const ud = m.userData;
+    ud.idleTimer -= dt;
+    if (ud.idleTimer <= 0) {
+      ud.idleTimer = 2 + Math.random() * 5;
+      ud.idleAction = Math.random() < 0.3 ? "walk" : "stand";
+      if (ud.idleAction === "walk" && ud.bounds) {
+        ud.targetX = ud.bounds.minX + Math.random() * (ud.bounds.maxX - ud.bounds.minX);
+        ud.targetZ = ud.bounds.minZ + Math.random() * (ud.bounds.maxZ - ud.bounds.minZ);
+      }
     }
+    if (ud.bounds) {
+      const dx = ud.targetX - m.position.x, dz = ud.targetZ - m.position.z;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+      if (dist > 0.1) {
+        const spd = 0.8 * dt;
+        m.position.x += dx / dist * spd;
+        m.position.z += dz / dist * spd;
+        m.rotation.y = Math.atan2(dx, dz);
+      }
+      m.position.x = Math.max(ud.bounds.minX, Math.min(ud.bounds.maxX, m.position.x));
+      m.position.z = Math.max(ud.bounds.minZ, Math.min(ud.bounds.maxZ, m.position.z));
+    }
+    m.position.y = Math.sin(time * 1.5 + ud.bobPhase) * 0.02;
+    m.children.forEach((c) => {
+      if (c.userData?.isArm) {
+        c.rotation.x = Math.sin(time * 2 + ud.bobPhase + (c.userData.side > 0 ? 0 : Math.PI)) * 0.15;
+      }
+    });
+    updateBubblePosition(m, time);
   });
-  lampLight.intensity = 0.7 + Math.sin(time * 2) * 0.1;
   renderer.render(scene, camera);
 }
-function sse() {
-  const es = new EventSource("/api/events");
-  es.onmessage = (e) => {
-    const m = JSON.parse(e.data);
-    console.log("SSE:", m.type, m.data ? JSON.stringify(m.data).slice(0, 100) : "");
-    if (m.type === "init" || m.type === "config") init(m.data);
-    if (m.type === "event") addLog(m.data);
-  };
-  es.onerror = () => setTimeout(sse, 3e3);
-}
-fetch("/api/minion-profiles").then((r) => r.json()).then((profiles) => {
-  minionProfiles = profiles || {};
-  Object.values(minionProfiles).forEach((p) => {
-    if (p.name) usedMinionNames.add(p.name);
+window.runCmd = function() {
+  const inp = document.getElementById("cmd-in");
+  const out = document.getElementById("cmd-out");
+  const cmd = inp.value.trim();
+  if (!cmd) return;
+  out.style.display = "block";
+  out.textContent = "Running...";
+  fetch("/api/cli", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ cmd })
+  }).then((r) => r.json()).then((d) => {
+    out.textContent = d.output || d.error || "No output";
+  }).catch((e) => {
+    out.textContent = "Error: " + e.message;
   });
-}).catch(() => {
-}).finally(() => sse());
-fetch("/api/state").then((r) => r.json()).then(init);
-fetch("/api/logs/tail").then((r) => r.json()).then((d) => {
-  if (d.events) d.events.forEach(addLog);
-});
-fetch("/api/events/history").then((r) => r.json()).then((d) => {
-  if (d.events) d.events.forEach(addLog);
-});
-animate();
+};
+function esc(s) {
+  const d = document.createElement("div");
+  d.textContent = s || "";
+  return d.innerHTML;
+}
 window.addEventListener("resize", () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
+connectSSE();
+animate();
 /*! Bundled license information:
 
 three/build/three.core.js:
