@@ -27783,9 +27783,31 @@ function getRandomName() {
 var agents = [];
 var minions = [];
 var bubbles = {};
+var obstacles = [];
 var clock = new Clock();
 var raycaster = new Raycaster();
 var clickables = [];
+var MINION_RADIUS = 0.4;
+function addObstacle(minX, maxX, minZ, maxZ, label) {
+  obstacles.push({ minX, maxX, minZ, maxZ, label: label || "" });
+}
+function collidesAABB(ax, az, ar, box) {
+  const closestX = Math.max(box.minX, Math.min(ax, box.maxX));
+  const closestZ = Math.max(box.minZ, Math.min(az, box.maxZ));
+  const dx = ax - closestX, dz = az - closestZ;
+  return dx * dx + dz * dz < ar * ar;
+}
+function collidesWithAny(x, z, excludeKey) {
+  for (const obs of obstacles) {
+    if (collidesAABB(x, z, MINION_RADIUS, obs)) return true;
+  }
+  for (const other of minions) {
+    if (other.userData.sessionKey === excludeKey) continue;
+    const dx = x - other.position.x, dz = z - other.position.z;
+    if (dx * dx + dz * dz < MINION_RADIUS * 2 * (MINION_RADIUS * 2)) return true;
+  }
+  return false;
+}
 function createMinion(profile) {
   const p = profile || {};
   const group = new Group();
@@ -27984,6 +28006,20 @@ function createContinent(agentName, index) {
   const lampLight = new PointLight(16766720, 0.5, 5);
   lampLight.position.set(hx + 2, 1.2, hz + 1.5);
   scene.add(lampLight);
+  const pad = 0.3;
+  addObstacle(hx - houseW / 2 - pad, hx + houseW / 2 + pad, hz - houseD / 2 - pad, hz + houseD / 2 + pad, "house");
+  addObstacle(hx - 1 - 0.75 - pad, hx - 1 + 0.75 + pad, hz + 1 - 0.4 - pad, hz + 1 + 0.4 + pad, "table");
+  [-1, 1].forEach((side) => {
+    const cx = hx - 1 + side * 1.2;
+    addObstacle(cx - 0.25 - pad, cx + 0.25 + pad, hz + 1 - 0.25 - pad, hz + 1 + 0.25 + pad, "chair");
+  });
+  addObstacle(hx + 1.5 - 0.75 - pad, hx + 1.5 + 0.75 + pad, hz - 0.5 - 1.25 - pad, hz - 0.5 + 1.25 + pad, "bed");
+  addObstacle(hx - 2.2 - 0.4 - pad, hx - 2.2 + 0.4 + pad, hz - 1 - 0.2 - pad, hz - 1 + 0.2 + pad, "bookshelf");
+  addObstacle(hx + 2 - 0.3 - pad, hx + 2 + 0.3 + pad, hz + 1.5 - 0.3 - pad, hz + 1.5 + 0.3 + pad, "lamp");
+  addObstacle(ox - 1, ox + 0.5, oz - 1, oz + D + 1, "wall_west");
+  addObstacle(ox + W - 0.5, ox + W + 1, oz - 1, oz + D + 1, "wall_east");
+  addObstacle(ox - 1, ox + W + 1, oz - 1, oz + 0.5, "wall_north");
+  addObstacle(ox - 1, ox + W + 1, oz + D - 0.5, oz + D + 1, "wall_south");
   return { ox, oz, W, D, hx, hz, houseH };
 }
 function parseSessionKey(key) {
@@ -28012,6 +28048,7 @@ function initWorld(worldData) {
   Object.keys(bubbles).forEach((k) => delete bubbles[k]);
   minions.length = 0;
   clickables.length = 0;
+  obstacles.length = 0;
   agents = worldData.agents || [];
   document.getElementById("h-agents").textContent = `Agents: ${agents.length}`;
   let totalSess = 0;
@@ -28242,7 +28279,7 @@ function animate() {
   const dt = Math.min(clock.getDelta(), 0.05);
   const time = clock.getElapsedTime();
   const forward = new Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
-  const right = new Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
+  const right = new Vector3().crossVectors(new Vector3(0, 1, 0), forward).normalize();
   const speed = moveSpeed * dt;
   if (keys.w) camera.position.addScaledVector(forward, speed);
   if (keys.s) camera.position.addScaledVector(forward, -speed);
@@ -28272,8 +28309,18 @@ function animate() {
       const dist = Math.sqrt(dx * dx + dz * dz);
       if (dist > 0.1) {
         const spd = 0.8 * dt;
-        m.position.x += dx / dist * spd;
-        m.position.z += dz / dist * spd;
+        const nx = m.position.x + dx / dist * spd;
+        const nz = m.position.z + dz / dist * spd;
+        if (!collidesWithAny(nx, nz, ud.sessionKey)) {
+          m.position.x = nx;
+          m.position.z = nz;
+        } else if (!collidesWithAny(nx, m.position.z, ud.sessionKey)) {
+          m.position.x = nx;
+        } else if (!collidesWithAny(m.position.x, nz, ud.sessionKey)) {
+          m.position.z = nz;
+        } else {
+          ud.idleTimer = 0;
+        }
         m.rotation.y = Math.atan2(dx, dz);
       }
       m.position.x = Math.max(ud.bounds.minX, Math.min(ud.bounds.maxX, m.position.x));

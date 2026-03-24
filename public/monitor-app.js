@@ -80,9 +80,37 @@ function getRandomName() {
 let agents = [];     // { name, sessions: [...] }
 let minions = [];    // Three.js groups
 let bubbles = {};    // sessionKey → DOM element
+let obstacles = [];  // { minX, maxX, minZ, maxZ } axis-aligned bounding boxes
 const clock = new THREE.Clock();
 const raycaster = new THREE.Raycaster();
 const clickables = []; // minion meshes for click detection
+
+// ===== Collision =====
+const MINION_RADIUS = 0.4; // collision radius for minions
+
+function addObstacle(minX, maxX, minZ, maxZ, label) {
+  obstacles.push({ minX, maxX, minZ, maxZ, label: label || '' });
+}
+
+function collidesAABB(ax, az, ar, box) {
+  // Circle (cx, cz, radius) vs AABB collision
+  const closestX = Math.max(box.minX, Math.min(ax, box.maxX));
+  const closestZ = Math.max(box.minZ, Math.min(az, box.maxZ));
+  const dx = ax - closestX, dz = az - closestZ;
+  return (dx * dx + dz * dz) < (ar * ar);
+}
+
+function collidesWithAny(x, z, excludeKey) {
+  for (const obs of obstacles) {
+    if (collidesAABB(x, z, MINION_RADIUS, obs)) return true;
+  }
+  for (const other of minions) {
+    if (other.userData.sessionKey === excludeKey) continue;
+    const dx = x - other.position.x, dz = z - other.position.z;
+    if (dx * dx + dz * dz < (MINION_RADIUS * 2) * (MINION_RADIUS * 2)) return true;
+  }
+  return false;
+}
 
 // ===== Create Minion =====
 function createMinion(profile) {
@@ -291,6 +319,29 @@ function createContinent(agentName, index) {
   const lampLight = new THREE.PointLight(0xffd700, 0.5, 5);
   lampLight.position.set(hx + 2, 1.2, hz + 1.5); scene.add(lampLight);
 
+  // ===== Register Obstacles (AABB) =====
+  const pad = 0.3; // extra padding around obstacles
+  // House building
+  addObstacle(hx - houseW/2 - pad, hx + houseW/2 + pad, hz - houseD/2 - pad, hz + houseD/2 + pad, 'house');
+  // Table + area around it
+  addObstacle(hx - 1 - 0.75 - pad, hx - 1 + 0.75 + pad, hz + 1 - 0.4 - pad, hz + 1 + 0.4 + pad, 'table');
+  // Chairs
+  [-1, 1].forEach(side => {
+    const cx = hx - 1 + side * 1.2;
+    addObstacle(cx - 0.25 - pad, cx + 0.25 + pad, hz + 1 - 0.25 - pad, hz + 1 + 0.25 + pad, 'chair');
+  });
+  // Bed
+  addObstacle(hx + 1.5 - 0.75 - pad, hx + 1.5 + 0.75 + pad, hz - 0.5 - 1.25 - pad, hz - 0.5 + 1.25 + pad, 'bed');
+  // Bookshelf
+  addObstacle(hx - 2.2 - 0.4 - pad, hx - 2.2 + 0.4 + pad, hz - 1 - 0.2 - pad, hz - 1 + 0.2 + pad, 'bookshelf');
+  // Lamp
+  addObstacle(hx + 2 - 0.3 - pad, hx + 2 + 0.3 + pad, hz + 1.5 - 0.3 - pad, hz + 1.5 + 0.3 + pad, 'lamp');
+  // Continent boundary walls (invisible barriers at edges)
+  addObstacle(ox - 1, ox + 0.5, oz - 1, oz + D + 1, 'wall_west');
+  addObstacle(ox + W - 0.5, ox + W + 1, oz - 1, oz + D + 1, 'wall_east');
+  addObstacle(ox - 1, ox + W + 1, oz - 1, oz + 0.5, 'wall_north');
+  addObstacle(ox - 1, ox + W + 1, oz + D - 0.5, oz + D + 1, 'wall_south');
+
   return { ox, oz, W, D, hx, hz, houseH };
 }
 
@@ -326,6 +377,7 @@ function initWorld(worldData) {
   Object.keys(bubbles).forEach(k => delete bubbles[k]);
   minions.length = 0;
   clickables.length = 0;
+  obstacles.length = 0;
 
   agents = worldData.agents || [];
 
@@ -582,7 +634,8 @@ function animate() {
 
   // Camera movement
   const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
-  const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
+  // right = up × forward (right-handed system)
+  const right = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), forward).normalize();
   const speed = moveSpeed * dt;
   if (keys.w) camera.position.addScaledVector(forward, speed);
   if (keys.s) camera.position.addScaledVector(forward, -speed);
@@ -612,14 +665,25 @@ function animate() {
       }
     }
 
-    // Move towards target
+    // Move towards target with collision detection
     if (ud.bounds) {
       const dx = ud.targetX - m.position.x, dz = ud.targetZ - m.position.z;
       const dist = Math.sqrt(dx*dx + dz*dz);
       if (dist > 0.1) {
         const spd = 0.8 * dt;
-        m.position.x += (dx/dist) * spd;
-        m.position.z += (dz/dist) * spd;
+        const nx = m.position.x + (dx/dist) * spd;
+        const nz = m.position.z + (dz/dist) * spd;
+        // Check collision, try X-only or Z-only as fallback
+        if (!collidesWithAny(nx, nz, ud.sessionKey)) {
+          m.position.x = nx; m.position.z = nz;
+        } else if (!collidesWithAny(nx, m.position.z, ud.sessionKey)) {
+          m.position.x = nx;
+        } else if (!collidesWithAny(m.position.x, nz, ud.sessionKey)) {
+          m.position.z = nz;
+        } else {
+          // Fully blocked, pick new target
+          ud.idleTimer = 0;
+        }
         m.rotation.y = Math.atan2(dx, dz);
       }
       // Clamp bounds
