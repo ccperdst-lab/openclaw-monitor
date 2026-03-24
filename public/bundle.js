@@ -27698,7 +27698,12 @@ window.addEventListener("mouseup", () => {
   isDragging = false;
   renderer.domElement.classList.remove("dragging");
 });
+function isInputFocused() {
+  const tag = document.activeElement?.tagName;
+  return tag === "INPUT" || tag === "TEXTAREA";
+}
 window.addEventListener("keydown", (e) => {
+  if (isInputFocused()) return;
   if (e.code === "KeyW") keys.w = true;
   else if (e.code === "KeyA") keys.a = true;
   else if (e.code === "KeyS") keys.s = true;
@@ -27707,6 +27712,7 @@ window.addEventListener("keydown", (e) => {
   else if (e.code === "ShiftLeft" || e.code === "ShiftRight") keys.shift = true;
 });
 window.addEventListener("keyup", (e) => {
+  if (isInputFocused()) return;
   if (e.code === "KeyW") keys.w = false;
   else if (e.code === "KeyA") keys.a = false;
   else if (e.code === "KeyS") keys.s = false;
