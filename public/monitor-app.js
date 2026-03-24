@@ -621,6 +621,7 @@ function getOrCreateBubble(sessionKey) {
       el.classList.remove('show');
       el._dismissed = true;
       interactingWithOverlay = false;
+      stopBubbleRefresh(sk);
       // Return focus to canvas area
       renderer.domElement.focus();
     });
@@ -651,6 +652,7 @@ function getOrCreateBubble(sessionKey) {
         el.classList.remove('show');
         el._dismissed = true;
         interactingWithOverlay = false;
+        stopBubbleRefresh(sk);
         inputEl.blur();
       }
     });
@@ -765,6 +767,76 @@ function connectSSE() {
   eventSource.onerror = () => { setTimeout(connectSSE, 3000); };
 }
 
+// ===== Bubble Auto-Refresh (polling fallback for SSE gaps) =====
+const bubbleRefreshTimers = {}; // sessionKey -> intervalId
+const REFRESH_INTERVAL_MS = 3000; // refresh every 3s when bubble is active
+
+function startBubbleRefresh(minion) {
+  const sk = minion.userData.sessionKey;
+  if (bubbleRefreshTimers[sk]) return; // already running
+
+  bubbleRefreshTimers[sk] = setInterval(() => {
+    const el = bubbles[sk];
+    if (!el || !el.classList.contains('show') || el._dismissed) {
+      stopBubbleRefresh(sk);
+      return;
+    }
+    // Fetch latest messages and update bubble
+    fetch(`/api/messages/${minion.userData.sessionId}`)
+      .then(r => r.json())
+      .then(data => {
+        if (!data.messages || data.messages.length === 0) return;
+        applyMessagesToMinion(minion, data.messages);
+        updateBubbleContent(minion);
+      })
+      .catch(() => {});
+  }, REFRESH_INTERVAL_MS);
+}
+
+function stopBubbleRefresh(sk) {
+  if (bubbleRefreshTimers[sk]) {
+    clearInterval(bubbleRefreshTimers[sk]);
+    delete bubbleRefreshTimers[sk];
+  }
+}
+
+// Apply parsed messages from API to minion userData (rebuild eventLog)
+function applyMessagesToMinion(minion, messages) {
+  const ud = minion.userData;
+  const last = messages.filter(m => m.role === 'user').pop();
+  if (last) ud.userMsg = last.text || '';
+
+  // Build eventLog from recent messages
+  const histLog = [];
+  const recent = messages.slice(-30);
+  for (const msg of recent) {
+    if (msg.role === 'assistant') {
+      if (msg.thinking) histLog.push({ type: 'think', text: msg.thinking.slice(0, 150) });
+      if (msg.toolCalls) {
+        for (const tc of msg.toolCalls) {
+          histLog.push({ type: 'tool_use', text: tc.name, detail: (tc.args || '').slice(0, 100) });
+        }
+      }
+      if (msg.texts?.length) histLog.push({ type: 'reply_snippet', text: msg.texts.join(' ').slice(0, 150) });
+    } else if (msg.role === 'toolResult') {
+      histLog.push({ type: 'tool_result', text: (msg.toolName || '?') + ' ✓', detail: (msg.result || '').slice(0, 100) });
+    }
+  }
+  // Only update if we got new data
+  if (histLog.length > 0) {
+    ud.eventLog = histLog;
+    const lastReply = recent.filter(m => m.role === 'assistant' && m.texts?.length).pop();
+    if (lastReply) ud.replyText = lastReply.texts.join(' ').slice(0, 200);
+    // Determine state from last message
+    const lastMsg = recent[recent.length - 1];
+    if (lastMsg?.role === 'assistant') {
+      ud.state = lastMsg.texts?.length ? 'done' : 'thinking';
+    } else if (lastMsg?.role === 'toolResult') {
+      ud.state = 'thinking';
+    }
+  }
+}
+
 function handleEvent(ev) {
   const m = minions.find(mn => mn.userData.sessionKey === ev.session);
   if (!m) return;
@@ -780,6 +852,7 @@ function handleEvent(ev) {
     ud.state = 'thinking'; ud.lastEventTime = Date.now();
     const b = bubbles[ud.sessionKey]; if (b) b._dismissed = false;
     showBubble(m);
+    startBubbleRefresh(m); // Start polling for updates
   } else if (ev.type === 'thinking') {
     const now = new Date();
     ud.eventLog.push({ type: 'think', text: (ev.thinking || '').slice(0, 150), time: now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) });
@@ -807,6 +880,15 @@ function handleEvent(ev) {
     ud.state = 'done'; ud.lastEventTime = Date.now();
     showBubble(m);
     clearNotification(m);
+    // Do one final refresh after 2s to catch any trailing data
+    setTimeout(() => {
+      fetch(`/api/messages/${m.userData.sessionId}`)
+        .then(r => r.json())
+        .then(data => { if (data.messages) { applyMessagesToMinion(m, data.messages); updateBubbleContent(m); } })
+        .catch(() => {});
+    }, 2000);
+    // Stop polling after a short delay (conversation is done)
+    setTimeout(() => stopBubbleRefresh(ud.sessionKey), 5000);
     // Auto-hide after 30s, preserving chat input
     setTimeout(() => {
       if (Date.now() - ud.lastEventTime > 29500) {
@@ -818,6 +900,7 @@ function handleEvent(ev) {
           b2.classList.remove('show');
           b2._dismissed = true;
           ud.state = 'idle';
+          stopBubbleRefresh(ud.sessionKey);
         }
       }
     }, 30000);
@@ -1054,6 +1137,7 @@ window.addEventListener('click', (e) => {
       if (b && b.classList.contains('show')) {
         b.classList.remove('show'); b._dismissed = true;
         interactingWithOverlay = false;
+        stopBubbleRefresh(target.userData.sessionKey);
       } else {
         // Load messages from API
         fetch(`/api/messages/${target.userData.sessionId}`).then(r => r.json()).then(data => {

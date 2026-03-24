@@ -179,7 +179,7 @@ function watchSessionFile(agentName, sessionKey, sessionId) {
   let debounceTimer = null;
   let lastHash = '';
 
-  const watcher = chokidar.watch(filePath, { persistent: true, awaitWriteFinish: { stabilityThreshold: 200 } });
+  const watcher = chokidar.watch(filePath, { persistent: true, awaitWriteFinish: { stabilityThreshold: 100 } });
 
   watcher.on('change', () => {
     if (debounceTimer) clearTimeout(debounceTimer);
@@ -205,7 +205,7 @@ function watchSessionFile(agentName, sessionKey, sessionId) {
           }
         });
       } catch (e) { log('error', 'Session read error: ' + e.message); }
-    }, 300);
+    }, 100);
   });
 
   watchedSessions[sessionKey] = { watcher, filePath, lastSize };

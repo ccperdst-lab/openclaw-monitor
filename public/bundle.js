@@ -28297,6 +28297,7 @@ function getOrCreateBubble(sessionKey) {
       el.classList.remove("show");
       el._dismissed = true;
       interactingWithOverlay = false;
+      stopBubbleRefresh(sk);
       renderer.domElement.focus();
     });
     const actsEl = el.querySelector(".bub-acts");
@@ -28326,6 +28327,7 @@ function getOrCreateBubble(sessionKey) {
         el.classList.remove("show");
         el._dismissed = true;
         interactingWithOverlay = false;
+        stopBubbleRefresh(sk);
         inputEl.blur();
       }
     });
@@ -28427,6 +28429,62 @@ function connectSSE() {
     setTimeout(connectSSE, 3e3);
   };
 }
+var bubbleRefreshTimers = {};
+var REFRESH_INTERVAL_MS = 3e3;
+function startBubbleRefresh(minion) {
+  const sk = minion.userData.sessionKey;
+  if (bubbleRefreshTimers[sk]) return;
+  bubbleRefreshTimers[sk] = setInterval(() => {
+    const el = bubbles[sk];
+    if (!el || !el.classList.contains("show") || el._dismissed) {
+      stopBubbleRefresh(sk);
+      return;
+    }
+    fetch(`/api/messages/${minion.userData.sessionId}`).then((r) => r.json()).then((data) => {
+      if (!data.messages || data.messages.length === 0) return;
+      applyMessagesToMinion(minion, data.messages);
+      updateBubbleContent(minion);
+    }).catch(() => {
+    });
+  }, REFRESH_INTERVAL_MS);
+}
+function stopBubbleRefresh(sk) {
+  if (bubbleRefreshTimers[sk]) {
+    clearInterval(bubbleRefreshTimers[sk]);
+    delete bubbleRefreshTimers[sk];
+  }
+}
+function applyMessagesToMinion(minion, messages) {
+  const ud = minion.userData;
+  const last = messages.filter((m) => m.role === "user").pop();
+  if (last) ud.userMsg = last.text || "";
+  const histLog = [];
+  const recent = messages.slice(-30);
+  for (const msg of recent) {
+    if (msg.role === "assistant") {
+      if (msg.thinking) histLog.push({ type: "think", text: msg.thinking.slice(0, 150) });
+      if (msg.toolCalls) {
+        for (const tc of msg.toolCalls) {
+          histLog.push({ type: "tool_use", text: tc.name, detail: (tc.args || "").slice(0, 100) });
+        }
+      }
+      if (msg.texts?.length) histLog.push({ type: "reply_snippet", text: msg.texts.join(" ").slice(0, 150) });
+    } else if (msg.role === "toolResult") {
+      histLog.push({ type: "tool_result", text: (msg.toolName || "?") + " \u2713", detail: (msg.result || "").slice(0, 100) });
+    }
+  }
+  if (histLog.length > 0) {
+    ud.eventLog = histLog;
+    const lastReply = recent.filter((m) => m.role === "assistant" && m.texts?.length).pop();
+    if (lastReply) ud.replyText = lastReply.texts.join(" ").slice(0, 200);
+    const lastMsg = recent[recent.length - 1];
+    if (lastMsg?.role === "assistant") {
+      ud.state = lastMsg.texts?.length ? "done" : "thinking";
+    } else if (lastMsg?.role === "toolResult") {
+      ud.state = "thinking";
+    }
+  }
+}
 function handleEvent(ev) {
   const m = minions.find((mn) => mn.userData.sessionKey === ev.session);
   if (!m) return;
@@ -28443,6 +28501,7 @@ function handleEvent(ev) {
     const b = bubbles[ud.sessionKey];
     if (b) b._dismissed = false;
     showBubble(m);
+    startBubbleRefresh(m);
   } else if (ev.type === "thinking") {
     const now = /* @__PURE__ */ new Date();
     ud.eventLog.push({ type: "think", text: (ev.thinking || "").slice(0, 150), time: now.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) });
@@ -28476,6 +28535,16 @@ function handleEvent(ev) {
     showBubble(m);
     clearNotification(m);
     setTimeout(() => {
+      fetch(`/api/messages/${m.userData.sessionId}`).then((r) => r.json()).then((data) => {
+        if (data.messages) {
+          applyMessagesToMinion(m, data.messages);
+          updateBubbleContent(m);
+        }
+      }).catch(() => {
+      });
+    }, 2e3);
+    setTimeout(() => stopBubbleRefresh(ud.sessionKey), 5e3);
+    setTimeout(() => {
       if (Date.now() - ud.lastEventTime > 29500) {
         const b2 = bubbles[ud.sessionKey];
         if (b2 && b2.classList.contains("show")) {
@@ -28485,6 +28554,7 @@ function handleEvent(ev) {
           b2.classList.remove("show");
           b2._dismissed = true;
           ud.state = "idle";
+          stopBubbleRefresh(ud.sessionKey);
         }
       }
     }, 3e4);
@@ -28712,6 +28782,7 @@ window.addEventListener("click", (e) => {
         b.classList.remove("show");
         b._dismissed = true;
         interactingWithOverlay = false;
+        stopBubbleRefresh(target.userData.sessionKey);
       } else {
         fetch(`/api/messages/${target.userData.sessionId}`).then((r) => r.json()).then((data) => {
           if (data.messages) {
