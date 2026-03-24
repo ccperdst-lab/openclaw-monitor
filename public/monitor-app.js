@@ -386,6 +386,33 @@ function parseSessionKey(key) {
 
 // ===== Init World =====
 function initWorld(worldData) {
+  // Save existing minion positions & state before clearing
+  const savedPositions = {};
+  const savedBubbles = {};
+  for (const m of minions) {
+    const sk = m.userData.sessionKey;
+    if (!sk) continue;
+    savedPositions[sk] = {
+      x: m.position.x, z: m.position.z,
+      targetX: m.userData.targetX, targetZ: m.userData.targetZ,
+    };
+    // Save bubble visibility + content state
+    const bub = bubbles[sk];
+    if (bub) {
+      savedBubbles[sk] = {
+        show: bub.classList.contains('show'),
+        dismissed: bub._dismissed,
+        userMsg: m.userData.userMsg,
+        userName: m.userData.userName,
+        state: m.userData.state,
+        thinkLog: m.userData.thinkLog,
+        toolLog: m.userData.toolLog,
+        replyText: m.userData.replyText,
+        replyCount: m.userData.replyCount,
+      };
+    }
+  }
+
   // Clear old scene objects (keep lights, camera)
   for (let i = scene.children.length - 1; i >= 0; i--) {
     const c = scene.children[i];
@@ -432,10 +459,16 @@ function initWorld(worldData) {
       const m = createMinion(profile);
       const cols = Math.ceil(Math.sqrt(agent.sessions.length));
       const col = si % cols, row = Math.floor(si / cols);
-      const px = continent.ox + 3 + col * (continent.W - 6) / Math.max(cols - 1, 1);
-      const pz = continent.oz + 3 + row * (continent.D - 6) / Math.max(Math.ceil(agent.sessions.length / cols) - 1, 1);
+      const defaultPx = continent.ox + 3 + col * (continent.W - 6) / Math.max(cols - 1, 1);
+      const defaultPz = continent.oz + 3 + row * (continent.D - 6) / Math.max(Math.ceil(agent.sessions.length / cols) - 1, 1);
+
+      // Restore saved position if available
+      const saved = savedPositions[sess.key];
+      const px = saved ? saved.x : defaultPx;
+      const pz = saved ? saved.z : defaultPz;
       m.position.set(px, 0, pz);
-      m.userData.targetX = px; m.userData.targetZ = pz;
+      m.userData.targetX = saved ? saved.targetX : defaultPx;
+      m.userData.targetZ = saved ? saved.targetZ : defaultPz;
       m.userData.sessionKey = sess.key;
       m.userData.sessionId = sess.sessionId;
       m.userData.sessionType = sess.type;
@@ -454,6 +487,21 @@ function initWorld(worldData) {
       scene.add(m);
       minions.push(m);
       clickables.push(m);
+
+      // Restore bubble state if it was open
+      const sb = savedBubbles[sess.key];
+      if (sb && sb.show) {
+        m.userData.userMsg = sb.userMsg;
+        m.userData.userName = sb.userName;
+        m.userData.state = sb.state;
+        m.userData.thinkLog = sb.thinkLog;
+        m.userData.toolLog = sb.toolLog;
+        m.userData.replyText = sb.replyText;
+        m.userData.replyCount = sb.replyCount;
+        const el = getOrCreateBubble(sess.key);
+        el._dismissed = sb.dismissed;
+        if (!sb.dismissed) showBubble(m);
+      }
     });
   });
 
