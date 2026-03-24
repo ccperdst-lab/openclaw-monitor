@@ -524,7 +524,7 @@ const MINION_NAMES = [
   '阿飞', '小云', '大山', '小雨', '阿军', '小星', '大龙', '小霞', '阿峰', '小玉',
   '阿文', '小兰', '大海', '小凤', '阿勇', '小莲', '大鹏', '小琴', '阿华', '小菊',
 ];
-// Track used names per session to avoid duplicates
+let minionNameMap = {}; // sessionKey → chineseName (persisted server-side)
 const usedMinionNames = new Set();
 function getRandomChineseName() {
   const available = MINION_NAMES.filter(n => !usedMinionNames.has(n));
@@ -721,14 +721,11 @@ function createMinion(colorHex) {
     group.add(legPivot);
   });
 
-  // Assign random Chinese name
-  const chineseName = getRandomChineseName();
-
   group.userData = {
     state: 'idle', targetX: 0, targetZ: 0, speed: 0,
     bobPhase: Math.random() * Math.PI * 2,
     userMsg: '', userName: '', thinkLog: [], toolLog: [], replyCount: 0,
-    chineseName: chineseName,
+    chineseName: '', // set in init() after persistence check
     // Idle animation state
     idleTimer: 0, idleAction: 'stand', idleActionTimer: 0,
     // Sitting state
@@ -846,9 +843,21 @@ function init(d) {
       };
       m.userData.houseOffset = { ox, oz };
 
+      // Assign Chinese name: use persisted or generate new
+      let cName = minionNameMap[sess.key];
+      if (!cName) {
+        cName = getRandomChineseName();
+        minionNameMap[sess.key] = cName;
+        // Save to server
+        fetch('/api/minion-names', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ [sess.key]: cName })
+        }).catch(() => {});
+      }
+      m.userData.chineseName = cName;
+
       // Resolve and display Feishu name + Chinese name label
       const feishuId = (sess.key || '').match(/(oc_\w+|ou_\w+)/)?.[1];
-      const cName = m.userData.chineseName;
       if (feishuId) {
         fetch(`/api/resolve/${feishuId}`).then(r => r.json()).then(d => {
           if (d.name && d.name !== feishuId) {
@@ -1483,7 +1492,12 @@ function sse() {
   };
   es.onerror = () => setTimeout(sse, 3000);
 }
-sse();
+// Load persisted minion names, then start SSE
+fetch('/api/minion-names').then(r => r.json()).then(names => {
+  minionNameMap = names || {};
+  // Also populate usedMinionNames set to avoid collisions
+  Object.values(minionNameMap).forEach(n => usedMinionNames.add(n));
+}).catch(() => {}).finally(() => sse());
 fetch('/api/state').then(r => r.json()).then(init);
 fetch('/api/logs/tail').then(r => r.json()).then(d => { if (d.events) d.events.forEach(addLog); });
 fetch('/api/events/history').then(r => r.json()).then(d => { if (d.events) d.events.forEach(addLog); });

@@ -27585,6 +27585,7 @@ var MINION_NAMES = [
   "\u963F\u534E",
   "\u5C0F\u83CA"
 ];
+var minionNameMap = {};
 var usedMinionNames = /* @__PURE__ */ new Set();
 function getRandomChineseName() {
   const available = MINION_NAMES.filter((n) => !usedMinionNames.has(n));
@@ -27733,7 +27734,6 @@ function createMinion(colorHex) {
     legPivot.add(shoe);
     group.add(legPivot);
   });
-  const chineseName = getRandomChineseName();
   group.userData = {
     state: "idle",
     targetX: 0,
@@ -27745,7 +27745,8 @@ function createMinion(colorHex) {
     thinkLog: [],
     toolLog: [],
     replyCount: 0,
-    chineseName,
+    chineseName: "",
+    // set in init() after persistence check
     // Idle animation state
     idleTimer: 0,
     idleAction: "stand",
@@ -27854,8 +27855,19 @@ function init(d) {
         maxZ: oz + ROOM_D - 1.5
       };
       m.userData.houseOffset = { ox, oz };
+      let cName = minionNameMap[sess.key];
+      if (!cName) {
+        cName = getRandomChineseName();
+        minionNameMap[sess.key] = cName;
+        fetch("/api/minion-names", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ [sess.key]: cName })
+        }).catch(() => {
+        });
+      }
+      m.userData.chineseName = cName;
       const feishuId = (sess.key || "").match(/(oc_\w+|ou_\w+)/)?.[1];
-      const cName = m.userData.chineseName;
       if (feishuId) {
         fetch(`/api/resolve/${feishuId}`).then((r) => r.json()).then((d2) => {
           if (d2.name && d2.name !== feishuId) {
@@ -28439,7 +28451,11 @@ function sse() {
   };
   es.onerror = () => setTimeout(sse, 3e3);
 }
-sse();
+fetch("/api/minion-names").then((r) => r.json()).then((names) => {
+  minionNameMap = names || {};
+  Object.values(minionNameMap).forEach((n) => usedMinionNames.add(n));
+}).catch(() => {
+}).finally(() => sse());
 fetch("/api/state").then((r) => r.json()).then(init);
 fetch("/api/logs/tail").then((r) => r.json()).then((d) => {
   if (d.events) d.events.forEach(addLog);
