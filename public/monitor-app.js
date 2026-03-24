@@ -716,29 +716,27 @@ function handleEvent(ev) {
     const now = new Date();
     ud.toolLog.push({ name: ev.tool + ' ✓', args: ev.result, time: now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) });
     showBubble(m);
+  } else if (ev.type === 'reply_intermediate') {
+    // Agent is still working but has some text to show (alongside tool calls)
+    const text = ev.text || '';
+    ud.replyText = text;
+    ud.state = 'thinking'; ud.lastEventTime = Date.now();
+    // Show as a live snippet in the tool log
+    ud.toolLog.push({ name: '💬 回复片段', args: text.slice(0, 120), time: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) });
+    showBubble(m);
   } else if (ev.type === 'reply_text') {
     ud.replyText = ev.text || '';
     ud.replyCount++;
     ud.state = 'done'; ud.lastEventTime = Date.now();
-    // Check if bubble is currently visible
-    const b = bubbles[ud.sessionKey];
-    const bubbleVisible = b && b.classList.contains('show') && !b._dismissed;
-    if (bubbleVisible) {
-      showBubble(m);
-      clearNotification(m);
-    } else {
-      // Bubble is closed — show notification indicator
-      showNotification(m);
-    }
-    // Auto-hide after 30s if bubble is open, preserving chat input
+    showBubble(m);
+    clearNotification(m);
+    // Auto-hide after 30s, preserving chat input
     setTimeout(() => {
       if (Date.now() - ud.lastEventTime > 29500) {
         const b2 = bubbles[ud.sessionKey];
         if (b2 && b2.classList.contains('show')) {
-          // Save input before closing
           const inputEl = b2.querySelector('.bub-chat-in');
           if (inputEl && inputEl.value) ud.savedInput = inputEl.value;
-          // Don't close if input is focused and has content
           if (document.activeElement === inputEl && inputEl.value.trim()) return;
           b2.classList.remove('show');
           b2._dismissed = true;
@@ -753,7 +751,7 @@ function addLog(ev) {
   const el = document.getElementById('b-logs');
   if (!el) return;
   const cls = `t_${ev.type}`;
-  const icon = { user_msg: '👤', thinking: '💭', tool_use: '🔧', tool_result: '📋', reply_text: '💬' }[ev.type] || '📡';
+  const icon = { user_msg: '👤', thinking: '💭', tool_use: '🔧', tool_result: '📋', reply_text: '💬', reply_intermediate: '💬' }[ev.type] || '📡';
   const text = ev.msg || ev.thinking || ev.text || ev.tool || '';
   const div = document.createElement('div');
   div.className = `log ${cls}`;

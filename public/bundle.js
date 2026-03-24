@@ -27923,41 +27923,6 @@ function createMinion(profile) {
   };
   return group;
 }
-function createNotificationSprite() {
-  const canvas = document.createElement("canvas");
-  canvas.width = 64;
-  canvas.height = 64;
-  const ctx = canvas.getContext("2d");
-  ctx.beginPath();
-  ctx.arc(32, 32, 28, 0, Math.PI * 2);
-  ctx.fillStyle = "#ef4444";
-  ctx.fill();
-  ctx.strokeStyle = "#fff";
-  ctx.lineWidth = 3;
-  ctx.stroke();
-  ctx.font = "bold 36px sans-serif";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillStyle = "#fff";
-  ctx.fillText("!", 32, 33);
-  const tex = new CanvasTexture(canvas);
-  tex.minFilter = LinearFilter;
-  const mat2 = new SpriteMaterial({ map: tex, transparent: true, depthWrite: false });
-  const sprite = new Sprite(mat2);
-  sprite.scale.set(0.5, 0.5, 1);
-  return sprite;
-}
-function showNotification(minion) {
-  if (minion.userData.notificationSprite) return;
-  const sprite = createNotificationSprite();
-  const hs = minion.userData.heightScale || 1;
-  sprite.position.y = 2.5 * hs * 0.5 + 1.8;
-  minion.add(sprite);
-  minion.userData.notificationSprite = sprite;
-  minion.userData.hasNotification = true;
-  minion.userData.attentionAnim = 2.5;
-  minion.userData.attentionType = Math.random() > 0.5 ? "jump" : "wave";
-}
 function clearNotification(minion) {
   if (minion.userData.notificationSprite) {
     minion.remove(minion.userData.notificationSprite);
@@ -28355,19 +28320,20 @@ function handleEvent(ev) {
     const now = /* @__PURE__ */ new Date();
     ud.toolLog.push({ name: ev.tool + " \u2713", args: ev.result, time: now.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) });
     showBubble(m);
+  } else if (ev.type === "reply_intermediate") {
+    const text = ev.text || "";
+    ud.replyText = text;
+    ud.state = "thinking";
+    ud.lastEventTime = Date.now();
+    ud.toolLog.push({ name: "\u{1F4AC} \u56DE\u590D\u7247\u6BB5", args: text.slice(0, 120), time: (/* @__PURE__ */ new Date()).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) });
+    showBubble(m);
   } else if (ev.type === "reply_text") {
     ud.replyText = ev.text || "";
     ud.replyCount++;
     ud.state = "done";
     ud.lastEventTime = Date.now();
-    const b = bubbles[ud.sessionKey];
-    const bubbleVisible = b && b.classList.contains("show") && !b._dismissed;
-    if (bubbleVisible) {
-      showBubble(m);
-      clearNotification(m);
-    } else {
-      showNotification(m);
-    }
+    showBubble(m);
+    clearNotification(m);
     setTimeout(() => {
       if (Date.now() - ud.lastEventTime > 29500) {
         const b2 = bubbles[ud.sessionKey];
@@ -28387,7 +28353,7 @@ function addLog(ev) {
   const el = document.getElementById("b-logs");
   if (!el) return;
   const cls = `t_${ev.type}`;
-  const icon = { user_msg: "\u{1F464}", thinking: "\u{1F4AD}", tool_use: "\u{1F527}", tool_result: "\u{1F4CB}", reply_text: "\u{1F4AC}" }[ev.type] || "\u{1F4E1}";
+  const icon = { user_msg: "\u{1F464}", thinking: "\u{1F4AD}", tool_use: "\u{1F527}", tool_result: "\u{1F4CB}", reply_text: "\u{1F4AC}", reply_intermediate: "\u{1F4AC}" }[ev.type] || "\u{1F4E1}";
   const text = ev.msg || ev.thinking || ev.text || ev.tool || "";
   const div = document.createElement("div");
   div.className = `log ${cls}`;

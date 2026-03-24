@@ -281,10 +281,11 @@ function processLine(agentName, sessionKey, line) {
         });
       }
       if (parsed.texts.length > 0) {
+        const hasTools = parsed.toolCalls.length > 0;
         broadcast({
           type: 'event',
           data: {
-            type: 'reply_text',
+            type: hasTools ? 'reply_intermediate' : 'reply_text',
             agent: agentName,
             session: sessionKey,
             text: parsed.texts.join(' ').slice(0, 200),
