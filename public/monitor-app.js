@@ -24,13 +24,20 @@ let moveSpeed = 12;
 let pointerLocked = false;
 const keys = { w: false, a: false, s: false, d: false, space: false, shift: false };
 
-// Pointer lock: click canvas to toggle
+// Pointer lock: click overlay to lock, click canvas (locked) or ESC to unlock
+const clickCatcher = document.getElementById('click-catcher');
+clickCatcher.addEventListener('click', () => {
+  clickCatcher.classList.add('hidden');
+  renderer.domElement.requestPointerLock();
+});
+document.addEventListener('pointerlockchange', () => {
+  pointerLocked = document.pointerLockElement === renderer.domElement;
+  document.body.style.cursor = pointerLocked ? 'none' : 'default';
+  if (!pointerLocked) clickCatcher.classList.remove('hidden');
+});
+// Canvas click when locked = unlock
 renderer.domElement.addEventListener('click', () => {
-  if (pointerLocked) {
-    document.exitPointerLock();
-  } else {
-    renderer.domElement.requestPointerLock();
-  }
+  if (pointerLocked) document.exitPointerLock();
 });
 
 document.addEventListener('pointerlockchange', () => {

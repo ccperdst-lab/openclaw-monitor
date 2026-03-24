@@ -27107,12 +27107,18 @@ var pitch = 0;
 var moveSpeed = 12;
 var pointerLocked = false;
 var keys = { w: false, a: false, s: false, d: false, space: false, shift: false };
+var clickCatcher = document.getElementById("click-catcher");
+clickCatcher.addEventListener("click", () => {
+  clickCatcher.classList.add("hidden");
+  renderer.domElement.requestPointerLock();
+});
+document.addEventListener("pointerlockchange", () => {
+  pointerLocked = document.pointerLockElement === renderer.domElement;
+  document.body.style.cursor = pointerLocked ? "none" : "default";
+  if (!pointerLocked) clickCatcher.classList.remove("hidden");
+});
 renderer.domElement.addEventListener("click", () => {
-  if (pointerLocked) {
-    document.exitPointerLock();
-  } else {
-    renderer.domElement.requestPointerLock();
-  }
+  if (pointerLocked) document.exitPointerLock();
 });
 document.addEventListener("pointerlockchange", () => {
   pointerLocked = document.pointerLockElement === renderer.domElement;
