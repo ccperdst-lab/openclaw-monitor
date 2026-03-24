@@ -42,6 +42,10 @@ renderer.domElement.addEventListener('mousedown', e => {
   isDragging = true; dragStarted = false;
   lastMX = e.clientX; lastMY = e.clientY;
   renderer.domElement.classList.add('dragging');
+  // Make bubbles transparent to mouse during drag (so mousemove doesn't stutter)
+  document.querySelectorAll('.bubble3d, .mcp-bubble').forEach(el => {
+    el.style.pointerEvents = 'none';
+  });
   e.preventDefault();
 });
 window.addEventListener('mousemove', e => {
@@ -57,6 +61,10 @@ window.addEventListener('mouseup', () => {
   if (isDragging) {
     isDragging = false;
     renderer.domElement.classList.remove('dragging');
+    // Restore bubble pointer events
+    document.querySelectorAll('.bubble3d, .mcp-bubble').forEach(el => {
+      el.style.pointerEvents = '';
+    });
   }
 });
 
@@ -852,6 +860,12 @@ function handleEvent(ev) {
     ud.state = 'thinking'; ud.lastEventTime = Date.now();
     const b = bubbles[ud.sessionKey]; if (b) b._dismissed = false;
     showBubble(m);
+    // Auto-expand thinking panel when new conversation starts
+    const bubEl = bubbles[ud.sessionKey];
+    if (bubEl) {
+      const acts = bubEl.querySelector('.bub-acts');
+      if (acts) acts.classList.remove('collapsed');
+    }
     startBubbleRefresh(m); // Start polling for updates
   } else if (ev.type === 'thinking') {
     const now = new Date();

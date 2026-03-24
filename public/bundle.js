@@ -27772,6 +27772,9 @@ renderer.domElement.addEventListener("mousedown", (e) => {
   lastMX = e.clientX;
   lastMY = e.clientY;
   renderer.domElement.classList.add("dragging");
+  document.querySelectorAll(".bubble3d, .mcp-bubble").forEach((el) => {
+    el.style.pointerEvents = "none";
+  });
   e.preventDefault();
 });
 window.addEventListener("mousemove", (e) => {
@@ -27788,6 +27791,9 @@ window.addEventListener("mouseup", () => {
   if (isDragging) {
     isDragging = false;
     renderer.domElement.classList.remove("dragging");
+    document.querySelectorAll(".bubble3d, .mcp-bubble").forEach((el) => {
+      el.style.pointerEvents = "";
+    });
   }
 });
 function isInputFocused() {
@@ -28501,6 +28507,11 @@ function handleEvent(ev) {
     const b = bubbles[ud.sessionKey];
     if (b) b._dismissed = false;
     showBubble(m);
+    const bubEl = bubbles[ud.sessionKey];
+    if (bubEl) {
+      const acts = bubEl.querySelector(".bub-acts");
+      if (acts) acts.classList.remove("collapsed");
+    }
     startBubbleRefresh(m);
   } else if (ev.type === "thinking") {
     const now = /* @__PURE__ */ new Date();
