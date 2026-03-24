@@ -1283,14 +1283,58 @@ function addLog(ev) {
   const t = ev.ts ? new Date(ev.ts).toLocaleTimeString('zh-CN') : '';
   const d = document.createElement('div');
   d.className = 'log t_' + (ev.type || '');
-  const ic = { thinking: '📨', streaming: '💬', idle: '✅', user_msg: '👤', thinking_content: '🧠', tool_detail: '🔧', error: '❌' };
-  let display = '';
-  if (ev.type === 'user_msg') display = `<b style="color:#34d399">${ev.userName || '用户'}:</b> ${(ev.msg || '').slice(0, 70)}`;
-  else if (ev.type === 'thinking_content') display = `<b style="color:#a78bfa">思考:</b> ${(ev.thinking || '').slice(0, 70)}`;
-  else if (ev.type === 'tool_detail') display = `<b style="color:#f97316">${ev.tool}</b>`;
-  else display = (ev.raw || '').slice(0, 70);
-  d.innerHTML = `<span style="color:#445">[${t}]</span> ${ic[ev.type] || '•'} ${display}`;
-  el.prepend(d); while (el.children.length > 35) el.removeChild(el.lastChild);
+
+  // Human-readable event display with color coding
+  let icon = '•', color = '#888', label = '', content = '';
+  switch (ev.type) {
+    case 'user_msg':
+      icon = '👤'; color = '#34d399';
+      label = ev.userName || '用户';
+      content = (ev.msg || '').replace(/\[图片消息\]/g, '🖼️ 图片').replace(/\[media attached[^\]]*\]/g, '📎 附件').slice(0, 60);
+      break;
+    case 'thinking_content':
+      icon = '💭'; color = '#a78bfa';
+      label = '思考中';
+      content = (ev.thinking || '').slice(0, 50);
+      break;
+    case 'tool_detail':
+      icon = '🔧'; color = '#f97316';
+      label = ev.tool || '工具';
+      content = (ev.args || '').replace(/[{}\[\]"]/g, '').slice(0, 40);
+      break;
+    case 'thinking':
+      icon = '📨'; color = '#60a5fa'; label = '收到消息'; content = '';
+      break;
+    case 'streaming':
+      icon = '💬'; color = '#3b82f6'; label = '正在回复'; content = '';
+      break;
+    case 'idle':
+      icon = '✅'; color = '#22c55e';
+      label = '回复完成';
+      content = ev.replies ? `${ev.replies} 条回复` : '';
+      break;
+    case 'error':
+      icon = '❌'; color = '#ef4444';
+      label = '出错';
+      content = (ev.message || ev.raw || '').slice(0, 50);
+      break;
+    case 'agent_run':
+      icon = '🚀'; color = '#8b5cf6'; label = '开始执行'; content = '';
+      break;
+    case 'agent_done':
+      icon = '🏁'; color = '#8b5cf6'; label = '执行完成'; content = '';
+      break;
+    default:
+      icon = '•'; color = '#888';
+      label = ev.type || '';
+      content = (ev.raw || '').slice(0, 50);
+  }
+
+  const timeStr = t ? `<span style="color:#556;font-size:7px">${t}</span> ` : '';
+  const labelHtml = `<span style="color:${color};font-weight:bold">${label}</span>`;
+  const contentHtml = content ? ` <span style="color:#999">${content}</span>` : '';
+  d.innerHTML = `${timeStr}${icon} ${labelHtml}${contentHtml}`;
+  el.prepend(d); while (el.children.length > 40) el.removeChild(el.lastChild);
 
   // Filter minions by session key first, then agentId
   let targets;
@@ -1406,12 +1450,17 @@ function animate() {
 
   animateMinions(time, dt);
   updateBubbles();
-  // Billboard: make all name labels face camera
+  // Billboard: make all name labels face camera (counter minion rotation)
   minions.forEach(m => {
     const label = m.children.find(c => c.userData && c.userData.isNameLabel);
     if (label) {
-      label.quaternion.copy(camera.quaternion);
-      // Keep label above head even when minion bobs
+      // Get world position of minion
+      const worldPos = new THREE.Vector3();
+      m.getWorldPosition(worldPos);
+      // Look at camera from label's world position
+      const labelWorldPos = worldPos.clone().add(new THREE.Vector3(0, 2.5, 0));
+      // Counter-rotate: label.quaternion = camera.quaternion * minion.quaternion^-1
+      label.quaternion.copy(camera.quaternion).multiply(m.quaternion.clone().invert());
       label.position.y = 2.5;
     }
   });

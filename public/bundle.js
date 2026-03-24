@@ -28214,15 +28214,74 @@ function addLog(ev) {
   const t = ev.ts ? new Date(ev.ts).toLocaleTimeString("zh-CN") : "";
   const d = document.createElement("div");
   d.className = "log t_" + (ev.type || "");
-  const ic = { thinking: "\u{1F4E8}", streaming: "\u{1F4AC}", idle: "\u2705", user_msg: "\u{1F464}", thinking_content: "\u{1F9E0}", tool_detail: "\u{1F527}", error: "\u274C" };
-  let display = "";
-  if (ev.type === "user_msg") display = `<b style="color:#34d399">${ev.userName || "\u7528\u6237"}:</b> ${(ev.msg || "").slice(0, 70)}`;
-  else if (ev.type === "thinking_content") display = `<b style="color:#a78bfa">\u601D\u8003:</b> ${(ev.thinking || "").slice(0, 70)}`;
-  else if (ev.type === "tool_detail") display = `<b style="color:#f97316">${ev.tool}</b>`;
-  else display = (ev.raw || "").slice(0, 70);
-  d.innerHTML = `<span style="color:#445">[${t}]</span> ${ic[ev.type] || "\u2022"} ${display}`;
+  let icon = "\u2022", color = "#888", label = "", content = "";
+  switch (ev.type) {
+    case "user_msg":
+      icon = "\u{1F464}";
+      color = "#34d399";
+      label = ev.userName || "\u7528\u6237";
+      content = (ev.msg || "").replace(/\[图片消息\]/g, "\u{1F5BC}\uFE0F \u56FE\u7247").replace(/\[media attached[^\]]*\]/g, "\u{1F4CE} \u9644\u4EF6").slice(0, 60);
+      break;
+    case "thinking_content":
+      icon = "\u{1F4AD}";
+      color = "#a78bfa";
+      label = "\u601D\u8003\u4E2D";
+      content = (ev.thinking || "").slice(0, 50);
+      break;
+    case "tool_detail":
+      icon = "\u{1F527}";
+      color = "#f97316";
+      label = ev.tool || "\u5DE5\u5177";
+      content = (ev.args || "").replace(/[{}\[\]"]/g, "").slice(0, 40);
+      break;
+    case "thinking":
+      icon = "\u{1F4E8}";
+      color = "#60a5fa";
+      label = "\u6536\u5230\u6D88\u606F";
+      content = "";
+      break;
+    case "streaming":
+      icon = "\u{1F4AC}";
+      color = "#3b82f6";
+      label = "\u6B63\u5728\u56DE\u590D";
+      content = "";
+      break;
+    case "idle":
+      icon = "\u2705";
+      color = "#22c55e";
+      label = "\u56DE\u590D\u5B8C\u6210";
+      content = ev.replies ? `${ev.replies} \u6761\u56DE\u590D` : "";
+      break;
+    case "error":
+      icon = "\u274C";
+      color = "#ef4444";
+      label = "\u51FA\u9519";
+      content = (ev.message || ev.raw || "").slice(0, 50);
+      break;
+    case "agent_run":
+      icon = "\u{1F680}";
+      color = "#8b5cf6";
+      label = "\u5F00\u59CB\u6267\u884C";
+      content = "";
+      break;
+    case "agent_done":
+      icon = "\u{1F3C1}";
+      color = "#8b5cf6";
+      label = "\u6267\u884C\u5B8C\u6210";
+      content = "";
+      break;
+    default:
+      icon = "\u2022";
+      color = "#888";
+      label = ev.type || "";
+      content = (ev.raw || "").slice(0, 50);
+  }
+  const timeStr = t ? `<span style="color:#556;font-size:7px">${t}</span> ` : "";
+  const labelHtml = `<span style="color:${color};font-weight:bold">${label}</span>`;
+  const contentHtml = content ? ` <span style="color:#999">${content}</span>` : "";
+  d.innerHTML = `${timeStr}${icon} ${labelHtml}${contentHtml}`;
   el.prepend(d);
-  while (el.children.length > 35) el.removeChild(el.lastChild);
+  while (el.children.length > 40) el.removeChild(el.lastChild);
   let targets;
   if (ev.session) {
     targets = minions.filter((m) => m.userData.id === ev.session);
@@ -28332,7 +28391,10 @@ function animate() {
   minions.forEach((m) => {
     const label = m.children.find((c) => c.userData && c.userData.isNameLabel);
     if (label) {
-      label.quaternion.copy(camera.quaternion);
+      const worldPos = new Vector3();
+      m.getWorldPosition(worldPos);
+      const labelWorldPos = worldPos.clone().add(new Vector3(0, 2.5, 0));
+      label.quaternion.copy(camera.quaternion).multiply(m.quaternion.clone().invert());
       label.position.y = 2.5;
     }
   });
