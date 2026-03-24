@@ -577,7 +577,19 @@ function getOrCreateBubble(sessionKey) {
     el = document.createElement('div');
     el.className = 'bubble3d';
     const sk = sessionKey;
-    el.innerHTML = `<div class="bub-hd"><span class="bub-avatar">🟡</span><span class="bub-user"></span><button class="bub-close" onclick="this.closest('.bubble3d').classList.remove('show');this.closest('.bubble3d')._dismissed=true">✕</button></div><div class="bub-msg"></div><div class="bub-acts collapsed" onclick="this.classList.toggle('collapsed')"><div class="bub-acts-hd"><span class="bub-acts-tri">▶</span><span class="bub-acts-lbl">思考过程</span><span class="bub-acts-cnt">0</span></div><div class="bub-acts-body"></div></div><div class="bub-chat"><input class="bub-chat-in" placeholder="直接对话..." onkeydown="if(event.key==='Enter'){event.stopPropagation();sendDirectChat('${sk}',this)}"/></div><div class="bub-foot"></div>`;
+    el.innerHTML = `<div class="bub-hd"><span class="bub-avatar">🟡</span><span class="bub-user"></span><button class="bub-close" onclick="this.closest('.bubble3d').classList.remove('show');this.closest('.bubble3d')._dismissed=true">✕</button></div><div class="bub-msg"></div><div class="bub-acts collapsed" onclick="this.classList.toggle('collapsed')"><div class="bub-acts-hd"><span class="bub-acts-tri">▶</span><span class="bub-acts-lbl">思考过程</span><span class="bub-acts-cnt">0</span></div><div class="bub-acts-body"></div></div><div class="bub-chat"><input class="bub-chat-in" placeholder="直接对话..." /></div><div class="bub-foot"></div>`;
+    // IME-safe input handling: Enter submits only when not in composition
+    const inputEl = el.querySelector('.bub-chat-in');
+    let isComposing = false;
+    inputEl.addEventListener('compositionstart', () => { isComposing = true; });
+    inputEl.addEventListener('compositionend', () => { isComposing = false; });
+    inputEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !isComposing) {
+        e.stopPropagation();
+        e.preventDefault();
+        sendDirectChat(sk, inputEl);
+      }
+    });
     document.body.appendChild(el);
     bubbles[sessionKey] = el;
   }

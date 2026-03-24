@@ -28224,7 +28224,22 @@ function getOrCreateBubble(sessionKey) {
     el = document.createElement("div");
     el.className = "bubble3d";
     const sk = sessionKey;
-    el.innerHTML = `<div class="bub-hd"><span class="bub-avatar">\u{1F7E1}</span><span class="bub-user"></span><button class="bub-close" onclick="this.closest('.bubble3d').classList.remove('show');this.closest('.bubble3d')._dismissed=true">\u2715</button></div><div class="bub-msg"></div><div class="bub-acts collapsed" onclick="this.classList.toggle('collapsed')"><div class="bub-acts-hd"><span class="bub-acts-tri">\u25B6</span><span class="bub-acts-lbl">\u601D\u8003\u8FC7\u7A0B</span><span class="bub-acts-cnt">0</span></div><div class="bub-acts-body"></div></div><div class="bub-chat"><input class="bub-chat-in" placeholder="\u76F4\u63A5\u5BF9\u8BDD..." onkeydown="if(event.key==='Enter'){event.stopPropagation();sendDirectChat('${sk}',this)}"/></div><div class="bub-foot"></div>`;
+    el.innerHTML = `<div class="bub-hd"><span class="bub-avatar">\u{1F7E1}</span><span class="bub-user"></span><button class="bub-close" onclick="this.closest('.bubble3d').classList.remove('show');this.closest('.bubble3d')._dismissed=true">\u2715</button></div><div class="bub-msg"></div><div class="bub-acts collapsed" onclick="this.classList.toggle('collapsed')"><div class="bub-acts-hd"><span class="bub-acts-tri">\u25B6</span><span class="bub-acts-lbl">\u601D\u8003\u8FC7\u7A0B</span><span class="bub-acts-cnt">0</span></div><div class="bub-acts-body"></div></div><div class="bub-chat"><input class="bub-chat-in" placeholder="\u76F4\u63A5\u5BF9\u8BDD..." /></div><div class="bub-foot"></div>`;
+    const inputEl = el.querySelector(".bub-chat-in");
+    let isComposing = false;
+    inputEl.addEventListener("compositionstart", () => {
+      isComposing = true;
+    });
+    inputEl.addEventListener("compositionend", () => {
+      isComposing = false;
+    });
+    inputEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !isComposing) {
+        e.stopPropagation();
+        e.preventDefault();
+        sendDirectChat(sk, inputEl);
+      }
+    });
     document.body.appendChild(el);
     bubbles[sessionKey] = el;
   }
