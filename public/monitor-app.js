@@ -25,6 +25,19 @@ let isDragging = false, dragStarted = false, lastMX = 0, lastMY = 0;
 // Focus management: track if user is interacting with a DOM overlay
 let interactingWithOverlay = false;
 
+// ===== Day/Night Cycle =====
+let gameTime = 0; // 0-120s cycle
+const DAY_CYCLE = 120;
+
+// ===== Rain System =====
+let isRaining = false;
+let rainDrops = [];
+let rainSplashParticles = [];
+const RAIN_COUNT = 200;
+
+// ===== Scene State Persistence =====
+let lastStateSave = 0;
+
 // Helper: is event target on our canvas (not a DOM overlay)?
 function isCanvasEvent(e) {
   return e.target === renderer.domElement;
@@ -80,6 +93,7 @@ window.addEventListener('keydown', e => {
   else if (e.code === 'KeyD') keys.d = true;
   else if (e.code === 'Space') keys.space = true;
   else if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') keys.shift = true;
+  else if (e.code === 'KeyR') toggleRain();
 });
 window.addEventListener('keyup', e => {
   if (isInputFocused() || interactingWithOverlay) return;
@@ -1657,8 +1671,28 @@ function animate() {
   // Update floating petals
   updatePetals(dt, time);
 
-  // Update dynamic grass wind
-  updateGrass(time);
+  // Day/Night cycle
+  updateDayNightCycle(dt);
+
+  // Minimap
+  drawMinimap();
+
+  // Agent dashboard (every ~2s)
+  if (Math.floor(time * 0.5) !== Math.floor((time - dt) * 0.5)) {
+    updateAgentDashboard();
+  }
+
+  // Minion interaction
+  updateMinionInteraction(dt);
+
+  // Rain system
+  updateRain(dt);
+
+  // State persistence
+  updateSaveStateTimer(dt);
+
+  // Update dynamic grass wind (with LOD)
+  updateGrassWithLOD(time);
 
   // Update water shader
   if (window._waterMeshes) {
@@ -1975,6 +2009,7 @@ function initPetals() {
   }
 }
 initPetals();
+initRainSystem();
 
 function updatePetals(dt, time) {
   for (const p of petals) {
@@ -1992,6 +2027,426 @@ function updatePetals(dt, time) {
     }
   }
 }
+
+// ===== Day/Night Cycle =====
+function updateDayNightCycle(dt) {
+  gameTime = (gameTime + dt) % DAY_CYCLE;
+  const t = gameTime / DAY_CYCLE; // 0-1
+
+  let skyColor, fogColor, sunIntensity, sunAngle;
+
+  if (t < 20/120) {
+    // Dawn (0-20s): pink/orange sky, dim sun
+    const p = t / (20/120);
+    skyColor = new THREE.Color(0xffb6c1).lerp(new THREE.Color(0xff8c00), p);
+    fogColor = skyColor.clone();
+    sunIntensity = 0.2 + p * 0.3;
+    sunAngle = p * Math.PI * 0.3; // rising
+  } else if (t < 60/120) {
+    // Day (20-60s): blue sky, bright sun
+    const p = (t - 20/120) / (40/120);
+    skyColor = new THREE.Color(0x87ceeb).lerp(new THREE.Color(0x7ec8e3), Math.sin(p * Math.PI));
+    fogColor = skyColor.clone();
+    sunIntensity = 0.5 + Math.sin(p * Math.PI) * 0.7;
+    sunAngle = Math.PI * 0.3 + p * Math.PI * 0.4;
+  } else if (t < 80/120) {
+    // Dusk (60-80s): purple/orange sky, dim sun
+    const p = (t - 60/120) / (20/120);
+    skyColor = new THREE.Color(0xff8c00).lerp(new THREE.Color(0x9b59b6), p);
+    fogColor = skyColor.clone();
+    sunIntensity = 0.5 - p * 0.35;
+    sunAngle = Math.PI * 0.7 + p * Math.PI * 0.3;
+  } else {
+    // Night (80-120s): dark blue sky, moonlight
+    const p = (t - 80/120) / (40/120);
+    skyColor = new THREE.Color(0x1a1a3e).lerp(new THREE.Color(0x0a0a2e), Math.sin(p * Math.PI));
+    fogColor = skyColor.clone();
+    sunIntensity = 0.15 + Math.sin(p * Math.PI) * 0.05;
+    sunAngle = Math.PI + p * Math.PI * 0.5;
+  }
+
+  scene.background = skyColor;
+  scene.fog.color = fogColor;
+  sun.intensity = sunIntensity;
+  sun.color.copy(skyColor).lerp(new THREE.Color(0xffeedd), 0.5);
+  sun.position.set(
+    Math.cos(sunAngle) * 40,
+    20 + Math.sin(sunAngle) * 30,
+    Math.sin(sunAngle) * 30
+  );
+
+  // Lamp posts: on at night, off during day
+  const isNight = t > 70/120 || t < 10/120;
+  scene.traverse(obj => {
+    if (obj.isPointLight && obj.color.getHex() === 0xffee58) {
+      obj.intensity = isNight ? 0.8 : 0;
+    }
+  });
+}
+
+// ===== Minimap =====
+function drawMinimap() {
+  const canvas = document.getElementById('minimap');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = 200, H = 200;
+
+  ctx.clearRect(0, 0, W, H);
+
+  // Background
+  ctx.fillStyle = 'rgba(8, 8, 24, 0.85)';
+  ctx.fillRect(0, 0, W, H);
+
+  // World bounds approximation
+  const worldSize = 120;
+  const scale = W / worldSize;
+  const offsetX = W / 2;
+  const offsetZ = H / 2;
+
+  // Draw continents as green rectangles
+  agents.forEach((agent, ai) => {
+    const cols = Math.ceil(Math.sqrt(agents.length));
+    const col = ai % cols, row = Math.floor(ai / cols);
+    const W2 = 22, D = 22;
+    const ox = col * (W2 + 6) - (cols - 1) * (W2 + 6) / 2;
+    const oz = row * (D + 6) - (Math.ceil(agents.length / cols) - 1) * (D + 6) / 2;
+
+    const mx = offsetX + ox * scale;
+    const mz = offsetZ + oz * scale;
+    ctx.fillStyle = 'rgba(34, 197, 94, 0.5)';
+    ctx.fillRect(mx, mz, W2 * scale, D * scale);
+    // House dot
+    const hx = ox + W2/2 - 2, hz = oz + D/2 - 2;
+    ctx.fillStyle = '#a16207';
+    ctx.beginPath();
+    ctx.arc(offsetX + hx * scale, offsetZ + hz * scale, 3, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // Draw minions as colored circles
+  for (const m of minions) {
+    const mx = offsetX + m.position.x * scale;
+    const mz = offsetZ + m.position.z * scale;
+    const color = '#' + (m.userData.sessionKey ? 'f5d033' : '888888');
+    ctx.fillStyle = m.userData.state === 'thinking' ? '#a78bfa' :
+                    m.userData.state === 'streaming' ? '#3b82f6' :
+                    m.userData.state === 'done' ? '#10b981' : '#f5d033';
+    ctx.beginPath();
+    ctx.arc(mx, mz, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Camera position indicator
+  const camX = offsetX + camera.position.x * scale;
+  const camZ = offsetZ + camera.position.z * scale;
+  ctx.strokeStyle = '#53d8fb';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(camX - 5, camZ);
+  ctx.lineTo(camX + 5, camZ);
+  ctx.moveTo(camX, camZ - 5);
+  ctx.lineTo(camX, camZ + 5);
+  ctx.stroke();
+  // Direction triangle
+  const dirX = Math.sin(yaw) * 8;
+  const dirZ = Math.cos(yaw) * 8;
+  ctx.fillStyle = '#53d8fb';
+  ctx.beginPath();
+  ctx.moveTo(camX + dirX, camZ + dirZ);
+  ctx.lineTo(camX - dirZ * 0.4, camZ + dirX * 0.4);
+  ctx.lineTo(camX + dirZ * 0.4, camZ - dirX * 0.4);
+  ctx.closePath();
+  ctx.fill();
+
+  // Border
+  ctx.strokeStyle = 'rgba(83, 216, 251, 0.3)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(0, 0, W, H);
+}
+
+// Minimap click handler
+(function initMinimapClick() {
+  const canvas = document.getElementById('minimap');
+  if (!canvas) return;
+  canvas.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const mz = e.clientY - rect.top;
+    const worldSize = 120;
+    const scale = 200 / worldSize;
+    const worldX = (mx - 100) / scale;
+    const worldZ = (mz - 100) / scale;
+    camera.position.x = worldX;
+    camera.position.z = worldZ;
+  });
+  canvas.addEventListener('mousedown', (e) => e.stopPropagation());
+})();
+
+// ===== Agent Dashboard Enhancement =====
+function updateAgentDashboard() {
+  const now = Date.now();
+  const FIVE_MIN = 5 * 60 * 1000;
+
+  agents.forEach(agent => {
+    let activeCount = 0;
+    agent.sessions.forEach(sess => {
+      const m = minions.find(mn => mn.userData.sessionKey === sess.key);
+      if (m && m.userData.lastEventTime && (now - m.userData.lastEventTime) < FIVE_MIN) {
+        activeCount++;
+      }
+    });
+    agent._activeCount = activeCount;
+  });
+
+  // Update HUD
+  const totalActive = agents.reduce((sum, a) => sum + (a._activeCount || 0), 0);
+  const hudEl = document.getElementById('h-sess');
+  if (hudEl) {
+    let totalSess = 0;
+    agents.forEach(a => totalSess += a.sessions.length);
+    hudEl.textContent = `Sessions: ${totalSess} (${totalActive} active)`;
+  }
+
+  // Update drawer agents with active counts
+  const agentsEl = document.getElementById('b-agents');
+  if (agentsEl) {
+    agentsEl.innerHTML = agents.map(a =>
+      `<div class="row"><span><span class="dot ${a._activeCount > 0 ? 'on' : 'off'}"></span>${esc(a.name)}</span><span>${a._activeCount || 0}/${a.sessions.length} active</span></div>`
+    ).join('');
+  }
+}
+
+// ===== Minion Interaction =====
+const minionEmojis = ['💚', '💬'];
+const floatingEmojis = []; // { sprite, life, maxLife }
+
+function updateMinionInteraction(dt) {
+  const now = Date.now();
+
+  for (let i = 0; i < minions.length; i++) {
+    for (let j = i + 1; j < minions.length; j++) {
+      const a = minions[i], b = minions[j];
+      const dx = a.position.x - b.position.x;
+      const dz = a.position.z - b.position.z;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+
+      if (dist < 2) {
+        // 5% chance per second
+        if (Math.random() < 0.05 * dt) {
+          const target = Math.random() > 0.5 ? a : b;
+          triggerAnimation(target, 'wave', 1.5);
+
+          // Show floating emoji between them
+          const emoji = minionEmojis[Math.floor(Math.random() * minionEmojis.length)];
+          const midX = (a.position.x + b.position.x) / 2;
+          const midZ = (a.position.z + b.position.z) / 2;
+          const midY = Math.max(a.position.y, b.position.y) + 1.5;
+          showFloatingEmoji(emoji, midX, midY, midZ);
+        }
+      }
+    }
+  }
+
+  // Update floating emojis
+  for (let i = floatingEmojis.length - 1; i >= 0; i--) {
+    const fe = floatingEmojis[i];
+    fe.life -= dt;
+    fe.sprite.position.y += dt * 0.8;
+    fe.sprite.material.opacity = Math.max(0, fe.life / fe.maxLife);
+    if (fe.life <= 0) {
+      scene.remove(fe.sprite);
+      fe.sprite.material.dispose();
+      floatingEmojis.splice(i, 1);
+    }
+  }
+}
+
+function showFloatingEmoji(emoji, x, y, z) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 64; canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+  ctx.font = '48px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(emoji, 32, 36);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false });
+  const sprite = new THREE.Sprite(mat);
+  sprite.position.set(x, y, z);
+  sprite.scale.set(0.8, 0.8, 1);
+  scene.add(sprite);
+  floatingEmojis.push({ sprite, life: 2.0, maxLife: 2.0 });
+}
+
+// ===== Rain System =====
+function initRainSystem() {
+  const rainGeo = new THREE.CylinderGeometry(0.01, 0.01, 0.5, 4);
+  const rainMat = new THREE.MeshBasicMaterial({ color: 0xaaccff, transparent: true, opacity: 0.4 });
+
+  for (let i = 0; i < RAIN_COUNT; i++) {
+    const drop = new THREE.Mesh(rainGeo, rainMat.clone());
+    drop.position.set(
+      (Math.random() - 0.5) * 80,
+      15 + Math.random() * 10,
+      (Math.random() - 0.5) * 80
+    );
+    drop.visible = false;
+    scene.add(drop);
+    rainDrops.push(drop);
+  }
+
+  // Splash particles
+  const splashGeo = new THREE.SphereGeometry(0.03, 4, 4);
+  const splashMat = new THREE.MeshBasicMaterial({ color: 0xaaccff, transparent: true, opacity: 0.3 });
+  for (let i = 0; i < 60; i++) {
+    const splash = new THREE.Mesh(splashGeo, splashMat.clone());
+    splash.visible = false;
+    scene.add(splash);
+    rainSplashParticles.push(splash);
+  }
+}
+
+function toggleRain() {
+  isRaining = !isRaining;
+  for (const drop of rainDrops) {
+    drop.visible = isRaining;
+  }
+}
+
+function updateRain(dt) {
+  if (!isRaining) return;
+
+  // Dim lighting
+  sun.intensity = Math.max(0.15, sun.intensity * 0.7);
+
+  // Update raindrops
+  for (const drop of rainDrops) {
+    drop.position.y -= 15 * dt;
+    drop.position.x += Math.sin(drop.position.z * 0.1) * dt * 0.5;
+
+    if (drop.position.y < 0) {
+      // Trigger splash
+      const splash = rainSplashParticles[Math.floor(Math.random() * rainSplashParticles.length)];
+      if (splash) {
+        splash.visible = true;
+        splash.position.set(drop.position.x, 0.1, drop.position.z);
+        splash.userData.life = 0.3;
+        splash.userData.vx = (Math.random() - 0.5) * 2;
+        splash.userData.vz = (Math.random() - 0.5) * 2;
+        splash.userData.vy = 1 + Math.random() * 2;
+      }
+
+      drop.position.y = 15 + Math.random() * 10;
+      drop.position.x = camera.position.x + (Math.random() - 0.5) * 60;
+      drop.position.z = camera.position.z + (Math.random() - 0.5) * 60;
+    }
+  }
+
+  // Update splash particles
+  for (const splash of rainSplashParticles) {
+    if (!splash.visible) continue;
+    splash.userData.life -= dt;
+    if (splash.userData.life <= 0) {
+      splash.visible = false;
+      continue;
+    }
+    splash.position.x += (splash.userData.vx || 0) * dt;
+    splash.position.y += (splash.userData.vy || 0) * dt;
+    splash.position.z += (splash.userData.vz || 0) * dt;
+    splash.userData.vy -= 5 * dt; // gravity
+    splash.material.opacity = splash.userData.life / 0.3 * 0.3;
+  }
+}
+
+// ===== Grass LOD =====
+const originalUpdateGrass = updateGrass;
+function updateGrassWithLOD(time) {
+  const camPos = camera.position;
+  for (const g of grassInstances) {
+    // Default wind
+    let windStrength = 0.04;
+
+    // Check approximate distance from camera to grass mesh center
+    // Use instance count midpoint as rough estimate
+    // Actually, per-blade LOD is too expensive with InstancedMesh,
+    // so we'll modify the shader uniform based on camera distance
+    // We need to find the continent center from the mesh position
+    // Since grass meshes don't move, use the first instance matrix as reference
+    const mat4 = new THREE.Matrix4();
+    g.mesh.getMatrixAt(0, mat4);
+    const pos = new THREE.Vector3();
+    pos.setFromMatrixPosition(mat4);
+    const dist = camPos.distanceTo(pos);
+
+    if (dist > 60) {
+      // Hide distant grass (set wind to 0 and very low opacity trick - actually just skip)
+      g.mesh.visible = false;
+    } else if (dist > 30) {
+      g.mesh.visible = true;
+      windStrength = 0.01; // reduced wind
+    } else {
+      g.mesh.visible = true;
+      windStrength = 0.04;
+    }
+
+    g.mat.uniforms.uTime.value = time;
+    g.mat.uniforms.uWindStrength.value = windStrength;
+  }
+}
+
+// ===== Scene State Persistence =====
+function saveSceneState() {
+  const state = {
+    camera: {
+      x: camera.position.x,
+      y: camera.position.y,
+      z: camera.position.z,
+      yaw: yaw,
+      pitch: pitch,
+    },
+    openBubbles: [],
+  };
+
+  // Save open bubble states
+  for (const sk in bubbles) {
+    const el = bubbles[sk];
+    if (el && el.classList.contains('show') && !el._dismissed) {
+      state.openBubbles.push(sk);
+    }
+  }
+
+  try {
+    localStorage.setItem('openclaw-monitor-state', JSON.stringify(state));
+  } catch {}
+}
+
+function restoreSceneState() {
+  try {
+    const raw = localStorage.getItem('openclaw-monitor-state');
+    if (!raw) return;
+    const state = JSON.parse(raw);
+
+    if (state.camera) {
+      camera.position.set(state.camera.x || 25, state.camera.y || 30, state.camera.z || 35);
+      yaw = state.camera.yaw || 0;
+      pitch = state.camera.pitch || -0.5;
+    }
+  } catch {}
+}
+
+function updateSaveStateTimer(dt) {
+  lastStateSave += dt;
+  if (lastStateSave >= 5) {
+    lastStateSave = 0;
+    saveSceneState();
+  }
+}
+
+// Restore state on load
+restoreSceneState();
 
 // ===== Start =====
 connectSSE();

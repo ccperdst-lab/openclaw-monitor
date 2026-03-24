@@ -28452,6 +28452,13 @@ var dragStarted = false;
 var lastMX = 0;
 var lastMY = 0;
 var interactingWithOverlay = false;
+var gameTime = 0;
+var DAY_CYCLE = 120;
+var isRaining = false;
+var rainDrops = [];
+var rainSplashParticles = [];
+var RAIN_COUNT = 200;
+var lastStateSave = 0;
 function isCanvasEvent(e) {
   return e.target === renderer.domElement;
 }
@@ -28502,6 +28509,7 @@ window.addEventListener("keydown", (e) => {
   else if (e.code === "KeyD") keys.d = true;
   else if (e.code === "Space") keys.space = true;
   else if (e.code === "ShiftLeft" || e.code === "ShiftRight") keys.shift = true;
+  else if (e.code === "KeyR") toggleRain();
 });
 window.addEventListener("keyup", (e) => {
   if (isInputFocused() || interactingWithOverlay) return;
@@ -29927,7 +29935,15 @@ function animate() {
   });
   reportPositions();
   updatePetals(dt, time);
-  updateGrass(time);
+  updateDayNightCycle(dt);
+  drawMinimap();
+  if (Math.floor(time * 0.5) !== Math.floor((time - dt) * 0.5)) {
+    updateAgentDashboard();
+  }
+  updateMinionInteraction(dt);
+  updateRain(dt);
+  updateSaveStateTimer(dt);
+  updateGrassWithLOD(time);
   if (window._waterMeshes) {
     for (const w of window._waterMeshes) {
       if (w.material.uniforms?.uTime) w.material.uniforms.uTime.value = time;
@@ -30113,11 +30129,6 @@ function createGrassForContinent(ox, oz, W, D) {
   scene.add(grassMesh);
   grassInstances.push({ mesh: grassMesh, mat: grassMat });
 }
-function updateGrass(time) {
-  for (const g of grassInstances) {
-    g.mat.uniforms.uTime.value = time;
-  }
-}
 var canopyVertexShader = `
   uniform float uTime;
   uniform float uWindStrength;
@@ -30213,6 +30224,7 @@ function initPetals() {
   }
 }
 initPetals();
+initRainSystem();
 function updatePetals(dt, time) {
   for (const p of petals) {
     const ud = p.userData;
@@ -30228,6 +30240,337 @@ function updatePetals(dt, time) {
     }
   }
 }
+function updateDayNightCycle(dt) {
+  gameTime = (gameTime + dt) % DAY_CYCLE;
+  const t = gameTime / DAY_CYCLE;
+  let skyColor, fogColor, sunIntensity, sunAngle;
+  if (t < 20 / 120) {
+    const p = t / (20 / 120);
+    skyColor = new Color(16758465).lerp(new Color(16747520), p);
+    fogColor = skyColor.clone();
+    sunIntensity = 0.2 + p * 0.3;
+    sunAngle = p * Math.PI * 0.3;
+  } else if (t < 60 / 120) {
+    const p = (t - 20 / 120) / (40 / 120);
+    skyColor = new Color(8900331).lerp(new Color(8308963), Math.sin(p * Math.PI));
+    fogColor = skyColor.clone();
+    sunIntensity = 0.5 + Math.sin(p * Math.PI) * 0.7;
+    sunAngle = Math.PI * 0.3 + p * Math.PI * 0.4;
+  } else if (t < 80 / 120) {
+    const p = (t - 60 / 120) / (20 / 120);
+    skyColor = new Color(16747520).lerp(new Color(10181046), p);
+    fogColor = skyColor.clone();
+    sunIntensity = 0.5 - p * 0.35;
+    sunAngle = Math.PI * 0.7 + p * Math.PI * 0.3;
+  } else {
+    const p = (t - 80 / 120) / (40 / 120);
+    skyColor = new Color(1710654).lerp(new Color(657966), Math.sin(p * Math.PI));
+    fogColor = skyColor.clone();
+    sunIntensity = 0.15 + Math.sin(p * Math.PI) * 0.05;
+    sunAngle = Math.PI + p * Math.PI * 0.5;
+  }
+  scene.background = skyColor;
+  scene.fog.color = fogColor;
+  sun.intensity = sunIntensity;
+  sun.color.copy(skyColor).lerp(new Color(16772829), 0.5);
+  sun.position.set(
+    Math.cos(sunAngle) * 40,
+    20 + Math.sin(sunAngle) * 30,
+    Math.sin(sunAngle) * 30
+  );
+  const isNight = t > 70 / 120 || t < 10 / 120;
+  scene.traverse((obj) => {
+    if (obj.isPointLight && obj.color.getHex() === 16772696) {
+      obj.intensity = isNight ? 0.8 : 0;
+    }
+  });
+}
+function drawMinimap() {
+  const canvas = document.getElementById("minimap");
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  const W = 200, H = 200;
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = "rgba(8, 8, 24, 0.85)";
+  ctx.fillRect(0, 0, W, H);
+  const worldSize = 120;
+  const scale = W / worldSize;
+  const offsetX = W / 2;
+  const offsetZ = H / 2;
+  agents.forEach((agent, ai) => {
+    const cols = Math.ceil(Math.sqrt(agents.length));
+    const col = ai % cols, row = Math.floor(ai / cols);
+    const W2 = 22, D = 22;
+    const ox = col * (W2 + 6) - (cols - 1) * (W2 + 6) / 2;
+    const oz = row * (D + 6) - (Math.ceil(agents.length / cols) - 1) * (D + 6) / 2;
+    const mx = offsetX + ox * scale;
+    const mz = offsetZ + oz * scale;
+    ctx.fillStyle = "rgba(34, 197, 94, 0.5)";
+    ctx.fillRect(mx, mz, W2 * scale, D * scale);
+    const hx = ox + W2 / 2 - 2, hz = oz + D / 2 - 2;
+    ctx.fillStyle = "#a16207";
+    ctx.beginPath();
+    ctx.arc(offsetX + hx * scale, offsetZ + hz * scale, 3, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  for (const m of minions) {
+    const mx = offsetX + m.position.x * scale;
+    const mz = offsetZ + m.position.z * scale;
+    const color = "#" + (m.userData.sessionKey ? "f5d033" : "888888");
+    ctx.fillStyle = m.userData.state === "thinking" ? "#a78bfa" : m.userData.state === "streaming" ? "#3b82f6" : m.userData.state === "done" ? "#10b981" : "#f5d033";
+    ctx.beginPath();
+    ctx.arc(mx, mz, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  const camX = offsetX + camera.position.x * scale;
+  const camZ = offsetZ + camera.position.z * scale;
+  ctx.strokeStyle = "#53d8fb";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(camX - 5, camZ);
+  ctx.lineTo(camX + 5, camZ);
+  ctx.moveTo(camX, camZ - 5);
+  ctx.lineTo(camX, camZ + 5);
+  ctx.stroke();
+  const dirX = Math.sin(yaw) * 8;
+  const dirZ = Math.cos(yaw) * 8;
+  ctx.fillStyle = "#53d8fb";
+  ctx.beginPath();
+  ctx.moveTo(camX + dirX, camZ + dirZ);
+  ctx.lineTo(camX - dirZ * 0.4, camZ + dirX * 0.4);
+  ctx.lineTo(camX + dirZ * 0.4, camZ - dirX * 0.4);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "rgba(83, 216, 251, 0.3)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(0, 0, W, H);
+}
+(function initMinimapClick() {
+  const canvas = document.getElementById("minimap");
+  if (!canvas) return;
+  canvas.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const mz = e.clientY - rect.top;
+    const worldSize = 120;
+    const scale = 200 / worldSize;
+    const worldX = (mx - 100) / scale;
+    const worldZ = (mz - 100) / scale;
+    camera.position.x = worldX;
+    camera.position.z = worldZ;
+  });
+  canvas.addEventListener("mousedown", (e) => e.stopPropagation());
+})();
+function updateAgentDashboard() {
+  const now = Date.now();
+  const FIVE_MIN = 5 * 60 * 1e3;
+  agents.forEach((agent) => {
+    let activeCount = 0;
+    agent.sessions.forEach((sess) => {
+      const m = minions.find((mn) => mn.userData.sessionKey === sess.key);
+      if (m && m.userData.lastEventTime && now - m.userData.lastEventTime < FIVE_MIN) {
+        activeCount++;
+      }
+    });
+    agent._activeCount = activeCount;
+  });
+  const totalActive = agents.reduce((sum, a) => sum + (a._activeCount || 0), 0);
+  const hudEl = document.getElementById("h-sess");
+  if (hudEl) {
+    let totalSess = 0;
+    agents.forEach((a) => totalSess += a.sessions.length);
+    hudEl.textContent = `Sessions: ${totalSess} (${totalActive} active)`;
+  }
+  const agentsEl = document.getElementById("b-agents");
+  if (agentsEl) {
+    agentsEl.innerHTML = agents.map(
+      (a) => `<div class="row"><span><span class="dot ${a._activeCount > 0 ? "on" : "off"}"></span>${esc(a.name)}</span><span>${a._activeCount || 0}/${a.sessions.length} active</span></div>`
+    ).join("");
+  }
+}
+var minionEmojis = ["\u{1F49A}", "\u{1F4AC}"];
+var floatingEmojis = [];
+function updateMinionInteraction(dt) {
+  const now = Date.now();
+  for (let i = 0; i < minions.length; i++) {
+    for (let j = i + 1; j < minions.length; j++) {
+      const a = minions[i], b = minions[j];
+      const dx = a.position.x - b.position.x;
+      const dz = a.position.z - b.position.z;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+      if (dist < 2) {
+        if (Math.random() < 0.05 * dt) {
+          const target = Math.random() > 0.5 ? a : b;
+          triggerAnimation(target, "wave", 1.5);
+          const emoji = minionEmojis[Math.floor(Math.random() * minionEmojis.length)];
+          const midX = (a.position.x + b.position.x) / 2;
+          const midZ = (a.position.z + b.position.z) / 2;
+          const midY = Math.max(a.position.y, b.position.y) + 1.5;
+          showFloatingEmoji(emoji, midX, midY, midZ);
+        }
+      }
+    }
+  }
+  for (let i = floatingEmojis.length - 1; i >= 0; i--) {
+    const fe = floatingEmojis[i];
+    fe.life -= dt;
+    fe.sprite.position.y += dt * 0.8;
+    fe.sprite.material.opacity = Math.max(0, fe.life / fe.maxLife);
+    if (fe.life <= 0) {
+      scene.remove(fe.sprite);
+      fe.sprite.material.dispose();
+      floatingEmojis.splice(i, 1);
+    }
+  }
+}
+function showFloatingEmoji(emoji, x, y, z) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 64;
+  canvas.height = 64;
+  const ctx = canvas.getContext("2d");
+  ctx.font = "48px sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(emoji, 32, 36);
+  const tex = new CanvasTexture(canvas);
+  tex.minFilter = LinearFilter;
+  const mat2 = new SpriteMaterial({ map: tex, transparent: true, depthWrite: false });
+  const sprite = new Sprite(mat2);
+  sprite.position.set(x, y, z);
+  sprite.scale.set(0.8, 0.8, 1);
+  scene.add(sprite);
+  floatingEmojis.push({ sprite, life: 2, maxLife: 2 });
+}
+function initRainSystem() {
+  const rainGeo = new CylinderGeometry(0.01, 0.01, 0.5, 4);
+  const rainMat = new MeshBasicMaterial({ color: 11193599, transparent: true, opacity: 0.4 });
+  for (let i = 0; i < RAIN_COUNT; i++) {
+    const drop = new Mesh(rainGeo, rainMat.clone());
+    drop.position.set(
+      (Math.random() - 0.5) * 80,
+      15 + Math.random() * 10,
+      (Math.random() - 0.5) * 80
+    );
+    drop.visible = false;
+    scene.add(drop);
+    rainDrops.push(drop);
+  }
+  const splashGeo = new SphereGeometry(0.03, 4, 4);
+  const splashMat = new MeshBasicMaterial({ color: 11193599, transparent: true, opacity: 0.3 });
+  for (let i = 0; i < 60; i++) {
+    const splash = new Mesh(splashGeo, splashMat.clone());
+    splash.visible = false;
+    scene.add(splash);
+    rainSplashParticles.push(splash);
+  }
+}
+function toggleRain() {
+  isRaining = !isRaining;
+  for (const drop of rainDrops) {
+    drop.visible = isRaining;
+  }
+}
+function updateRain(dt) {
+  if (!isRaining) return;
+  sun.intensity = Math.max(0.15, sun.intensity * 0.7);
+  for (const drop of rainDrops) {
+    drop.position.y -= 15 * dt;
+    drop.position.x += Math.sin(drop.position.z * 0.1) * dt * 0.5;
+    if (drop.position.y < 0) {
+      const splash = rainSplashParticles[Math.floor(Math.random() * rainSplashParticles.length)];
+      if (splash) {
+        splash.visible = true;
+        splash.position.set(drop.position.x, 0.1, drop.position.z);
+        splash.userData.life = 0.3;
+        splash.userData.vx = (Math.random() - 0.5) * 2;
+        splash.userData.vz = (Math.random() - 0.5) * 2;
+        splash.userData.vy = 1 + Math.random() * 2;
+      }
+      drop.position.y = 15 + Math.random() * 10;
+      drop.position.x = camera.position.x + (Math.random() - 0.5) * 60;
+      drop.position.z = camera.position.z + (Math.random() - 0.5) * 60;
+    }
+  }
+  for (const splash of rainSplashParticles) {
+    if (!splash.visible) continue;
+    splash.userData.life -= dt;
+    if (splash.userData.life <= 0) {
+      splash.visible = false;
+      continue;
+    }
+    splash.position.x += (splash.userData.vx || 0) * dt;
+    splash.position.y += (splash.userData.vy || 0) * dt;
+    splash.position.z += (splash.userData.vz || 0) * dt;
+    splash.userData.vy -= 5 * dt;
+    splash.material.opacity = splash.userData.life / 0.3 * 0.3;
+  }
+}
+function updateGrassWithLOD(time) {
+  const camPos = camera.position;
+  for (const g of grassInstances) {
+    let windStrength = 0.04;
+    const mat4 = new Matrix4();
+    g.mesh.getMatrixAt(0, mat4);
+    const pos = new Vector3();
+    pos.setFromMatrixPosition(mat4);
+    const dist = camPos.distanceTo(pos);
+    if (dist > 60) {
+      g.mesh.visible = false;
+    } else if (dist > 30) {
+      g.mesh.visible = true;
+      windStrength = 0.01;
+    } else {
+      g.mesh.visible = true;
+      windStrength = 0.04;
+    }
+    g.mat.uniforms.uTime.value = time;
+    g.mat.uniforms.uWindStrength.value = windStrength;
+  }
+}
+function saveSceneState() {
+  const state = {
+    camera: {
+      x: camera.position.x,
+      y: camera.position.y,
+      z: camera.position.z,
+      yaw,
+      pitch
+    },
+    openBubbles: []
+  };
+  for (const sk in bubbles) {
+    const el = bubbles[sk];
+    if (el && el.classList.contains("show") && !el._dismissed) {
+      state.openBubbles.push(sk);
+    }
+  }
+  try {
+    localStorage.setItem("openclaw-monitor-state", JSON.stringify(state));
+  } catch {
+  }
+}
+function restoreSceneState() {
+  try {
+    const raw = localStorage.getItem("openclaw-monitor-state");
+    if (!raw) return;
+    const state = JSON.parse(raw);
+    if (state.camera) {
+      camera.position.set(state.camera.x || 25, state.camera.y || 30, state.camera.z || 35);
+      yaw = state.camera.yaw || 0;
+      pitch = state.camera.pitch || -0.5;
+    }
+  } catch {
+  }
+}
+function updateSaveStateTimer(dt) {
+  lastStateSave += dt;
+  if (lastStateSave >= 5) {
+    lastStateSave = 0;
+    saveSceneState();
+  }
+}
+restoreSceneState();
 connectSSE();
 animate();
 /*! Bundled license information:
