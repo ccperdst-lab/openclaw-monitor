@@ -707,9 +707,25 @@ function updateBubbleContent(m) {
 
   // Thinking/tools - interleaved from unified eventLog
   const actsBody = el.querySelector('.bub-acts-body');
+
+  // Smart auto-scroll: only scroll to bottom if user is already near the bottom
+  const wasAtBottom = actsBody.scrollHeight - actsBody.scrollTop - actsBody.clientHeight < 30;
+
   const items = [];
   const log = ud.eventLog || [];
-  for (const evt of log) {
+  // Find the last reply_snippet index for divider placement
+  let lastReplyIdx = -1;
+  for (let i = log.length - 1; i >= 0; i--) {
+    if (log[i].type === 'reply_snippet') { lastReplyIdx = i; break; }
+  }
+  const hasFinalReply = !!ud.replyText;
+
+  for (let i = 0; i < log.length; i++) {
+    const evt = log[i];
+    // Insert divider before the last reply snippet
+    if (i === lastReplyIdx || (i === log.length - 1 && hasFinalReply && evt.type !== 'reply_snippet')) {
+      items.push('<div class="bact-divider"><span>── 回复 ──</span></div>');
+    }
     if (evt.type === 'think') {
       items.push(`<div class="bact bact-think"><span>💭</span><span>${esc(evt.text)}${evt.time ? ` <em style="color:#999;font-size:9px">${esc(evt.time)}</em>` : ''}</span></div>`);
     } else if (evt.type === 'tool_use') {
@@ -720,8 +736,18 @@ function updateBubbleContent(m) {
       items.push(`<div class="bact bact-reply"><span>💬</span><span>${esc(evt.text)}${evt.time ? ` <em style="color:#999;font-size:9px">${esc(evt.time)}</em>` : ''}</span></div>`);
     }
   }
-  if (ud.replyText) items.push(`<div class="bact bact-reply"><span>💬</span><span>${esc(ud.replyText)}</span></div>`);
+  // Final reply text (from reply_text event) with divider
+  if (hasFinalReply) {
+    if (lastReplyIdx === -1) items.push('<div class="bact-divider"><span>── 回复 ──</span></div>');
+    items.push(`<div class="bact bact-reply bact-final"><span>💬</span><span>${esc(ud.replyText)}</span></div>`);
+  }
+
   actsBody.innerHTML = items.slice(-30).join('');
+
+  // Smart scroll: only auto-scroll if user was at the bottom
+  if (wasAtBottom) {
+    actsBody.scrollTop = actsBody.scrollHeight;
+  }
   const thinkCount = log.filter(e => e.type === 'think').length;
   const toolCount = log.filter(e => e.type === 'tool_use' || e.type === 'tool_result').length;
   el.querySelector('.bub-acts-cnt').textContent = thinkCount + toolCount;

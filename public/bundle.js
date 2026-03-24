@@ -28377,9 +28377,22 @@ function updateBubbleContent(m) {
   el.querySelector(".bub-user").textContent = ud.userName || ud.sessionLabel || "Session";
   el.querySelector(".bub-msg").textContent = ud.userMsg || "";
   const actsBody = el.querySelector(".bub-acts-body");
+  const wasAtBottom = actsBody.scrollHeight - actsBody.scrollTop - actsBody.clientHeight < 30;
   const items = [];
   const log2 = ud.eventLog || [];
-  for (const evt of log2) {
+  let lastReplyIdx = -1;
+  for (let i = log2.length - 1; i >= 0; i--) {
+    if (log2[i].type === "reply_snippet") {
+      lastReplyIdx = i;
+      break;
+    }
+  }
+  const hasFinalReply = !!ud.replyText;
+  for (let i = 0; i < log2.length; i++) {
+    const evt = log2[i];
+    if (i === lastReplyIdx || i === log2.length - 1 && hasFinalReply && evt.type !== "reply_snippet") {
+      items.push('<div class="bact-divider"><span>\u2500\u2500 \u56DE\u590D \u2500\u2500</span></div>');
+    }
     if (evt.type === "think") {
       items.push(`<div class="bact bact-think"><span>\u{1F4AD}</span><span>${esc(evt.text)}${evt.time ? ` <em style="color:#999;font-size:9px">${esc(evt.time)}</em>` : ""}</span></div>`);
     } else if (evt.type === "tool_use") {
@@ -28390,8 +28403,14 @@ function updateBubbleContent(m) {
       items.push(`<div class="bact bact-reply"><span>\u{1F4AC}</span><span>${esc(evt.text)}${evt.time ? ` <em style="color:#999;font-size:9px">${esc(evt.time)}</em>` : ""}</span></div>`);
     }
   }
-  if (ud.replyText) items.push(`<div class="bact bact-reply"><span>\u{1F4AC}</span><span>${esc(ud.replyText)}</span></div>`);
+  if (hasFinalReply) {
+    if (lastReplyIdx === -1) items.push('<div class="bact-divider"><span>\u2500\u2500 \u56DE\u590D \u2500\u2500</span></div>');
+    items.push(`<div class="bact bact-reply bact-final"><span>\u{1F4AC}</span><span>${esc(ud.replyText)}</span></div>`);
+  }
   actsBody.innerHTML = items.slice(-30).join("");
+  if (wasAtBottom) {
+    actsBody.scrollTop = actsBody.scrollHeight;
+  }
   const thinkCount = log2.filter((e) => e.type === "think").length;
   const toolCount = log2.filter((e) => e.type === "tool_use" || e.type === "tool_result").length;
   el.querySelector(".bub-acts-cnt").textContent = thinkCount + toolCount;
