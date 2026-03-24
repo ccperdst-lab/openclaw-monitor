@@ -30049,241 +30049,250 @@ function updateMinionExpressions() {
 }
 function animate() {
   requestAnimationFrame(animate);
-  const dt = Math.min(clock.getDelta(), 0.05);
-  const time = clock.getElapsedTime();
-  const forward = new Vector3(Math.sin(yaw), 0, Math.cos(yaw));
-  const right = new Vector3().crossVectors(forward, new Vector3(0, 1, 0)).normalize();
-  const speed = moveSpeed * dt;
-  if (keys.w) camera.position.addScaledVector(forward, speed);
-  if (keys.s) camera.position.addScaledVector(forward, -speed);
-  if (keys.a) camera.position.addScaledVector(right, -speed);
-  if (keys.d) camera.position.addScaledVector(right, speed);
-  if (keys.space) camera.position.y += speed;
-  if (keys.shift) camera.position.y -= speed;
-  const lookTarget = camera.position.clone().add(new Vector3(
-    Math.sin(yaw) * Math.cos(pitch),
-    Math.sin(pitch),
-    Math.cos(yaw) * Math.cos(pitch)
-  ));
-  camera.lookAt(lookTarget);
-  minions.forEach((m) => {
-    const ud = m.userData;
-    ud.idleTimer -= dt;
-    if (ud.idleTimer <= 0) {
-      ud.idleTimer = 2 + Math.random() * 5;
-      ud.idleAction = Math.random() < 0.3 ? "walk" : "stand";
-      if (ud.idleAction === "walk" && ud.bounds) {
-        ud.targetX = ud.bounds.minX + Math.random() * (ud.bounds.maxX - ud.bounds.minX);
-        ud.targetZ = ud.bounds.minZ + Math.random() * (ud.bounds.maxZ - ud.bounds.minZ);
-      }
-    }
-    if (ud.bounds) {
-      const dx = ud.targetX - m.position.x, dz = ud.targetZ - m.position.z;
-      const dist = Math.sqrt(dx * dx + dz * dz);
-      if (dist > 0.1) {
-        const baseSpd = 0.8;
-        const spd = (ud._mcpSpeed || baseSpd) * dt;
-        delete ud._mcpSpeed;
-        const nx = m.position.x + dx / dist * spd;
-        const nz = m.position.z + dz / dist * spd;
-        if (!collidesWithAny(nx, nz, ud.sessionKey)) {
-          m.position.x = nx;
-          m.position.z = nz;
-        } else if (!collidesWithAny(nx, m.position.z, ud.sessionKey)) {
-          m.position.x = nx;
-        } else if (!collidesWithAny(m.position.x, nz, ud.sessionKey)) {
-          m.position.z = nz;
-        } else {
-          ud.idleTimer = 0;
+  try {
+    const dt = Math.min(clock.getDelta(), 0.05);
+    const time = clock.getElapsedTime();
+    const forward = new Vector3(Math.sin(yaw), 0, Math.cos(yaw));
+    const right = new Vector3().crossVectors(forward, new Vector3(0, 1, 0)).normalize();
+    const speed = moveSpeed * dt;
+    if (keys.w) camera.position.addScaledVector(forward, speed);
+    if (keys.s) camera.position.addScaledVector(forward, -speed);
+    if (keys.a) camera.position.addScaledVector(right, -speed);
+    if (keys.d) camera.position.addScaledVector(right, speed);
+    if (keys.space) camera.position.y += speed;
+    if (keys.shift) camera.position.y -= speed;
+    const lookTarget = camera.position.clone().add(new Vector3(
+      Math.sin(yaw) * Math.cos(pitch),
+      Math.sin(pitch),
+      Math.cos(yaw) * Math.cos(pitch)
+    ));
+    camera.lookAt(lookTarget);
+    minions.forEach((m) => {
+      const ud = m.userData;
+      ud.idleTimer -= dt;
+      if (ud.idleTimer <= 0) {
+        ud.idleTimer = 2 + Math.random() * 5;
+        ud.idleAction = Math.random() < 0.3 ? "walk" : "stand";
+        if (ud.idleAction === "walk" && ud.bounds) {
+          ud.targetX = ud.bounds.minX + Math.random() * (ud.bounds.maxX - ud.bounds.minX);
+          ud.targetZ = ud.bounds.minZ + Math.random() * (ud.bounds.maxZ - ud.bounds.minZ);
         }
-        m.rotation.y = Math.atan2(dx, dz);
       }
-      m.position.x = Math.max(ud.bounds.minX, Math.min(ud.bounds.maxX, m.position.x));
-      m.position.z = Math.max(ud.bounds.minZ, Math.min(ud.bounds.maxZ, m.position.z));
-    }
-    let yOff = Math.sin(time * 1.5 + ud.bobPhase) * 0.02;
-    let extraRotY = 0;
-    let extraRotX = 0;
-    let pulseScale = 1;
-    const anim = activeAnimations[ud.sessionKey];
-    if (anim && Date.now() < anim.endTime) {
-      const remaining = (anim.endTime - Date.now()) / 1e3;
-      const progress = 1 - remaining / anim.duration;
-      switch (anim.type) {
-        case "jump":
-          yOff += Math.abs(Math.sin(time * 6)) * 0.6;
-          pulseScale = 1 + Math.sin(time * 8) * 0.08;
-          break;
-        case "dance":
-          extraRotY = Math.sin(time * 5) * 0.4;
-          extraRotX = Math.sin(time * 7) * 0.1;
-          yOff += Math.abs(Math.sin(time * 4)) * 0.3;
-          pulseScale = 1 + Math.sin(time * 6) * 0.05;
-          break;
-        case "spin":
-          extraRotY = dt * 12;
-          yOff += 0.15;
-          pulseScale = 1 + Math.sin(time * 10) * 0.06;
-          break;
-        case "nod":
-          m.children.forEach((c) => {
-            if (c.geometry?.type === "SphereGeometry") {
-              c.rotation.x = Math.sin(time * 6) * 0.4;
-            }
-          });
-          yOff += Math.abs(Math.sin(time * 3)) * 0.1;
-          break;
-        case "shake":
-          m.position.x += Math.sin(time * 20) * 0.08;
-          m.position.z += Math.cos(time * 20) * 0.04;
-          pulseScale = 1 + Math.sin(time * 15) * 0.04;
-          break;
-        case "bow":
-          const bowAngle = Math.sin(Math.min(1, progress * 2) * Math.PI) * 0.5;
-          extraRotX = bowAngle;
-          yOff -= Math.abs(bowAngle) * 0.3;
-          break;
-        case "clap":
-          m.children.forEach((c) => {
-            if (c.userData?.isArm) {
-              c.rotation.x = -1 + Math.sin(time * 12) * 0.5;
-              c.rotation.z = c.userData.side * (0.5 + Math.sin(time * 12) * 0.3);
-            }
-          });
-          yOff += Math.abs(Math.sin(time * 4)) * 0.15;
-          break;
-        case "celebrate":
-          yOff += Math.abs(Math.sin(time * 5)) * 0.55;
-          extraRotY = Math.sin(time * 4) * 0.3;
-          pulseScale = 1 + Math.sin(time * 8) * 0.1;
-          break;
-        case "wave":
-          m.children.forEach((c) => {
-            if (c.userData?.isArm && c.userData.side > 0) {
-              c.rotation.x = Math.sin(time * 8) * 0.6 - 0.9;
-            }
-          });
-          yOff += 0.08;
-          break;
-        case "think":
-          extraRotY = Math.sin(time * 1.5) * 0.15;
-          m.children.forEach((c) => {
-            if (c.geometry?.type === "SphereGeometry") {
-              c.rotation.z = 0.2;
-            }
-          });
-          yOff += Math.sin(time * 2) * 0.05;
-          break;
-      }
-      if (anim.ring) {
-        anim.ring.position.set(m.position.x, 0.02, m.position.z);
-        anim.ring.material.opacity = 0.4 + Math.sin(time * 8) * 0.2;
-        anim.ring.rotation.z = time * 2;
-        const ringScale = 1 + Math.sin(time * 6) * 0.2;
-        anim.ring.scale.set(ringScale, ringScale, 1);
-      }
-      m.scale.set(pulseScale, pulseScale, pulseScale);
-    } else {
-      m.scale.lerp(new Vector3(1, 1, 1), 0.1);
-    }
-    m.rotation.y += extraRotY;
-    m.rotation.x = extraRotX;
-    m.position.y = yOff;
-    m.children.forEach((c) => {
-      if (c.userData?.isArm) {
-        if (!anim || anim.type !== "wave" && anim.type !== "clap") {
-          c.rotation.x = Math.sin(time * 2 + ud.bobPhase + (c.userData.side > 0 ? 0 : Math.PI)) * 0.15;
-          c.rotation.z = 0;
+      if (ud.bounds) {
+        const dx = ud.targetX - m.position.x, dz = ud.targetZ - m.position.z;
+        const dist = Math.sqrt(dx * dx + dz * dz);
+        if (dist > 0.1) {
+          const baseSpd = 0.8;
+          const spd = (ud._mcpSpeed || baseSpd) * dt;
+          delete ud._mcpSpeed;
+          const nx = m.position.x + dx / dist * spd;
+          const nz = m.position.z + dz / dist * spd;
+          if (!collidesWithAny(nx, nz, ud.sessionKey)) {
+            m.position.x = nx;
+            m.position.z = nz;
+          } else if (!collidesWithAny(nx, m.position.z, ud.sessionKey)) {
+            m.position.x = nx;
+          } else if (!collidesWithAny(m.position.x, nz, ud.sessionKey)) {
+            m.position.z = nz;
+          } else {
+            ud.idleTimer = 0;
+          }
+          m.rotation.y = Math.atan2(dx, dz);
         }
+        m.position.x = Math.max(ud.bounds.minX, Math.min(ud.bounds.maxX, m.position.x));
+        m.position.z = Math.max(ud.bounds.minZ, Math.min(ud.bounds.maxZ, m.position.z));
+      }
+      let yOff = Math.sin(time * 1.5 + ud.bobPhase) * 0.02;
+      let extraRotY = 0;
+      let extraRotX = 0;
+      let pulseScale = 1;
+      const anim = activeAnimations[ud.sessionKey];
+      if (anim && Date.now() < anim.endTime) {
+        const remaining = (anim.endTime - Date.now()) / 1e3;
+        const progress = 1 - remaining / anim.duration;
+        switch (anim.type) {
+          case "jump":
+            yOff += Math.abs(Math.sin(time * 6)) * 0.6;
+            pulseScale = 1 + Math.sin(time * 8) * 0.08;
+            break;
+          case "dance":
+            extraRotY = Math.sin(time * 5) * 0.4;
+            extraRotX = Math.sin(time * 7) * 0.1;
+            yOff += Math.abs(Math.sin(time * 4)) * 0.3;
+            pulseScale = 1 + Math.sin(time * 6) * 0.05;
+            break;
+          case "spin":
+            extraRotY = dt * 12;
+            yOff += 0.15;
+            pulseScale = 1 + Math.sin(time * 10) * 0.06;
+            break;
+          case "nod":
+            m.children.forEach((c) => {
+              if (c.geometry?.type === "SphereGeometry") {
+                c.rotation.x = Math.sin(time * 6) * 0.4;
+              }
+            });
+            yOff += Math.abs(Math.sin(time * 3)) * 0.1;
+            break;
+          case "shake":
+            m.position.x += Math.sin(time * 20) * 0.08;
+            m.position.z += Math.cos(time * 20) * 0.04;
+            pulseScale = 1 + Math.sin(time * 15) * 0.04;
+            break;
+          case "bow":
+            const bowAngle = Math.sin(Math.min(1, progress * 2) * Math.PI) * 0.5;
+            extraRotX = bowAngle;
+            yOff -= Math.abs(bowAngle) * 0.3;
+            break;
+          case "clap":
+            m.children.forEach((c) => {
+              if (c.userData?.isArm) {
+                c.rotation.x = -1 + Math.sin(time * 12) * 0.5;
+                c.rotation.z = c.userData.side * (0.5 + Math.sin(time * 12) * 0.3);
+              }
+            });
+            yOff += Math.abs(Math.sin(time * 4)) * 0.15;
+            break;
+          case "celebrate":
+            yOff += Math.abs(Math.sin(time * 5)) * 0.55;
+            extraRotY = Math.sin(time * 4) * 0.3;
+            pulseScale = 1 + Math.sin(time * 8) * 0.1;
+            break;
+          case "wave":
+            m.children.forEach((c) => {
+              if (c.userData?.isArm && c.userData.side > 0) {
+                c.rotation.x = Math.sin(time * 8) * 0.6 - 0.9;
+              }
+            });
+            yOff += 0.08;
+            break;
+          case "think":
+            extraRotY = Math.sin(time * 1.5) * 0.15;
+            m.children.forEach((c) => {
+              if (c.geometry?.type === "SphereGeometry") {
+                c.rotation.z = 0.2;
+              }
+            });
+            yOff += Math.sin(time * 2) * 0.05;
+            break;
+        }
+        if (anim.ring) {
+          anim.ring.position.set(m.position.x, 0.02, m.position.z);
+          anim.ring.material.opacity = 0.4 + Math.sin(time * 8) * 0.2;
+          anim.ring.rotation.z = time * 2;
+          const ringScale = 1 + Math.sin(time * 6) * 0.2;
+          anim.ring.scale.set(ringScale, ringScale, 1);
+        }
+        m.scale.set(pulseScale, pulseScale, pulseScale);
+      } else {
+        m.scale.lerp(new Vector3(1, 1, 1), 0.1);
+      }
+      m.rotation.y += extraRotY;
+      m.rotation.x = extraRotX;
+      m.position.y = yOff;
+      m.children.forEach((c) => {
+        if (c.userData?.isArm) {
+          if (!anim || anim.type !== "wave" && anim.type !== "clap") {
+            c.rotation.x = Math.sin(time * 2 + ud.bobPhase + (c.userData.side > 0 ? 0 : Math.PI)) * 0.15;
+            c.rotation.z = 0;
+          }
+        }
+      });
+      if (ud.notificationSprite) {
+        ud.notificationSprite.position.y = 2.5 * (ud.heightScale || 1) * 0.5 + 1.8 + Math.sin(time * 3 + ud.bobPhase) * 0.1;
+      }
+      const mcpBub = mcpBubbles[ud.sessionKey];
+      if (mcpBub && mcpBub._updatePos) mcpBub._updatePos();
+      updateBubblePosition(m, time);
+    });
+    reportPositions();
+    if (followMinion) {
+      const targetPos = new Vector3(
+        followMinion.position.x + FOLLOW_OFFSET.x,
+        followMinion.position.y + FOLLOW_OFFSET.y,
+        followMinion.position.z + FOLLOW_OFFSET.z
+      );
+      camera.position.lerp(targetPos, 0.05);
+      const lookAt = new Vector3(followMinion.position.x, followMinion.position.y + 1, followMinion.position.z);
+      camera.lookAt(lookAt);
+      const dir = new Vector3().subVectors(lookAt, camera.position).normalize();
+      yaw = Math.atan2(dir.x, dir.z);
+      pitch = Math.asin(dir.y);
+      if (!followMinion.userData._hasPin) {
+        followMinion.userData._hasPin = true;
+        const parsed = parseSessionKey(followMinion.userData.sessionKey);
+        const labelLine = `\u{1F4CC} ${parsed.icon} ${followMinion.userData.sessionLabel || parsed.label}`;
+        addNameLabel(followMinion, labelLine, followMinion.userData.chineseName);
+      }
+    } else if (minions.some((m) => m.userData._hasPin)) {
+      for (const m of minions) {
+        if (m.userData._hasPin) {
+          m.userData._hasPin = false;
+          const parsed = parseSessionKey(m.userData.sessionKey);
+          const labelLine = `${parsed.icon} ${m.userData.sessionLabel || parsed.label}`;
+          addNameLabel(m, labelLine, m.userData.chineseName);
+        }
+      }
+    }
+    if (cameraTransition) {
+      cameraTransition.progress += dt / cameraTransition.duration;
+      if (cameraTransition.progress >= 1) {
+        camera.position.copy(cameraTransition.endPos);
+        cameraTransition = null;
+      } else {
+        const t = cameraTransition.progress;
+        const ease = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+        camera.position.lerpVectors(cameraTransition.startPos, cameraTransition.endPos, ease);
+      }
+    }
+    updateSpawnEffects(dt);
+    if (season === "winter") updateSnow(dt, time);
+    fpsFrames++;
+    const now = performance.now();
+    if (now - fpsLastTime >= 500) {
+      fpsValue = Math.round(fpsFrames / ((now - fpsLastTime) / 1e3));
+      fpsFrames = 0;
+      fpsLastTime = now;
+      const fpsEl = document.getElementById("fps-badge");
+      if (fpsEl) fpsEl.textContent = fpsValue + " FPS";
+    }
+    updateMinionExpressions();
+    updatePetals(dt, time);
+    updateDayNightCycle(dt);
+    drawMinimap();
+    if (Math.floor(time * 0.5) !== Math.floor((time - dt) * 0.5)) {
+      updateAgentDashboard();
+    }
+    updateMinionInteraction(dt);
+    updateRain(dt);
+    updateSaveStateTimer(dt);
+    updateGrassWithLOD(time);
+    if (window._waterMeshes) {
+      for (const w of window._waterMeshes) {
+        if (w.material.uniforms?.uTime) w.material.uniforms.uTime.value = time;
+      }
+    }
+    scene.traverse((obj) => {
+      if (obj.material?.uniforms?.uTime && obj.material !== grassInstances[0]?.mat && !window._waterMeshes?.includes(obj)) {
+        obj.material.uniforms.uTime.value = time;
       }
     });
-    if (ud.notificationSprite) {
-      ud.notificationSprite.position.y = 2.5 * (ud.heightScale || 1) * 0.5 + 1.8 + Math.sin(time * 3 + ud.bobPhase) * 0.1;
-    }
-    const mcpBub = mcpBubbles[ud.sessionKey];
-    if (mcpBub && mcpBub._updatePos) mcpBub._updatePos();
-    updateBubblePosition(m, time);
-  });
-  reportPositions();
-  if (followMinion) {
-    const targetPos = new Vector3(
-      followMinion.position.x + FOLLOW_OFFSET.x,
-      followMinion.position.y + FOLLOW_OFFSET.y,
-      followMinion.position.z + FOLLOW_OFFSET.z
-    );
-    camera.position.lerp(targetPos, 0.05);
-    const lookAt = new Vector3(followMinion.position.x, followMinion.position.y + 1, followMinion.position.z);
-    camera.lookAt(lookAt);
-    const dir = new Vector3().subVectors(lookAt, camera.position).normalize();
-    yaw = Math.atan2(dir.x, dir.z);
-    pitch = Math.asin(dir.y);
-    if (!followMinion.userData._hasPin) {
-      followMinion.userData._hasPin = true;
-      const parsed = parseSessionKey(followMinion.userData.sessionKey);
-      const labelLine = `\u{1F4CC} ${parsed.icon} ${followMinion.userData.sessionLabel || parsed.label}`;
-      addNameLabel(followMinion, labelLine, followMinion.userData.chineseName);
-    }
-  } else if (minions.some((m) => m.userData._hasPin)) {
-    for (const m of minions) {
-      if (m.userData._hasPin) {
-        m.userData._hasPin = false;
-        const parsed = parseSessionKey(m.userData.sessionKey);
-        const labelLine = `${parsed.icon} ${m.userData.sessionLabel || parsed.label}`;
-        addNameLabel(m, labelLine, m.userData.chineseName);
+    if (season === "autumn" || season === "winter") {
+      const seasonTint = season === "autumn" ? new Color(13935988) : season === "winter" ? new Color(13162728) : null;
+      if (seasonTint) {
+        scene.background.lerp(seasonTint, 0.15);
+        scene.fog.color.lerp(seasonTint, 0.15);
       }
     }
-  }
-  if (cameraTransition) {
-    cameraTransition.progress += dt / cameraTransition.duration;
-    if (cameraTransition.progress >= 1) {
-      camera.position.copy(cameraTransition.endPos);
-      cameraTransition = null;
-    } else {
-      const t = cameraTransition.progress;
-      const ease = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
-      camera.position.lerpVectors(cameraTransition.startPos, cameraTransition.endPos, ease);
+    renderer.render(scene, camera);
+  } catch (err) {
+    console.error("Animate error:", err.message, err.stack?.split("\n")[1]);
+    try {
+      renderer.render(scene, camera);
+    } catch (e2) {
+      console.error("Render error:", e2.message);
     }
   }
-  updateSpawnEffects(dt);
-  if (season === "winter") updateSnow(dt, time);
-  fpsFrames++;
-  const now = performance.now();
-  if (now - fpsLastTime >= 500) {
-    fpsValue = Math.round(fpsFrames / ((now - fpsLastTime) / 1e3));
-    fpsFrames = 0;
-    fpsLastTime = now;
-    const fpsEl = document.getElementById("fps-badge");
-    if (fpsEl) fpsEl.textContent = fpsValue + " FPS";
-  }
-  updateMinionExpressions();
-  updatePetals(dt, time);
-  updateDayNightCycle(dt);
-  drawMinimap();
-  if (Math.floor(time * 0.5) !== Math.floor((time - dt) * 0.5)) {
-    updateAgentDashboard();
-  }
-  updateMinionInteraction(dt);
-  updateRain(dt);
-  updateSaveStateTimer(dt);
-  updateGrassWithLOD(time);
-  if (window._waterMeshes) {
-    for (const w of window._waterMeshes) {
-      if (w.material.uniforms?.uTime) w.material.uniforms.uTime.value = time;
-    }
-  }
-  scene.traverse((obj) => {
-    if (obj.material?.uniforms?.uTime && obj.material !== grassInstances[0]?.mat && !window._waterMeshes?.includes(obj)) {
-      obj.material.uniforms.uTime.value = time;
-    }
-  });
-  if (season === "autumn" || season === "winter") {
-    const seasonTint = season === "autumn" ? new Color(13935988) : season === "winter" ? new Color(13162728) : null;
-    if (seasonTint) {
-      scene.background.lerp(seasonTint, 0.15);
-      scene.fog.color.lerp(seasonTint, 0.15);
-    }
-  }
-  renderer.render(scene, camera);
 }
 function filterSessions(query) {
   const sessEl = document.getElementById("b-sessions");

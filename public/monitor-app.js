@@ -1774,6 +1774,7 @@ function updateMinionExpressions() {
 // ===== Animation Loop =====
 function animate() {
   requestAnimationFrame(animate);
+  try {
   const dt = Math.min(clock.getDelta(), 0.05);
   const time = clock.getElapsedTime();
 
@@ -2096,6 +2097,10 @@ function animate() {
   }
 
   renderer.render(scene, camera);
+  } catch (err) {
+    console.error('Animate error:', err.message, err.stack?.split('\n')[1]);
+    try { renderer.render(scene, camera); } catch(e2) { console.error('Render error:', e2.message); }
+  }
 }
 
 // ===== Session Search Filter =====
