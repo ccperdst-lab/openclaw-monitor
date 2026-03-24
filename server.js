@@ -571,6 +571,207 @@ app.post('/api/cli', (req, res) => {
   });
 });
 
+// ===== MCP Control Endpoints =====
+
+function round2(n) { return Math.round(n * 100) / 100; }
+
+// Track minion positions reported by the 3D client
+const minionPositions = {}; // sessionKey -> { x, y, z, state }
+
+// Client reports positions periodically
+app.post('/api/minions/positions', (req, res) => {
+  const positions = req.body.positions;
+  if (positions && typeof positions === 'object') {
+    for (const [sk, pos] of Object.entries(positions)) {
+      minionPositions[sk] = pos;
+    }
+  }
+  res.json({ ok: true });
+});
+
+// List all minions with positions, states, session info
+app.get('/api/minions', (req, res) => {
+  const result = [];
+  const profiles = loadProfiles();
+  for (const [agentName, info] of Object.entries(agentState)) {
+    for (const [key, sess] of Object.entries(info.sessions)) {
+      const pos = minionPositions[key];
+      result.push({
+        sessionKey: key,
+        sessionId: sess.sessionId,
+        agentName,
+        sessionType: sess.type,
+        sessionLabel: sess.label,
+        chineseName: (profiles[key] || {}).name || '',
+        position: pos ? { x: round2(pos.x), y: round2(pos.y || 0), z: round2(pos.z) } : null,
+        state: pos?.state || 'unknown',
+        bounds: pos?.bounds || null,
+      });
+    }
+  }
+  res.json({ minions: result, count: result.length });
+});
+
+// Move a minion toward a target position (pathfinding walk)
+app.post('/api/minions/:sessionKey/move', (req, res) => {
+  const sk = req.params.sessionKey;
+  const { x, z, speed } = req.body;
+  if (x === undefined || z === undefined) return res.status(400).json({ error: 'Missing x or z' });
+
+  broadcast({
+    type: 'control',
+    data: { action: 'move', sessionKey: sk, x: parseFloat(x), z: parseFloat(z), speed: speed ? parseFloat(speed) : undefined }
+  });
+  log('info', `MCP move: ${sk} → (${x}, ${z})`);
+  res.json({ ok: true, action: 'move', sessionKey: sk, target: { x: parseFloat(x), z: parseFloat(z) } });
+});
+
+// Move a minion toward another minion
+app.post('/api/minions/:sessionKey/move-to/:targetKey', (req, res) => {
+  const sk = req.params.sessionKey;
+  const tk = req.params.targetKey;
+  const { offsetDistance } = req.body;
+
+  broadcast({
+    type: 'control',
+    data: { action: 'move_to_minion', sessionKey: sk, targetKey: tk, offsetDistance: offsetDistance ? parseFloat(offsetDistance) : 1.5 }
+  });
+  log('info', `MCP move-to-minion: ${sk} → ${tk}`);
+  res.json({ ok: true, action: 'move_to_minion', sessionKey: sk, target: tk });
+});
+
+// Teleport a minion instantly
+app.post('/api/minions/:sessionKey/teleport', (req, res) => {
+  const sk = req.params.sessionKey;
+  const { x, z } = req.body;
+  if (x === undefined || z === undefined) return res.status(400).json({ error: 'Missing x or z' });
+
+  broadcast({
+    type: 'control',
+    data: { action: 'teleport', sessionKey: sk, x: parseFloat(x), z: parseFloat(z) }
+  });
+  log('info', `MCP teleport: ${sk} → (${x}, ${z})`);
+  res.json({ ok: true, action: 'teleport', sessionKey: sk, position: { x: parseFloat(x), z: parseFloat(z) } });
+});
+
+// Play animation
+app.post('/api/minions/:sessionKey/animate', (req, res) => {
+  const sk = req.params.sessionKey;
+  const { animation, duration } = req.body;
+  const validAnims = ['jump', 'wave', 'dance', 'spin', 'nod', 'shake', 'bow', 'clap', 'think', 'celebrate'];
+  if (!animation || !validAnims.includes(animation)) {
+    return res.status(400).json({ error: `Invalid animation. Valid: ${validAnims.join(', ')}` });
+  }
+
+  broadcast({
+    type: 'control',
+    data: { action: 'animate', sessionKey: sk, animation, duration: duration ? parseFloat(duration) : 2.0 }
+  });
+  log('info', `MCP animate: ${sk} → ${animation}`);
+  res.json({ ok: true, action: 'animate', sessionKey: sk, animation, duration: duration || 2.0 });
+});
+
+// Show speech bubble
+app.post('/api/minions/:sessionKey/say', (req, res) => {
+  const sk = req.params.sessionKey;
+  const { text, duration, sender } = req.body;
+  if (!text) return res.status(400).json({ error: 'Missing text' });
+
+  broadcast({
+    type: 'control',
+    data: {
+      action: 'say', sessionKey: sk,
+      text: text.slice(0, 500),
+      duration: duration ? parseFloat(duration) : 5.0,
+      sender: sender || '🤖 MCP'
+    }
+  });
+  log('info', `MCP say: ${sk} "${text.slice(0, 60)}"`);
+  res.json({ ok: true, action: 'say', sessionKey: sk, text: text.slice(0, 500) });
+});
+
+// Get detailed info about a specific minion
+app.get('/api/minions/:sessionKey', (req, res) => {
+  const sk = req.params.sessionKey;
+  for (const [agentName, info] of Object.entries(agentState)) {
+    for (const [key, sess] of Object.entries(info.sessions)) {
+      if (key === sk) {
+        const profiles = loadProfiles();
+        const profile = profiles[sk] || {};
+        return res.json({
+          sessionKey: key,
+          sessionId: sess.sessionId,
+          agentName,
+          type: sess.type,
+          label: sess.label,
+          displayName: sess.displayName,
+          channel: sess.channel,
+          chatType: sess.chatType,
+          profile,
+          controlState: null,
+        });
+      }
+    }
+  }
+  res.status(404).json({ error: 'Minion not found' });
+});
+
+// Batch control: send multiple commands at once
+app.post('/api/minions/batch', (req, res) => {
+  const commands = req.body.commands;
+  if (!Array.isArray(commands)) return res.status(400).json({ error: 'Expected { commands: [...] }' });
+
+  const results = [];
+  for (const cmd of commands.slice(0, 20)) { // max 20 per batch
+    if (!cmd.action || !cmd.sessionKey) {
+      results.push({ error: 'Missing action or sessionKey', cmd });
+      continue;
+    }
+    broadcast({ type: 'control', data: cmd });
+    results.push({ ok: true, action: cmd.action, sessionKey: cmd.sessionKey });
+  }
+  log('info', `MCP batch: ${results.length} commands`);
+  res.json({ results, count: results.length });
+});
+
+// Make all minions in an agent do something together
+app.post('/api/agents/:agentName/action', (req, res) => {
+  const agentName = req.params.agentName;
+  const { action, animation, text, duration } = req.body;
+
+  const agent = agentState[agentName];
+  if (!agent) return res.status(404).json({ error: 'Agent not found' });
+
+  const sessionKeys = Object.keys(agent.sessions);
+  if (action === 'celebrate') {
+    for (const sk of sessionKeys) {
+      const anims = ['jump', 'dance', 'clap', 'celebrate'];
+      const pick = anims[Math.floor(Math.random() * anims.length)];
+      broadcast({ type: 'control', data: { action: 'animate', sessionKey: sk, animation: pick, duration: 3.0 } });
+    }
+  } else if (action === 'gather') {
+    // Gather all minions to the center of their continent
+    for (const sk of sessionKeys) {
+      broadcast({ type: 'control', data: { action: 'move_to_minion', sessionKey: sk, targetKey: sessionKeys[0], offsetDistance: 1.5 } });
+    }
+  } else if (action === 'animate') {
+    if (!animation) return res.status(400).json({ error: 'Missing animation' });
+    for (const sk of sessionKeys) {
+      broadcast({ type: 'control', data: { action: 'animate', sessionKey: sk, animation, duration: duration || 2.0 } });
+    }
+  } else if (action === 'say') {
+    if (!text) return res.status(400).json({ error: 'Missing text' });
+    for (const sk of sessionKeys) {
+      broadcast({ type: 'control', data: { action: 'say', sessionKey: sk, text, duration: duration || 5.0, sender: '🤖 Agent' } });
+    }
+  } else {
+    return res.status(400).json({ error: `Unknown action. Valid: celebrate, gather, animate, say` });
+  }
+
+  log('info', `MCP agent action: ${agentName} → ${action}`);
+  res.json({ ok: true, action, agentName, minionCount: sessionKeys.length });
+});
+
 // Direct chat: inject message via OpenClaw Gateway API
 app.post('/api/chat/:sessionId', (req, res) => {
   const sessionId = req.params.sessionId;

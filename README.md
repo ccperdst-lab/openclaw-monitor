@@ -116,6 +116,69 @@ display:
 | GET | `/api/minion-profiles` | Minion profiles (name, color, size) |
 | POST | `/api/minion-profiles` | Update minion profiles |
 
+### MCP Control Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/minions` | List all minions with positions and states |
+| GET | `/api/minions/:sessionKey` | Get detailed info about a specific minion |
+| POST | `/api/minions/:sessionKey/move` | Walk minion to coordinates `{x, z}` |
+| POST | `/api/minions/:sessionKey/move-to/:targetKey` | Walk minion toward another minion |
+| POST | `/api/minions/:sessionKey/teleport` | Instantly move minion `{x, z}` |
+| POST | `/api/minions/:sessionKey/animate` | Play animation `{animation, duration}` |
+| POST | `/api/minions/:sessionKey/say` | Show speech bubble `{text, duration, sender}` |
+| POST | `/api/minions/batch` | Execute multiple commands at once |
+| POST | `/api/agents/:agentName/action` | Group action for all minions of an agent |
+| POST | `/api/minions/positions` | Client reports minion positions (internal) |
+
+## MCP Server (AI Control)
+
+The monitor includes an MCP server that lets AI agents control minions in the 3D world.
+
+### Available Tools
+
+| Tool | Description |
+|------|-------------|
+| `minion_list` | List all minions with positions and states |
+| `minion_move` | Walk a minion to coordinates |
+| `minion_move_to` | Walk a minion toward another minion |
+| `minion_teleport` | Instantly teleport a minion |
+| `minion_animate` | Play an animation (jump, wave, dance, spin, nod, shake, bow, clap, think, celebrate) |
+| `minion_say` | Show a speech bubble above a minion |
+| `minion_info` | Get detailed info about a minion |
+| `minion_batch` | Execute multiple commands at once |
+| `agent_action` | Group action (celebrate, gather, animate, say) |
+
+### Configuration
+
+Add to your OpenClaw MCP config:
+
+```json
+{
+  "mcpServers": {
+    "openclaw-monitor": {
+      "command": "node",
+      "args": ["/root/openclaw-monitor/mcp-server.js"],
+      "env": {
+        "MONITOR_HOST": "127.0.0.1",
+        "MONITOR_PORT": "7777"
+      }
+    }
+  }
+}
+```
+
+### Testing
+
+```bash
+# List minions
+echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}' | \
+  awk '{printf "Content-Length: %d\r\n\r\n%s", length($0), $0}' | \
+  cat - <(echo -n '{"jsonrpc":"2.0","method":"notifications/initialized"}' | awk '{printf "Content-Length: %d\r\n\r\n%s", length($0), $0}') \
+  <(echo -n '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"minion_list","arguments":{}}}' | awk '{printf "Content-Length: %d\r\n\r\n%s", length($0), $0}') | \
+  node mcp-server.js
+```
+
 ## Service Management
 
 ```bash

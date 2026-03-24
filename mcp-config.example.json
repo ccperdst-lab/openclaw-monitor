@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "openclaw-monitor": {
+      "command": "node",
+      "args": ["/root/openclaw-monitor/mcp-server.js"],
+      "env": {
+        "MONITOR_HOST": "127.0.0.1",
+        "MONITOR_PORT": "7777"
+      }
+    }
+  }
+}

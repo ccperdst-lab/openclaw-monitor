@@ -8,3 +8,7 @@ display:
   showCron: false
   showSubagent: false
   recentMinutes: 10  # only show thinking/tool messages from last N minutes in bubble
+
+mcp:
+  enabled: true
+  port: 7777  # MCP server uses the same monitor server for API calls

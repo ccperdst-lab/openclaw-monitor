@@ -28282,6 +28282,8 @@ function connectSSE() {
         initWorld(msg.data);
       } else if (msg.type === "event") {
         handleEvent(msg.data);
+      } else if (msg.type === "control") {
+        handleControl(msg.data);
       }
     } catch {
     }
@@ -28366,6 +28368,161 @@ function addLog(ev) {
   if (el.children.length > 80) el.removeChild(el.firstChild);
   el.scrollTop = el.scrollHeight;
 }
+function handleControl(data) {
+  const m = minions.find((mn) => mn.userData.sessionKey === data.sessionKey);
+  if (!m && data.action !== "batch") {
+    console.warn("Control: minion not found", data.sessionKey);
+    return;
+  }
+  const ud = m?.userData;
+  switch (data.action) {
+    case "move": {
+      if (!m) break;
+      let tx = data.x, tz = data.z;
+      if (ud.bounds) {
+        tx = Math.max(ud.bounds.minX, Math.min(ud.bounds.maxX, tx));
+        tz = Math.max(ud.bounds.minZ, Math.min(ud.bounds.maxZ, tz));
+      }
+      ud.targetX = tx;
+      ud.targetZ = tz;
+      ud.idleAction = "walk";
+      ud.idleTimer = 10;
+      if (data.speed) ud._mcpSpeed = data.speed;
+      break;
+    }
+    case "move_to_minion": {
+      if (!m) break;
+      const target = minions.find((mn) => mn.userData.sessionKey === data.targetKey);
+      if (!target) break;
+      const offset = data.offsetDistance || 1.5;
+      const angle = Math.random() * Math.PI * 2;
+      let tx = target.position.x + Math.cos(angle) * offset;
+      let tz = target.position.z + Math.sin(angle) * offset;
+      if (ud.bounds) {
+        tx = Math.max(ud.bounds.minX, Math.min(ud.bounds.maxX, tx));
+        tz = Math.max(ud.bounds.minZ, Math.min(ud.bounds.maxZ, tz));
+      }
+      ud.targetX = tx;
+      ud.targetZ = tz;
+      ud.idleAction = "walk";
+      ud.idleTimer = 10;
+      break;
+    }
+    case "teleport": {
+      if (!m) break;
+      let tx = data.x, tz = data.z;
+      if (ud.bounds) {
+        tx = Math.max(ud.bounds.minX, Math.min(ud.bounds.maxX, tx));
+        tz = Math.max(ud.bounds.minZ, Math.min(ud.bounds.maxZ, tz));
+      }
+      m.position.set(tx, 0.5, tz);
+      ud.targetX = tx;
+      ud.targetZ = tz;
+      m.scale.set(1.3, 1.3, 1.3);
+      setTimeout(() => {
+        m.scale.set(1, 1, 1);
+      }, 300);
+      break;
+    }
+    case "animate": {
+      if (!m) break;
+      triggerAnimation(m, data.animation, data.duration || 2);
+      break;
+    }
+    case "say": {
+      if (!m) break;
+      showMcpBubble(m, data.text, data.duration || 5, data.sender || "\u{1F916} MCP");
+      break;
+    }
+  }
+}
+var activeAnimations = {};
+function triggerAnimation(minion, animType, duration) {
+  const sk = minion.userData.sessionKey;
+  if (activeAnimations[sk]) {
+    clearTimeout(activeAnimations[sk].timer);
+  }
+  const endTime = Date.now() + duration * 1e3;
+  activeAnimations[sk] = { type: animType, endTime, timer: null };
+  const origScale = { x: minion.scale.x, y: minion.scale.y, z: minion.scale.z };
+  if (animType === "jump" || animType === "celebrate") {
+    minion.userData.attentionAnim = duration;
+    minion.userData.attentionType = "jump";
+  } else if (animType === "wave") {
+    minion.userData.attentionAnim = duration;
+    minion.userData.attentionType = "wave";
+  } else {
+    minion.userData.attentionAnim = duration;
+    minion.userData.attentionType = animType;
+  }
+  activeAnimations[sk].timer = setTimeout(() => {
+    delete activeAnimations[sk];
+    minion.userData.attentionAnim = 0;
+  }, duration * 1e3);
+}
+var mcpBubbles = {};
+function showMcpBubble(minion, text, duration, sender) {
+  const sk = minion.userData.sessionKey;
+  if (mcpBubbles[sk]) {
+    mcpBubbles[sk].remove();
+    delete mcpBubbles[sk];
+  }
+  const el = document.createElement("div");
+  el.className = "mcp-bubble";
+  el.innerHTML = `<div class="mcp-bub-hd">${esc(sender)}</div><div class="mcp-bub-text">${esc(text)}</div>`;
+  document.body.appendChild(el);
+  mcpBubbles[sk] = el;
+  function updatePos() {
+    if (!mcpBubbles[sk]) return;
+    const pos = new Vector3(minion.position.x, minion.position.y + 3.2, minion.position.z);
+    const sp = pos.clone().project(camera);
+    if (sp.z > 1) {
+      el.style.display = "none";
+      return;
+    }
+    el.style.display = "";
+    const x = (sp.x * 0.5 + 0.5) * window.innerWidth;
+    const y = (-sp.y * 0.5 + 0.5) * window.innerHeight;
+    el.style.left = x - 40 + "px";
+    el.style.top = y - el.offsetHeight - 10 + "px";
+  }
+  el._updatePos = updatePos;
+  updatePos();
+  setTimeout(() => {
+    if (mcpBubbles[sk] === el) {
+      el.style.opacity = "0";
+      el.style.transform = "translateY(-10px) scale(0.9)";
+      setTimeout(() => {
+        el.remove();
+        delete mcpBubbles[sk];
+      }, 300);
+    }
+  }, duration * 1e3);
+}
+var lastPosReport = 0;
+function reportPositions() {
+  const now = Date.now();
+  if (now - lastPosReport < 2e3) return;
+  lastPosReport = now;
+  const positions = {};
+  for (const m of minions) {
+    const ud = m.userData;
+    if (!ud.sessionKey) continue;
+    positions[ud.sessionKey] = {
+      x: m.position.x,
+      y: m.position.y,
+      z: m.position.z,
+      state: ud.state,
+      bounds: ud.bounds
+    };
+  }
+  fetch("/api/minions/positions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ positions })
+  }).catch(() => {
+  });
+}
 window.addEventListener("click", (e) => {
   if (isDragging) return;
   const mouse = new Vector2(
@@ -28448,7 +28605,9 @@ function animate() {
       const dx = ud.targetX - m.position.x, dz = ud.targetZ - m.position.z;
       const dist = Math.sqrt(dx * dx + dz * dz);
       if (dist > 0.1) {
-        const spd = 0.8 * dt;
+        const baseSpd = 0.8;
+        const spd = (ud._mcpSpeed || baseSpd) * dt;
+        delete ud._mcpSpeed;
         const nx = m.position.x + dx / dist * spd;
         const nz = m.position.z + dz / dist * spd;
         if (!collidesWithAny(nx, nz, ud.sessionKey)) {
@@ -28467,6 +28626,46 @@ function animate() {
       m.position.z = Math.max(ud.bounds.minZ, Math.min(ud.bounds.maxZ, m.position.z));
     }
     let yOff = Math.sin(time * 1.5 + ud.bobPhase) * 0.02;
+    const anim = activeAnimations[ud.sessionKey];
+    if (anim && Date.now() < anim.endTime) {
+      const elapsed = (anim.endTime - Date.now()) / 1e3;
+      const t = 1 - elapsed / (anim.endTime - Date.now() + elapsed);
+      switch (anim.type) {
+        case "dance":
+          m.rotation.y += Math.sin(time * 6) * 0.05;
+          yOff += Math.abs(Math.sin(time * 4)) * 0.15;
+          break;
+        case "spin":
+          m.rotation.y += dt * 8;
+          yOff += 0.05;
+          break;
+        case "nod":
+          m.children.forEach((c) => {
+            if (c.geometry?.type === "SphereGeometry") {
+              c.rotation.x = Math.sin(time * 5) * 0.2;
+            }
+          });
+          break;
+        case "shake":
+          m.position.x += Math.sin(time * 15) * 0.03;
+          break;
+        case "bow":
+          m.rotation.x = Math.sin(Math.min(1, (2 - elapsed) / 0.5) * Math.PI) * 0.3;
+          break;
+        case "clap":
+          m.children.forEach((c) => {
+            if (c.userData?.isArm) {
+              c.rotation.x = -0.8 + Math.sin(time * 10) * 0.3;
+              c.rotation.z = c.userData.side * (0.3 + Math.sin(time * 10) * 0.2);
+            }
+          });
+          break;
+        case "celebrate":
+          yOff += Math.abs(Math.sin(time * 5)) * 0.25;
+          m.rotation.y += Math.sin(time * 3) * 0.03;
+          break;
+      }
+    }
     if (ud.attentionAnim > 0) {
       ud.attentionAnim -= dt;
       const t = ud.attentionAnim;
@@ -28490,8 +28689,11 @@ function animate() {
     if (ud.notificationSprite) {
       ud.notificationSprite.position.y = 2.5 * (ud.heightScale || 1) * 0.5 + 1.8 + Math.sin(time * 3 + ud.bobPhase) * 0.1;
     }
+    const mcpBub = mcpBubbles[ud.sessionKey];
+    if (mcpBub && mcpBub._updatePos) mcpBub._updatePos();
     updateBubblePosition(m, time);
   });
+  reportPositions();
   renderer.render(scene, camera);
 }
 window.runCmd = function() {
