@@ -27783,7 +27783,7 @@ window.addEventListener("mousemove", (e) => {
   if (Math.abs(dx) > 2 || Math.abs(dy) > 2) dragStarted = true;
   yaw -= dx * 3e-3;
   pitch -= dy * 3e-3;
-  pitch = Math.max(-Math.PI / 2.5, Math.min(-0.1, pitch));
+  pitch = Math.max(-Math.PI / 2 + 0.05, Math.min(Math.PI / 2 - 0.05, pitch));
   lastMX = e.clientX;
   lastMY = e.clientY;
 });
