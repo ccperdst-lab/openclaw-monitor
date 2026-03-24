@@ -20,27 +20,52 @@ container.appendChild(renderer.domElement);
 let yaw = 0, pitch = -0.5;
 let moveSpeed = 12;
 const keys = { w: false, a: false, s: false, d: false, space: false, shift: false };
-let isDragging = false, lastMX = 0, lastMY = 0;
+let isDragging = false, dragStarted = false, lastMX = 0, lastMY = 0;
 
+// Focus management: track if user is interacting with a DOM overlay
+let interactingWithOverlay = false;
+
+// Helper: is event target on our canvas (not a DOM overlay)?
+function isCanvasEvent(e) {
+  return e.target === renderer.domElement;
+}
+
+// Helper: is event target inside a bubble?
+function isBubbleEvent(e) {
+  return !!e.target.closest('.bubble3d') || !!e.target.closest('.mcp-bubble');
+}
+
+// Canvas mouse handlers — only activate when clicking directly on canvas
 renderer.domElement.addEventListener('mousedown', e => {
   if (e.button !== 0) return;
-  isDragging = true; lastMX = e.clientX; lastMY = e.clientY;
-  renderer.domElement.classList.add('dragging'); e.preventDefault();
+  if (!isCanvasEvent(e)) return; // Don't interfere with overlay clicks
+  isDragging = true; dragStarted = false;
+  lastMX = e.clientX; lastMY = e.clientY;
+  renderer.domElement.classList.add('dragging');
+  e.preventDefault();
 });
 window.addEventListener('mousemove', e => {
   if (!isDragging) return;
-  yaw -= (e.clientX - lastMX) * 0.003;
-  pitch -= (e.clientY - lastMY) * 0.003;
+  const dx = e.clientX - lastMX, dy = e.clientY - lastMY;
+  if (Math.abs(dx) > 2 || Math.abs(dy) > 2) dragStarted = true;
+  yaw -= dx * 0.003;
+  pitch -= dy * 0.003;
   pitch = Math.max(-Math.PI/2.5, Math.min(-0.1, pitch));
   lastMX = e.clientX; lastMY = e.clientY;
 });
-window.addEventListener('mouseup', () => { isDragging = false; renderer.domElement.classList.remove('dragging'); });
+window.addEventListener('mouseup', () => {
+  if (isDragging) {
+    isDragging = false;
+    renderer.domElement.classList.remove('dragging');
+  }
+});
+
 function isInputFocused() {
   const tag = document.activeElement?.tagName;
   return tag === 'INPUT' || tag === 'TEXTAREA';
 }
 window.addEventListener('keydown', e => {
-  if (isInputFocused()) return;
+  if (isInputFocused() || interactingWithOverlay) return;
   if (e.code === 'KeyW') keys.w = true;
   else if (e.code === 'KeyA') keys.a = true;
   else if (e.code === 'KeyS') keys.s = true;
@@ -49,7 +74,7 @@ window.addEventListener('keydown', e => {
   else if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') keys.shift = true;
 });
 window.addEventListener('keyup', e => {
-  if (isInputFocused()) return;
+  if (isInputFocused() || interactingWithOverlay) return;
   if (e.code === 'KeyW') keys.w = false;
   else if (e.code === 'KeyA') keys.a = false;
   else if (e.code === 'KeyS') keys.s = false;
@@ -581,19 +606,60 @@ function getOrCreateBubble(sessionKey) {
     el = document.createElement('div');
     el.className = 'bubble3d';
     const sk = sessionKey;
-    el.innerHTML = `<div class="bub-hd"><span class="bub-avatar">🟡</span><span class="bub-user"></span><button class="bub-close" onclick="this.closest('.bubble3d').classList.remove('show');this.closest('.bubble3d')._dismissed=true">✕</button></div><div class="bub-msg"></div><div class="bub-acts collapsed" onclick="this.classList.toggle('collapsed')"><div class="bub-acts-hd"><span class="bub-acts-tri">▶</span><span class="bub-acts-lbl">思考过程</span><span class="bub-acts-cnt">0</span></div><div class="bub-acts-body"></div></div><div class="bub-chat"><input class="bub-chat-in" placeholder="直接对话..." /></div><div class="bub-foot"></div>`;
+    el.innerHTML = `<div class="bub-hd"><span class="bub-avatar">🟡</span><span class="bub-user"></span><button class="bub-close">✕</button></div><div class="bub-msg"></div><div class="bub-acts collapsed"><div class="bub-acts-hd"><span class="bub-acts-tri">▶</span><span class="bub-acts-lbl">思考过程</span><span class="bub-acts-cnt">0</span></div><div class="bub-acts-body"></div></div><div class="bub-chat"><input class="bub-chat-in" placeholder="直接对话..." /></div><div class="bub-foot"></div>`;
+
+    // --- Focus management: prevent events from reaching canvas ---
+    // Stop all mouse events from propagating out of the bubble
+    el.addEventListener('mousedown', (e) => { e.stopPropagation(); });
+    el.addEventListener('mouseup', (e) => { e.stopPropagation(); });
+    el.addEventListener('mousemove', (e) => { e.stopPropagation(); });
+
+    // Close button
+    const closeBtn = el.querySelector('.bub-close');
+    closeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      el.classList.remove('show');
+      el._dismissed = true;
+      interactingWithOverlay = false;
+      // Return focus to canvas area
+      renderer.domElement.focus();
+    });
+
+    // Collapse/expand thinking panel
+    const actsEl = el.querySelector('.bub-acts');
+    const actsHd = el.querySelector('.bub-acts-hd');
+    actsHd.addEventListener('click', (e) => {
+      e.stopPropagation();
+      actsEl.classList.toggle('collapsed');
+    });
+    // Also stop propagation on the acts body (clickable area)
+    actsEl.addEventListener('mousedown', (e) => { e.stopPropagation(); });
+
     // IME-safe input handling: Enter submits only when not in composition
     const inputEl = el.querySelector('.bub-chat-in');
     let isComposing = false;
     inputEl.addEventListener('compositionstart', () => { isComposing = true; });
     inputEl.addEventListener('compositionend', () => { isComposing = false; });
     inputEl.addEventListener('keydown', (e) => {
+      e.stopPropagation();
       if (e.key === 'Enter' && !isComposing) {
-        e.stopPropagation();
         e.preventDefault();
         sendDirectChat(sk, inputEl);
       }
+      // Escape closes bubble
+      if (e.key === 'Escape') {
+        el.classList.remove('show');
+        el._dismissed = true;
+        interactingWithOverlay = false;
+        inputEl.blur();
+      }
     });
+    // Track focus on input to prevent keyboard camera controls
+    inputEl.addEventListener('focus', () => { interactingWithOverlay = true; });
+    inputEl.addEventListener('blur', () => { interactingWithOverlay = false; });
+    // Stop mousedown on input from starting canvas drag
+    inputEl.addEventListener('mousedown', (e) => { e.stopPropagation(); });
+
     document.body.appendChild(el);
     bubbles[sessionKey] = el;
   }
@@ -912,6 +978,9 @@ function showMcpBubble(minion, text, duration, sender) {
   const el = document.createElement('div');
   el.className = 'mcp-bubble';
   el.innerHTML = `<div class="mcp-bub-hd">${esc(sender)}</div><div class="mcp-bub-text">${esc(text)}</div>`;
+  // Isolate events from canvas
+  el.addEventListener('mousedown', (e) => e.stopPropagation());
+  el.addEventListener('click', (e) => e.stopPropagation());
   document.body.appendChild(el);
   mcpBubbles[sk] = el;
 
@@ -966,7 +1035,10 @@ function reportPositions() {
 
 // ===== Click Detection =====
 window.addEventListener('click', (e) => {
-  if (isDragging) return;
+  // Don't process clicks that were part of a drag, or on DOM overlays
+  if (isDragging || dragStarted) return;
+  if (isBubbleEvent(e)) return;
+
   const mouse = new THREE.Vector2(
     (e.clientX / window.innerWidth) * 2 - 1,
     -(e.clientY / window.innerHeight) * 2 + 1
@@ -981,6 +1053,7 @@ window.addEventListener('click', (e) => {
       const b = bubbles[target.userData.sessionKey];
       if (b && b.classList.contains('show')) {
         b.classList.remove('show'); b._dismissed = true;
+        interactingWithOverlay = false;
       } else {
         // Load messages from API
         fetch(`/api/messages/${target.userData.sessionId}`).then(r => r.json()).then(data => {
@@ -1273,6 +1346,49 @@ window.addEventListener('resize', () => {
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
+
+// ===== Drawer / Sidebar Initialization =====
+(function initDrawer() {
+  const drawer = document.getElementById('drawer');
+  const toggle = document.getElementById('toggle');
+
+  // Toggle button
+  toggle.addEventListener('click', (e) => {
+    e.stopPropagation();
+    drawer.classList.toggle('shut');
+  });
+  toggle.addEventListener('mousedown', (e) => e.stopPropagation());
+
+  // Section collapse/expand
+  document.querySelectorAll('.sec-h').forEach(hd => {
+    hd.addEventListener('click', (e) => {
+      e.stopPropagation();
+      hd.parentElement.classList.toggle('off');
+    });
+  });
+
+  // CLI input: Enter to run, Escape to blur, isolate events
+  const cmdIn = document.getElementById('cmd-in');
+  if (cmdIn) {
+    cmdIn.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        window.runCmd();
+      }
+      if (e.key === 'Escape') {
+        cmdIn.blur();
+      }
+    });
+    cmdIn.addEventListener('focus', () => { interactingWithOverlay = true; });
+    cmdIn.addEventListener('blur', () => { interactingWithOverlay = false; });
+    cmdIn.addEventListener('mousedown', (e) => e.stopPropagation());
+  }
+
+  // Drawer body: stop mouse events from reaching canvas
+  drawer.addEventListener('mousedown', (e) => e.stopPropagation());
+  drawer.addEventListener('mouseup', (e) => e.stopPropagation());
+})();
 
 // ===== Start =====
 connectSSE();

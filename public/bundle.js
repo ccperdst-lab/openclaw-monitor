@@ -27754,11 +27754,21 @@ var pitch = -0.5;
 var moveSpeed = 12;
 var keys = { w: false, a: false, s: false, d: false, space: false, shift: false };
 var isDragging = false;
+var dragStarted = false;
 var lastMX = 0;
 var lastMY = 0;
+var interactingWithOverlay = false;
+function isCanvasEvent(e) {
+  return e.target === renderer.domElement;
+}
+function isBubbleEvent(e) {
+  return !!e.target.closest(".bubble3d") || !!e.target.closest(".mcp-bubble");
+}
 renderer.domElement.addEventListener("mousedown", (e) => {
   if (e.button !== 0) return;
+  if (!isCanvasEvent(e)) return;
   isDragging = true;
+  dragStarted = false;
   lastMX = e.clientX;
   lastMY = e.clientY;
   renderer.domElement.classList.add("dragging");
@@ -27766,22 +27776,26 @@ renderer.domElement.addEventListener("mousedown", (e) => {
 });
 window.addEventListener("mousemove", (e) => {
   if (!isDragging) return;
-  yaw -= (e.clientX - lastMX) * 3e-3;
-  pitch -= (e.clientY - lastMY) * 3e-3;
+  const dx = e.clientX - lastMX, dy = e.clientY - lastMY;
+  if (Math.abs(dx) > 2 || Math.abs(dy) > 2) dragStarted = true;
+  yaw -= dx * 3e-3;
+  pitch -= dy * 3e-3;
   pitch = Math.max(-Math.PI / 2.5, Math.min(-0.1, pitch));
   lastMX = e.clientX;
   lastMY = e.clientY;
 });
 window.addEventListener("mouseup", () => {
-  isDragging = false;
-  renderer.domElement.classList.remove("dragging");
+  if (isDragging) {
+    isDragging = false;
+    renderer.domElement.classList.remove("dragging");
+  }
 });
 function isInputFocused() {
   const tag = document.activeElement?.tagName;
   return tag === "INPUT" || tag === "TEXTAREA";
 }
 window.addEventListener("keydown", (e) => {
-  if (isInputFocused()) return;
+  if (isInputFocused() || interactingWithOverlay) return;
   if (e.code === "KeyW") keys.w = true;
   else if (e.code === "KeyA") keys.a = true;
   else if (e.code === "KeyS") keys.s = true;
@@ -27790,7 +27804,7 @@ window.addEventListener("keydown", (e) => {
   else if (e.code === "ShiftLeft" || e.code === "ShiftRight") keys.shift = true;
 });
 window.addEventListener("keyup", (e) => {
-  if (isInputFocused()) return;
+  if (isInputFocused() || interactingWithOverlay) return;
   if (e.code === "KeyW") keys.w = false;
   else if (e.code === "KeyA") keys.a = false;
   else if (e.code === "KeyS") keys.s = false;
@@ -28267,7 +28281,33 @@ function getOrCreateBubble(sessionKey) {
     el = document.createElement("div");
     el.className = "bubble3d";
     const sk = sessionKey;
-    el.innerHTML = `<div class="bub-hd"><span class="bub-avatar">\u{1F7E1}</span><span class="bub-user"></span><button class="bub-close" onclick="this.closest('.bubble3d').classList.remove('show');this.closest('.bubble3d')._dismissed=true">\u2715</button></div><div class="bub-msg"></div><div class="bub-acts collapsed" onclick="this.classList.toggle('collapsed')"><div class="bub-acts-hd"><span class="bub-acts-tri">\u25B6</span><span class="bub-acts-lbl">\u601D\u8003\u8FC7\u7A0B</span><span class="bub-acts-cnt">0</span></div><div class="bub-acts-body"></div></div><div class="bub-chat"><input class="bub-chat-in" placeholder="\u76F4\u63A5\u5BF9\u8BDD..." /></div><div class="bub-foot"></div>`;
+    el.innerHTML = `<div class="bub-hd"><span class="bub-avatar">\u{1F7E1}</span><span class="bub-user"></span><button class="bub-close">\u2715</button></div><div class="bub-msg"></div><div class="bub-acts collapsed"><div class="bub-acts-hd"><span class="bub-acts-tri">\u25B6</span><span class="bub-acts-lbl">\u601D\u8003\u8FC7\u7A0B</span><span class="bub-acts-cnt">0</span></div><div class="bub-acts-body"></div></div><div class="bub-chat"><input class="bub-chat-in" placeholder="\u76F4\u63A5\u5BF9\u8BDD..." /></div><div class="bub-foot"></div>`;
+    el.addEventListener("mousedown", (e) => {
+      e.stopPropagation();
+    });
+    el.addEventListener("mouseup", (e) => {
+      e.stopPropagation();
+    });
+    el.addEventListener("mousemove", (e) => {
+      e.stopPropagation();
+    });
+    const closeBtn = el.querySelector(".bub-close");
+    closeBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      el.classList.remove("show");
+      el._dismissed = true;
+      interactingWithOverlay = false;
+      renderer.domElement.focus();
+    });
+    const actsEl = el.querySelector(".bub-acts");
+    const actsHd = el.querySelector(".bub-acts-hd");
+    actsHd.addEventListener("click", (e) => {
+      e.stopPropagation();
+      actsEl.classList.toggle("collapsed");
+    });
+    actsEl.addEventListener("mousedown", (e) => {
+      e.stopPropagation();
+    });
     const inputEl = el.querySelector(".bub-chat-in");
     let isComposing = false;
     inputEl.addEventListener("compositionstart", () => {
@@ -28277,11 +28317,26 @@ function getOrCreateBubble(sessionKey) {
       isComposing = false;
     });
     inputEl.addEventListener("keydown", (e) => {
+      e.stopPropagation();
       if (e.key === "Enter" && !isComposing) {
-        e.stopPropagation();
         e.preventDefault();
         sendDirectChat(sk, inputEl);
       }
+      if (e.key === "Escape") {
+        el.classList.remove("show");
+        el._dismissed = true;
+        interactingWithOverlay = false;
+        inputEl.blur();
+      }
+    });
+    inputEl.addEventListener("focus", () => {
+      interactingWithOverlay = true;
+    });
+    inputEl.addEventListener("blur", () => {
+      interactingWithOverlay = false;
+    });
+    inputEl.addEventListener("mousedown", (e) => {
+      e.stopPropagation();
     });
     document.body.appendChild(el);
     bubbles[sessionKey] = el;
@@ -28584,6 +28639,8 @@ function showMcpBubble(minion, text, duration, sender) {
   const el = document.createElement("div");
   el.className = "mcp-bubble";
   el.innerHTML = `<div class="mcp-bub-hd">${esc(sender)}</div><div class="mcp-bub-text">${esc(text)}</div>`;
+  el.addEventListener("mousedown", (e) => e.stopPropagation());
+  el.addEventListener("click", (e) => e.stopPropagation());
   document.body.appendChild(el);
   mcpBubbles[sk] = el;
   function updatePos() {
@@ -28638,7 +28695,8 @@ function reportPositions() {
   });
 }
 window.addEventListener("click", (e) => {
-  if (isDragging) return;
+  if (isDragging || dragStarted) return;
+  if (isBubbleEvent(e)) return;
   const mouse = new Vector2(
     e.clientX / window.innerWidth * 2 - 1,
     -(e.clientY / window.innerHeight) * 2 + 1
@@ -28653,6 +28711,7 @@ window.addEventListener("click", (e) => {
       if (b && b.classList.contains("show")) {
         b.classList.remove("show");
         b._dismissed = true;
+        interactingWithOverlay = false;
       } else {
         fetch(`/api/messages/${target.userData.sessionId}`).then((r) => r.json()).then((data) => {
           if (data.messages) {
@@ -28893,6 +28952,43 @@ window.addEventListener("resize", () => {
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
+(function initDrawer() {
+  const drawer = document.getElementById("drawer");
+  const toggle = document.getElementById("toggle");
+  toggle.addEventListener("click", (e) => {
+    e.stopPropagation();
+    drawer.classList.toggle("shut");
+  });
+  toggle.addEventListener("mousedown", (e) => e.stopPropagation());
+  document.querySelectorAll(".sec-h").forEach((hd) => {
+    hd.addEventListener("click", (e) => {
+      e.stopPropagation();
+      hd.parentElement.classList.toggle("off");
+    });
+  });
+  const cmdIn = document.getElementById("cmd-in");
+  if (cmdIn) {
+    cmdIn.addEventListener("keydown", (e) => {
+      e.stopPropagation();
+      if (e.key === "Enter") {
+        e.preventDefault();
+        window.runCmd();
+      }
+      if (e.key === "Escape") {
+        cmdIn.blur();
+      }
+    });
+    cmdIn.addEventListener("focus", () => {
+      interactingWithOverlay = true;
+    });
+    cmdIn.addEventListener("blur", () => {
+      interactingWithOverlay = false;
+    });
+    cmdIn.addEventListener("mousedown", (e) => e.stopPropagation());
+  }
+  drawer.addEventListener("mousedown", (e) => e.stopPropagation());
+  drawer.addEventListener("mouseup", (e) => e.stopPropagation());
+})();
 connectSSE();
 animate();
 /*! Bundled license information:

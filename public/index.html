@@ -148,16 +148,16 @@
 <div id="drawer">
   <div class="dh"><h1>🟢 OPENCLAW 3D</h1><div class="sub">Agent Monitor — Direct FS</div></div>
   <div class="db">
-    <div class="sec"><div class="sec-h" onclick="this.parentElement.classList.toggle('off')">🏠 Agents <span class="arr">▼</span></div><div class="sec-b" id="b-agents"></div></div>
-    <div class="sec"><div class="sec-h" onclick="this.parentElement.classList.toggle('off')">📡 Sessions <span class="arr">▼</span></div><div class="sec-b" id="b-sessions"></div></div>
-    <div class="sec"><div class="sec-h" onclick="this.parentElement.classList.toggle('off')">📋 Events <span class="arr">▼</span></div><div class="sec-b" id="b-logs" style="max-height:260px;overflow-y:auto"></div></div>
-    <div class="sec"><div class="sec-h" onclick="this.parentElement.classList.toggle('off')">⌨️ CLI <span class="arr">▼</span></div><div class="sec-b">
-      <input class="cmd-input" id="cmd-in" placeholder="openclaw status ..." onkeydown="if(event.key==='Enter')runCmd()">
+    <div class="sec" id="sec-agents"><div class="sec-h">🏠 Agents <span class="arr">▼</span></div><div class="sec-b" id="b-agents"></div></div>
+    <div class="sec" id="sec-sessions"><div class="sec-h">📡 Sessions <span class="arr">▼</span></div><div class="sec-b" id="b-sessions"></div></div>
+    <div class="sec" id="sec-logs"><div class="sec-h">📋 Events <span class="arr">▼</span></div><div class="sec-b" id="b-logs" style="max-height:260px;overflow-y:auto"></div></div>
+    <div class="sec" id="sec-cli"><div class="sec-h">⌨️ CLI <span class="arr">▼</span></div><div class="sec-b">
+      <input class="cmd-input" id="cmd-in" placeholder="openclaw status ..." />
       <div class="cmd-result" id="cmd-out"></div>
     </div></div>
   </div>
 </div>
-<button id="toggle" onclick="document.getElementById('drawer').classList.toggle('shut')">☰</button>
+<button id="toggle">☰</button>
 <div id="help">WASD 移动 · 鼠标拖拽转向 · 滚轮缩放 · 点击小黄人查看详情</div>
 <script type="module" src="/bundle.js"></script>
 </body>
