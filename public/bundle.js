@@ -28396,9 +28396,10 @@ function animate() {
     const label = m.children.find((c) => c.userData && c.userData.isNameLabel);
     if (label) {
       const worldPos = new Vector3();
-      m.getWorldPosition(worldPos);
-      const labelWorldPos = worldPos.clone().add(new Vector3(0, 2.5, 0));
-      label.quaternion.copy(camera.quaternion).multiply(m.quaternion.clone().invert());
+      label.getWorldPosition(worldPos);
+      const target = camera.position.clone();
+      target.y = worldPos.y;
+      label.lookAt(target);
       label.position.y = 2.5;
     }
   });

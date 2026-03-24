@@ -24,6 +24,17 @@ function getSessionDirs() {
 let state = { agents: [], channels: [], bindings: [], gateway: {} };
 const sseClients = new Set();
 
+// ===== Logging =====
+const LOG_DIR = '/tmp/openclaw';
+const LOG_FILE = path.join(LOG_DIR, 'monitor.log');
+try { fs.mkdirSync(LOG_DIR, { recursive: true }); } catch {}
+function log(level, msg) {
+  const ts = new Date().toISOString();
+  const line = `[${ts}] [${level.toUpperCase()}] ${msg}`;
+  console.log(line);
+  try { fs.appendFileSync(LOG_FILE, line + '\n'); } catch {}
+}
+
 // Build agents + sessions dynamically from sessionMap
 function buildAgentState() {
   const config = (() => { try { return JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8')); } catch { return {}; } })();
@@ -155,7 +166,13 @@ function watchSession(sessionKey, sessionId) {
   console.log('Watching session:', sessionKey, '->', sessionId, 'size:', lastSize);
   const watcher = chokidar.watch(filePath, { persistent: true });
 
+  let lastHash = ''; // dedup: skip if same content processed recently
+  let debounceTimer = null;
+
   watcher.on('change', () => {
+    // Debounce: wait 200ms after last change event before processing
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
     try {
       const stat = fs.statSync(filePath);
       if (stat.size <= lastSize) { lastSize = 0; return; }
@@ -164,8 +181,13 @@ function watchSession(sessionKey, sessionId) {
       stream.on('data', c => buf += c);
       stream.on('end', () => {
         lastSize = stat.size;
+        // Dedup: skip if exact same content was just processed
+        const hash = buf.slice(0, 200);
+        if (hash === lastHash) return;
+        lastHash = hash;
+
         const lines = buf.split('\n').filter(Boolean);
-        console.log('Session', sessionKey, 'got', lines.length, 'new lines');
+        log('info', `Session ${sessionKey}: ${lines.length} new lines`);
         lines.forEach(line => {
           const parsed = parseSessionEntry(line);
           if (!parsed) return;
@@ -174,35 +196,43 @@ function watchSession(sessionKey, sessionId) {
 
           if (parsed.role === 'user') {
             let rawText = parsed.texts.join(' ');
-            // Extract sender_id from metadata block
             const senderMatch = rawText.match(/"sender_id":\s*"(ou_\w+)"/);
-            // Also try to extract sender name from the @ mention in the message
             const atMatch = rawText.match(/<at[^>]*>([^<]*)<\/at>/);
-            sm.lastUserMsg = cleanUserMessage(rawText);
+            const msg = cleanUserMessage(rawText);
+            // Dedup: skip if same message was just broadcast
+            if (msg === sm._lastBroadcastMsg) return;
+            sm._lastBroadcastMsg = msg;
+            sm.lastUserMsg = msg;
             sm.lastUserName = atMatch?.[1] || '';
             if (senderMatch && !sm.lastUserName) {
               resolveFeishuName(senderMatch[1]).then(name => {
                 sm.lastUserName = name;
-                console.log('Resolved:', senderMatch[1], '->', name);
-                broadcast({ type: 'event', data: { type: 'user_msg', session: sessionKey, agentId: agentFromSession(sessionKey), msg: sm.lastUserMsg, userName: name, ts: new Date().toISOString() }});
-              }).catch(e => console.error('Name resolve error:', e.message));
+                log('info', `Resolved: ${senderMatch[1]} → ${name}`);
+                broadcast({ type: 'event', data: { type: 'user_msg', session: sessionKey, agentId: agentFromSession(sessionKey), msg, userName: name, ts: new Date().toISOString() }});
+              }).catch(e => log('error', `Name resolve: ${e.message}`));
             } else {
-              broadcast({ type: 'event', data: { type: 'user_msg', session: sessionKey, agentId: agentFromSession(sessionKey), msg: sm.lastUserMsg, userName: sm.lastUserName, ts: new Date().toISOString() }});
+              broadcast({ type: 'event', data: { type: 'user_msg', session: sessionKey, agentId: agentFromSession(sessionKey), msg, userName: sm.lastUserName, ts: new Date().toISOString() }});
             }
           }
           if (parsed.role === 'assistant') {
             if (parsed.thinking) {
-              sm.lastThinking = parsed.thinking.slice(0, 200);
-              broadcast({ type: 'event', data: { type: 'thinking_content', session: sessionKey, agentId: agentFromSession(sessionKey), thinking: sm.lastThinking, ts: new Date().toISOString() }});
+              const think = parsed.thinking.slice(0, 200);
+              if (think !== sm._lastThink) {
+                sm._lastThink = think;
+                sm.lastThinking = think;
+                broadcast({ type: 'event', data: { type: 'thinking_content', session: sessionKey, agentId: agentFromSession(sessionKey), thinking: think, ts: new Date().toISOString() }});
+              }
             }
-            if (parsed.toolName) {
+            if (parsed.toolName && parsed.toolName !== sm._lastTool) {
+              sm._lastTool = parsed.toolName;
               sm.lastTool = parsed.toolName;
               broadcast({ type: 'event', data: { type: 'tool_detail', session: sessionKey, agentId: agentFromSession(sessionKey), tool: parsed.toolName, args: parsed.toolArgs, ts: new Date().toISOString() }});
             }
           }
         });
       });
-    } catch (e) { console.error('Session read error:', e.message); }
+    } catch (e) { log('error', `Session read: ${e.message}`); }
+    }, 200); // debounce
   });
 
   sessionFiles[sessionKey] = { watcher, path: filePath };

@@ -1455,17 +1455,17 @@ function animate() {
 
   animateMinions(time, dt);
   updateBubbles();
-  // Billboard: make all name labels face camera (counter minion rotation)
+  // Billboard: make all name labels face camera (Y-axis only for stability)
   minions.forEach(m => {
     const label = m.children.find(c => c.userData && c.userData.isNameLabel);
     if (label) {
-      // Get world position of minion
+      // Get label world position
       const worldPos = new THREE.Vector3();
-      m.getWorldPosition(worldPos);
-      // Look at camera from label's world position
-      const labelWorldPos = worldPos.clone().add(new THREE.Vector3(0, 2.5, 0));
-      // Counter-rotate: label.quaternion = camera.quaternion * minion.quaternion^-1
-      label.quaternion.copy(camera.quaternion).multiply(m.quaternion.clone().invert());
+      label.getWorldPosition(worldPos);
+      // Look at camera, keeping label upright (only Y rotation)
+      const target = camera.position.clone();
+      target.y = worldPos.y; // ignore vertical difference
+      label.lookAt(target);
       label.position.y = 2.5;
     }
   });
