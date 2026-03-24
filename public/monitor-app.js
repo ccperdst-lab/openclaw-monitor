@@ -35,8 +35,22 @@ window.addEventListener('mousemove', e => {
   lastMX = e.clientX; lastMY = e.clientY;
 });
 window.addEventListener('mouseup', () => { isDragging = false; renderer.domElement.classList.remove('dragging'); });
-window.addEventListener('keydown', e => { const k = e.key.toLowerCase(); if (k in keys) keys[k] = true; });
-window.addEventListener('keyup', e => { const k = e.key.toLowerCase(); if (k in keys) keys[k] = false; });
+window.addEventListener('keydown', e => {
+  if (e.code === 'KeyW') keys.w = true;
+  else if (e.code === 'KeyA') keys.a = true;
+  else if (e.code === 'KeyS') keys.s = true;
+  else if (e.code === 'KeyD') keys.d = true;
+  else if (e.code === 'Space') keys.space = true;
+  else if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') keys.shift = true;
+});
+window.addEventListener('keyup', e => {
+  if (e.code === 'KeyW') keys.w = false;
+  else if (e.code === 'KeyA') keys.a = false;
+  else if (e.code === 'KeyS') keys.s = false;
+  else if (e.code === 'KeyD') keys.d = false;
+  else if (e.code === 'Space') keys.space = false;
+  else if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') keys.shift = false;
+});
 window.addEventListener('wheel', e => { moveSpeed = Math.max(4, Math.min(30, moveSpeed - e.deltaY * 0.01)); }, { passive: true });
 
 // Lighting
@@ -632,8 +646,8 @@ function animate() {
   const dt = Math.min(clock.getDelta(), 0.05);
   const time = clock.getElapsedTime();
 
-  // Camera movement
-  const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
+  // Camera movement (must match lookAt direction: sin(yaw), 0, cos(yaw))
+  const forward = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
   // right = up × forward (right-handed system)
   const right = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), forward).normalize();
   const speed = moveSpeed * dt;

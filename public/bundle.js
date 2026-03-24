@@ -27699,12 +27699,20 @@ window.addEventListener("mouseup", () => {
   renderer.domElement.classList.remove("dragging");
 });
 window.addEventListener("keydown", (e) => {
-  const k = e.key.toLowerCase();
-  if (k in keys) keys[k] = true;
+  if (e.code === "KeyW") keys.w = true;
+  else if (e.code === "KeyA") keys.a = true;
+  else if (e.code === "KeyS") keys.s = true;
+  else if (e.code === "KeyD") keys.d = true;
+  else if (e.code === "Space") keys.space = true;
+  else if (e.code === "ShiftLeft" || e.code === "ShiftRight") keys.shift = true;
 });
 window.addEventListener("keyup", (e) => {
-  const k = e.key.toLowerCase();
-  if (k in keys) keys[k] = false;
+  if (e.code === "KeyW") keys.w = false;
+  else if (e.code === "KeyA") keys.a = false;
+  else if (e.code === "KeyS") keys.s = false;
+  else if (e.code === "KeyD") keys.d = false;
+  else if (e.code === "Space") keys.space = false;
+  else if (e.code === "ShiftLeft" || e.code === "ShiftRight") keys.shift = false;
 });
 window.addEventListener("wheel", (e) => {
   moveSpeed = Math.max(4, Math.min(30, moveSpeed - e.deltaY * 0.01));
@@ -28278,7 +28286,7 @@ function animate() {
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(), 0.05);
   const time = clock.getElapsedTime();
-  const forward = new Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
+  const forward = new Vector3(Math.sin(yaw), 0, Math.cos(yaw));
   const right = new Vector3().crossVectors(new Vector3(0, 1, 0), forward).normalize();
   const speed = moveSpeed * dt;
   if (keys.w) camera.position.addScaledVector(forward, speed);
