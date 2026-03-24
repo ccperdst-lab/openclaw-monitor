@@ -44,6 +44,9 @@ document.addEventListener('mousemove', e => {
 
 // Keyboard
 window.addEventListener('keydown', e => {
+  // Skip game controls when typing in input/textarea
+  const tag = e.target.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable) return;
   if (e.key.toLowerCase() === 'w') keys.w = true;
   if (e.key.toLowerCase() === 'a') keys.a = true;
   if (e.key.toLowerCase() === 's') keys.s = true;
@@ -57,6 +60,8 @@ window.addEventListener('keydown', e => {
   }
 });
 window.addEventListener('keyup', e => {
+  const tag = e.target.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable) return;
   if (e.key.toLowerCase() === 'w') keys.w = false;
   if (e.key.toLowerCase() === 'a') keys.a = false;
   if (e.key.toLowerCase() === 's') keys.s = false;

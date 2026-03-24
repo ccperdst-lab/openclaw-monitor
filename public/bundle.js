@@ -27121,6 +27121,8 @@ document.addEventListener("mousemove", (e) => {
   pitch = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, pitch));
 });
 window.addEventListener("keydown", (e) => {
+  const tag = e.target.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || e.target.isContentEditable) return;
   if (e.key.toLowerCase() === "w") keys.w = true;
   if (e.key.toLowerCase() === "a") keys.a = true;
   if (e.key.toLowerCase() === "s") keys.s = true;
@@ -27139,6 +27141,8 @@ window.addEventListener("keydown", (e) => {
   }
 });
 window.addEventListener("keyup", (e) => {
+  const tag = e.target.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || e.target.isContentEditable) return;
   if (e.key.toLowerCase() === "w") keys.w = false;
   if (e.key.toLowerCase() === "a") keys.a = false;
   if (e.key.toLowerCase() === "s") keys.s = false;
