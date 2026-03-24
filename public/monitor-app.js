@@ -212,7 +212,8 @@ function createMinion(profile) {
     // Session info
     sessionKey: '', sessionId: '', sessionType: '', sessionLabel: '', agentName: '',
     // Bubble state
-    userMsg: '', userName: '', thinkLog: [], toolLog: [], replyText: '', replyCount: 0,
+    userMsg: '', userName: '', eventLog: [], replyText: '', replyCount: 0,
+    // eventLog: [{ type: 'think'|'tool_use'|'tool_result'|'reply_snippet', icon, text, detail, time }]
     lastEventTime: 0,
     // Saved chat input (preserved across bubble close/open)
     savedInput: '',
@@ -461,8 +462,7 @@ function initWorld(worldData) {
         userMsg: m.userData.userMsg,
         userName: m.userData.userName,
         state: m.userData.state,
-        thinkLog: m.userData.thinkLog,
-        toolLog: m.userData.toolLog,
+        eventLog: m.userData.eventLog,
         replyText: m.userData.replyText,
         replyCount: m.userData.replyCount,
       };
@@ -550,8 +550,7 @@ function initWorld(worldData) {
         m.userData.userMsg = sb.userMsg;
         m.userData.userName = sb.userName;
         m.userData.state = sb.state;
-        m.userData.thinkLog = sb.thinkLog;
-        m.userData.toolLog = sb.toolLog;
+        m.userData.eventLog = sb.eventLog;
         m.userData.replyText = sb.replyText;
         m.userData.replyCount = sb.replyCount;
         const el = getOrCreateBubble(sess.key);
@@ -622,21 +621,26 @@ function updateBubbleContent(m) {
   // User message
   el.querySelector('.bub-msg').textContent = ud.userMsg || '';
 
-  // Thinking/tools
+  // Thinking/tools - interleaved from unified eventLog
   const actsBody = el.querySelector('.bub-acts-body');
   const items = [];
-  for (const t of ud.thinkLog) {
-    const text = typeof t === 'string' ? t : t.text;
-    const time = typeof t === 'string' ? '' : t.time;
-    items.push(`<div class="bact bact-think"><span>💭</span><span>${esc(text)}${time ? ` <em style="color:#999;font-size:9px">${esc(time)}</em>` : ''}</span></div>`);
-  }
-  for (const t of ud.toolLog) {
-    const time = t.time || '';
-    items.push(`<div class="bact bact-tool"><span>🔧</span><span>${esc(t.name)} <em>${esc(t.args || '')}</em>${time ? ` <em style="color:#999;font-size:9px">${esc(time)}</em>` : ''}</span></div>`);
+  const log = ud.eventLog || [];
+  for (const evt of log) {
+    if (evt.type === 'think') {
+      items.push(`<div class="bact bact-think"><span>💭</span><span>${esc(evt.text)}${evt.time ? ` <em style="color:#999;font-size:9px">${esc(evt.time)}</em>` : ''}</span></div>`);
+    } else if (evt.type === 'tool_use') {
+      items.push(`<div class="bact bact-tool"><span>🔧</span><span>${esc(evt.text)} <em>${esc(evt.detail || '')}</em>${evt.time ? ` <em style="color:#999;font-size:9px">${esc(evt.time)}</em>` : ''}</span></div>`);
+    } else if (evt.type === 'tool_result') {
+      items.push(`<div class="bact bact-result"><span>📋</span><span>${esc(evt.text)} <em>${esc(evt.detail || '')}</em>${evt.time ? ` <em style="color:#999;font-size:9px">${esc(evt.time)}</em>` : ''}</span></div>`);
+    } else if (evt.type === 'reply_snippet') {
+      items.push(`<div class="bact bact-reply"><span>💬</span><span>${esc(evt.text)}${evt.time ? ` <em style="color:#999;font-size:9px">${esc(evt.time)}</em>` : ''}</span></div>`);
+    }
   }
   if (ud.replyText) items.push(`<div class="bact bact-reply"><span>💬</span><span>${esc(ud.replyText)}</span></div>`);
-  actsBody.innerHTML = items.slice(-20).join('');
-  el.querySelector('.bub-acts-cnt').textContent = ud.thinkLog.length + ud.toolLog.length;
+  actsBody.innerHTML = items.slice(-30).join('');
+  const thinkCount = log.filter(e => e.type === 'think').length;
+  const toolCount = log.filter(e => e.type === 'tool_use' || e.type === 'tool_result').length;
+  el.querySelector('.bub-acts-cnt').textContent = thinkCount + toolCount;
 
   // State class
   el.classList.remove('s-think', 's-stream', 's-done', 's-error');
@@ -645,10 +649,12 @@ function updateBubbleContent(m) {
   else el.classList.add('s-done');
 
   // Footer
+  const tc = log.filter(e => e.type === 'think').length;
+  const oc = log.filter(e => e.type === 'tool_use' || e.type === 'tool_result').length;
   el.querySelector('.bub-foot').textContent =
-    ud.state === 'thinking' ? `🧠 思考中 (${ud.thinkLog.length}步, ${ud.toolLog.length}工具)...` :
+    ud.state === 'thinking' ? `🧠 思考中 (${tc}步, ${oc}工具)...` :
     ud.state === 'streaming' ? `✍️ 流式输出中...` :
-    `✅ 思考了${ud.thinkLog.length}步 · 🔧${ud.toolLog.length}工具 · 📤${ud.replyCount}条`;
+    `✅ 思考了${tc}步 · 🔧${oc}工具 · 📤${ud.replyCount}条`;
 }
 
 function showBubble(m) {
@@ -697,32 +703,30 @@ function handleEvent(ev) {
   if (ev.type === 'user_msg') {
     ud.userMsg = ev.msg || '';
     ud.userName = ev.userName || '';
-    ud.thinkLog = []; ud.toolLog = []; ud.replyText = ''; ud.replyCount = 0;
+    ud.eventLog = []; ud.replyText = ''; ud.replyCount = 0;
     ud.state = 'thinking'; ud.lastEventTime = Date.now();
     const b = bubbles[ud.sessionKey]; if (b) b._dismissed = false;
     showBubble(m);
   } else if (ev.type === 'thinking') {
     const now = new Date();
-    ud.thinkLog.push({ text: (ev.thinking || '').slice(0, 150), time: now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) });
+    ud.eventLog.push({ type: 'think', text: (ev.thinking || '').slice(0, 150), time: now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) });
     ud.state = 'thinking'; ud.lastEventTime = Date.now();
     const b = bubbles[ud.sessionKey]; if (b) b._dismissed = false;
     showBubble(m);
   } else if (ev.type === 'tool_use') {
     const now = new Date();
-    ud.toolLog.push({ name: ev.tool, args: ev.args, time: now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) });
+    ud.eventLog.push({ type: 'tool_use', text: ev.tool, detail: ev.args, time: now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) });
     ud.state = 'thinking'; ud.lastEventTime = Date.now();
     showBubble(m);
   } else if (ev.type === 'tool_result') {
     const now = new Date();
-    ud.toolLog.push({ name: ev.tool + ' ✓', args: ev.result, time: now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) });
+    ud.eventLog.push({ type: 'tool_result', text: ev.tool + ' ✓', detail: ev.result, time: now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) });
     showBubble(m);
   } else if (ev.type === 'reply_intermediate') {
-    // Agent is still working but has some text to show (alongside tool calls)
-    const text = ev.text || '';
-    ud.replyText = text;
+    const now = new Date();
+    ud.eventLog.push({ type: 'reply_snippet', text: (ev.text || '').slice(0, 120), time: now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) });
+    ud.replyText = ev.text || '';
     ud.state = 'thinking'; ud.lastEventTime = Date.now();
-    // Show as a live snippet in the tool log
-    ud.toolLog.push({ name: '💬 回复片段', args: text.slice(0, 120), time: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) });
     showBubble(m);
   } else if (ev.type === 'reply_text') {
     ud.replyText = ev.text || '';
@@ -786,8 +790,15 @@ window.addEventListener('click', (e) => {
             if (last) target.userData.userMsg = last.text || '';
             const lastReply = data.messages.filter(m => m.role === 'assistant' && m.texts?.length).pop();
             if (lastReply) target.userData.replyText = lastReply.texts.join(' ').slice(0, 200);
-            target.userData.thinkLog = data.messages.filter(m => m.role === 'assistant' && m.thinking).slice(-3).map(m => m.thinking.slice(0, 100));
-            target.userData.toolLog = data.messages.filter(m => m.role === 'toolResult').slice(-5).map(m => ({ name: m.toolName, args: m.result?.slice(0, 60) }));
+            // Build eventLog from historical messages
+            const histLog = [];
+            data.messages.filter(m => m.role === 'assistant' && m.thinking).slice(-3).forEach(m => {
+              histLog.push({ type: 'think', text: m.thinking.slice(0, 100) });
+            });
+            data.messages.filter(m => m.role === 'toolResult').slice(-5).forEach(m => {
+              histLog.push({ type: 'tool_result', text: m.toolName, detail: m.result?.slice(0, 60) });
+            });
+            target.userData.eventLog = histLog;
           }
           const b2 = getOrCreateBubble(target.userData.sessionKey);
           b2._dismissed = false;
@@ -932,7 +943,7 @@ window.sendDirectChat = function(sessionKey, inputEl) {
   const ud = minion.userData;
   ud.userMsg = text;
   ud.userName = '🖥️ Monitor';
-  ud.thinkLog = []; ud.toolLog = []; ud.replyText = '';
+  ud.eventLog = []; ud.replyText = '';
   ud.state = 'thinking'; ud.lastEventTime = Date.now();
   showBubble(minion);
 

@@ -27899,10 +27899,10 @@ function createMinion(profile) {
     // Bubble state
     userMsg: "",
     userName: "",
-    thinkLog: [],
-    toolLog: [],
+    eventLog: [],
     replyText: "",
     replyCount: 0,
+    // eventLog: [{ type: 'think'|'tool_use'|'tool_result'|'reply_snippet', icon, text, detail, time }]
     lastEventTime: 0,
     // Saved chat input (preserved across bubble close/open)
     savedInput: "",
@@ -28090,8 +28090,7 @@ function initWorld(worldData) {
         userMsg: m.userData.userMsg,
         userName: m.userData.userName,
         state: m.userData.state,
-        thinkLog: m.userData.thinkLog,
-        toolLog: m.userData.toolLog,
+        eventLog: m.userData.eventLog,
         replyText: m.userData.replyText,
         replyCount: m.userData.replyCount
       };
@@ -28163,8 +28162,7 @@ function initWorld(worldData) {
         m.userData.userMsg = sb.userMsg;
         m.userData.userName = sb.userName;
         m.userData.state = sb.state;
-        m.userData.thinkLog = sb.thinkLog;
-        m.userData.toolLog = sb.toolLog;
+        m.userData.eventLog = sb.eventLog;
         m.userData.replyText = sb.replyText;
         m.userData.replyCount = sb.replyCount;
         const el = getOrCreateBubble(sess.key);
@@ -28234,23 +28232,30 @@ function updateBubbleContent(m) {
   el.querySelector(".bub-msg").textContent = ud.userMsg || "";
   const actsBody = el.querySelector(".bub-acts-body");
   const items = [];
-  for (const t of ud.thinkLog) {
-    const text = typeof t === "string" ? t : t.text;
-    const time = typeof t === "string" ? "" : t.time;
-    items.push(`<div class="bact bact-think"><span>\u{1F4AD}</span><span>${esc(text)}${time ? ` <em style="color:#999;font-size:9px">${esc(time)}</em>` : ""}</span></div>`);
-  }
-  for (const t of ud.toolLog) {
-    const time = t.time || "";
-    items.push(`<div class="bact bact-tool"><span>\u{1F527}</span><span>${esc(t.name)} <em>${esc(t.args || "")}</em>${time ? ` <em style="color:#999;font-size:9px">${esc(time)}</em>` : ""}</span></div>`);
+  const log2 = ud.eventLog || [];
+  for (const evt of log2) {
+    if (evt.type === "think") {
+      items.push(`<div class="bact bact-think"><span>\u{1F4AD}</span><span>${esc(evt.text)}${evt.time ? ` <em style="color:#999;font-size:9px">${esc(evt.time)}</em>` : ""}</span></div>`);
+    } else if (evt.type === "tool_use") {
+      items.push(`<div class="bact bact-tool"><span>\u{1F527}</span><span>${esc(evt.text)} <em>${esc(evt.detail || "")}</em>${evt.time ? ` <em style="color:#999;font-size:9px">${esc(evt.time)}</em>` : ""}</span></div>`);
+    } else if (evt.type === "tool_result") {
+      items.push(`<div class="bact bact-result"><span>\u{1F4CB}</span><span>${esc(evt.text)} <em>${esc(evt.detail || "")}</em>${evt.time ? ` <em style="color:#999;font-size:9px">${esc(evt.time)}</em>` : ""}</span></div>`);
+    } else if (evt.type === "reply_snippet") {
+      items.push(`<div class="bact bact-reply"><span>\u{1F4AC}</span><span>${esc(evt.text)}${evt.time ? ` <em style="color:#999;font-size:9px">${esc(evt.time)}</em>` : ""}</span></div>`);
+    }
   }
   if (ud.replyText) items.push(`<div class="bact bact-reply"><span>\u{1F4AC}</span><span>${esc(ud.replyText)}</span></div>`);
-  actsBody.innerHTML = items.slice(-20).join("");
-  el.querySelector(".bub-acts-cnt").textContent = ud.thinkLog.length + ud.toolLog.length;
+  actsBody.innerHTML = items.slice(-30).join("");
+  const thinkCount = log2.filter((e) => e.type === "think").length;
+  const toolCount = log2.filter((e) => e.type === "tool_use" || e.type === "tool_result").length;
+  el.querySelector(".bub-acts-cnt").textContent = thinkCount + toolCount;
   el.classList.remove("s-think", "s-stream", "s-done", "s-error");
   if (ud.state === "thinking") el.classList.add("s-think");
   else if (ud.state === "streaming") el.classList.add("s-stream");
   else el.classList.add("s-done");
-  el.querySelector(".bub-foot").textContent = ud.state === "thinking" ? `\u{1F9E0} \u601D\u8003\u4E2D (${ud.thinkLog.length}\u6B65, ${ud.toolLog.length}\u5DE5\u5177)...` : ud.state === "streaming" ? `\u270D\uFE0F \u6D41\u5F0F\u8F93\u51FA\u4E2D...` : `\u2705 \u601D\u8003\u4E86${ud.thinkLog.length}\u6B65 \xB7 \u{1F527}${ud.toolLog.length}\u5DE5\u5177 \xB7 \u{1F4E4}${ud.replyCount}\u6761`;
+  const tc = log2.filter((e) => e.type === "think").length;
+  const oc = log2.filter((e) => e.type === "tool_use" || e.type === "tool_result").length;
+  el.querySelector(".bub-foot").textContent = ud.state === "thinking" ? `\u{1F9E0} \u601D\u8003\u4E2D (${tc}\u6B65, ${oc}\u5DE5\u5177)...` : ud.state === "streaming" ? `\u270D\uFE0F \u6D41\u5F0F\u8F93\u51FA\u4E2D...` : `\u2705 \u601D\u8003\u4E86${tc}\u6B65 \xB7 \u{1F527}${oc}\u5DE5\u5177 \xB7 \u{1F4E4}${ud.replyCount}\u6761`;
 }
 function showBubble(m) {
   const el = getOrCreateBubble(m.userData.sessionKey);
@@ -28293,8 +28298,7 @@ function handleEvent(ev) {
   if (ev.type === "user_msg") {
     ud.userMsg = ev.msg || "";
     ud.userName = ev.userName || "";
-    ud.thinkLog = [];
-    ud.toolLog = [];
+    ud.eventLog = [];
     ud.replyText = "";
     ud.replyCount = 0;
     ud.state = "thinking";
@@ -28304,7 +28308,7 @@ function handleEvent(ev) {
     showBubble(m);
   } else if (ev.type === "thinking") {
     const now = /* @__PURE__ */ new Date();
-    ud.thinkLog.push({ text: (ev.thinking || "").slice(0, 150), time: now.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) });
+    ud.eventLog.push({ type: "think", text: (ev.thinking || "").slice(0, 150), time: now.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) });
     ud.state = "thinking";
     ud.lastEventTime = Date.now();
     const b = bubbles[ud.sessionKey];
@@ -28312,20 +28316,20 @@ function handleEvent(ev) {
     showBubble(m);
   } else if (ev.type === "tool_use") {
     const now = /* @__PURE__ */ new Date();
-    ud.toolLog.push({ name: ev.tool, args: ev.args, time: now.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) });
+    ud.eventLog.push({ type: "tool_use", text: ev.tool, detail: ev.args, time: now.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) });
     ud.state = "thinking";
     ud.lastEventTime = Date.now();
     showBubble(m);
   } else if (ev.type === "tool_result") {
     const now = /* @__PURE__ */ new Date();
-    ud.toolLog.push({ name: ev.tool + " \u2713", args: ev.result, time: now.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) });
+    ud.eventLog.push({ type: "tool_result", text: ev.tool + " \u2713", detail: ev.result, time: now.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) });
     showBubble(m);
   } else if (ev.type === "reply_intermediate") {
-    const text = ev.text || "";
-    ud.replyText = text;
+    const now = /* @__PURE__ */ new Date();
+    ud.eventLog.push({ type: "reply_snippet", text: (ev.text || "").slice(0, 120), time: now.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) });
+    ud.replyText = ev.text || "";
     ud.state = "thinking";
     ud.lastEventTime = Date.now();
-    ud.toolLog.push({ name: "\u{1F4AC} \u56DE\u590D\u7247\u6BB5", args: text.slice(0, 120), time: (/* @__PURE__ */ new Date()).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) });
     showBubble(m);
   } else if (ev.type === "reply_text") {
     ud.replyText = ev.text || "";
@@ -28385,8 +28389,14 @@ window.addEventListener("click", (e) => {
             if (last) target.userData.userMsg = last.text || "";
             const lastReply = data.messages.filter((m) => m.role === "assistant" && m.texts?.length).pop();
             if (lastReply) target.userData.replyText = lastReply.texts.join(" ").slice(0, 200);
-            target.userData.thinkLog = data.messages.filter((m) => m.role === "assistant" && m.thinking).slice(-3).map((m) => m.thinking.slice(0, 100));
-            target.userData.toolLog = data.messages.filter((m) => m.role === "toolResult").slice(-5).map((m) => ({ name: m.toolName, args: m.result?.slice(0, 60) }));
+            const histLog = [];
+            data.messages.filter((m) => m.role === "assistant" && m.thinking).slice(-3).forEach((m) => {
+              histLog.push({ type: "think", text: m.thinking.slice(0, 100) });
+            });
+            data.messages.filter((m) => m.role === "toolResult").slice(-5).forEach((m) => {
+              histLog.push({ type: "tool_result", text: m.toolName, detail: m.result?.slice(0, 60) });
+            });
+            target.userData.eventLog = histLog;
           }
           const b2 = getOrCreateBubble(target.userData.sessionKey);
           b2._dismissed = false;
@@ -28503,8 +28513,7 @@ window.sendDirectChat = function(sessionKey, inputEl) {
   const ud = minion.userData;
   ud.userMsg = text;
   ud.userName = "\u{1F5A5}\uFE0F Monitor";
-  ud.thinkLog = [];
-  ud.toolLog = [];
+  ud.eventLog = [];
   ud.replyText = "";
   ud.state = "thinking";
   ud.lastEventTime = Date.now();
