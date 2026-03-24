@@ -30277,9 +30277,11 @@ function animate() {
     }
   });
   if (season === "autumn" || season === "winter") {
-    const seasonTint = season === "autumn" ? new Color(13935988) : new Color(12111840);
-    scene.background.lerp(seasonTint, 0.3);
-    scene.fog.color.lerp(seasonTint, 0.3);
+    const seasonTint = season === "autumn" ? new Color(13935988) : season === "winter" ? new Color(13162728) : null;
+    if (seasonTint) {
+      scene.background.lerp(seasonTint, 0.15);
+      scene.fog.color.lerp(seasonTint, 0.15);
+    }
   }
   renderer.render(scene, camera);
 }
@@ -30623,44 +30625,56 @@ function updateDayNightCycle(dt) {
   gameTime = (gameTime + dt) % DAY_CYCLE;
   const t = gameTime / DAY_CYCLE;
   let skyColor, fogColor, sunIntensity, sunAngle;
-  if (t < 20 / 120) {
-    const p = t / (20 / 120);
-    skyColor = new Color(16758465).lerp(new Color(16747520), p);
-    fogColor = skyColor.clone();
-    sunIntensity = 0.2 + p * 0.3;
-    sunAngle = p * Math.PI * 0.3;
-  } else if (t < 60 / 120) {
-    const p = (t - 20 / 120) / (40 / 120);
-    skyColor = new Color(8900331).lerp(new Color(8308963), Math.sin(p * Math.PI));
-    fogColor = skyColor.clone();
-    sunIntensity = 0.5 + Math.sin(p * Math.PI) * 0.7;
-    sunAngle = Math.PI * 0.3 + p * Math.PI * 0.4;
-  } else if (t < 80 / 120) {
-    const p = (t - 60 / 120) / (20 / 120);
-    skyColor = new Color(16747520).lerp(new Color(10181046), p);
-    fogColor = skyColor.clone();
-    sunIntensity = 0.5 - p * 0.35;
-    sunAngle = Math.PI * 0.7 + p * Math.PI * 0.3;
-  } else {
-    const p = (t - 80 / 120) / (40 / 120);
-    skyColor = new Color(1710654).lerp(new Color(657966), Math.sin(p * Math.PI));
-    fogColor = skyColor.clone();
-    sunIntensity = 0.15 + Math.sin(p * Math.PI) * 0.05;
-    sunAngle = Math.PI + p * Math.PI * 0.5;
+  const phases = [
+    { t: 0, sky: new Color(6982831), sun: 0.35, angle: 0 },
+    // pre-dawn
+    { t: 0.12, sky: new Color(16752762), sun: 0.5, angle: 0.2 },
+    // dawn
+    { t: 0.2, sky: new Color(8900331), sun: 0.9, angle: 0.35 },
+    // morning
+    { t: 0.4, sky: new Color(8308963), sun: 1, angle: 0.5 },
+    // noon
+    { t: 0.55, sky: new Color(8900331), sun: 0.85, angle: 0.65 },
+    // afternoon
+    { t: 0.65, sky: new Color(15237978), sun: 0.55, angle: 0.75 },
+    // dusk
+    { t: 0.75, sky: new Color(6970061), sun: 0.35, angle: 0.85 },
+    // evening
+    { t: 0.85, sky: new Color(2767454), sun: 0.25, angle: 0.95 },
+    // night
+    { t: 0.95, sky: new Color(3820142), sun: 0.3, angle: 0.98 },
+    // late night
+    { t: 1, sky: new Color(6982831), sun: 0.35, angle: 1 }
+    // back to pre-dawn
+  ];
+  let lo = phases[0], hi = phases[phases.length - 1];
+  for (let i = 0; i < phases.length - 1; i++) {
+    if (t >= phases[i].t && t < phases[i + 1].t) {
+      lo = phases[i];
+      hi = phases[i + 1];
+      break;
+    }
   }
+  const range = hi.t - lo.t || 1;
+  const p = (t - lo.t) / range;
+  const smooth = p * p * (3 - 2 * p);
+  skyColor = lo.sky.clone().lerp(hi.sky, smooth);
+  sunIntensity = lo.sun + (hi.sun - lo.sun) * smooth;
+  sunAngle = lo.angle + (hi.angle - lo.angle) * smooth;
+  fogColor = skyColor.clone();
   scene.background = skyColor;
   scene.fog.color = fogColor;
   sun.intensity = sunIntensity;
-  sun.color.copy(skyColor).lerp(new Color(16772829), 0.5);
+  sun.color.set(16772829).lerp(skyColor, 0.3);
   sun.position.set(
-    Math.cos(sunAngle) * 40,
-    20 + Math.sin(sunAngle) * 30,
-    Math.sin(sunAngle) * 30
+    Math.cos(sunAngle * Math.PI * 2) * 40,
+    20 + Math.sin(sunAngle * Math.PI * 2) * 30,
+    Math.sin(sunAngle * Math.PI * 2) * 30
   );
-  const isNight = t > 70 / 120 || t < 10 / 120;
+  const isNight = sunIntensity < 0.4;
   scene.traverse((obj) => {
     if (obj.isPointLight && obj.color.getHex() === 16772696) {
-      obj.intensity = isNight ? 0.8 : 0;
+      obj.intensity = isNight ? 0.6 + (1 - sunIntensity / 0.4) * 0.4 : 0;
     }
   });
 }

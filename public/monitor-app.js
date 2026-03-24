@@ -2088,9 +2088,11 @@ function animate() {
   // Seasonal sky override (reapply in case day/night changed it)
   if (season === 'autumn' || season === 'winter') {
     // Blend seasonal tint with day/night cycle
-    const seasonTint = season === 'autumn' ? new THREE.Color(0xd4a574) : new THREE.Color(0xb8cfe0);
-    scene.background.lerp(seasonTint, 0.3);
-    scene.fog.color.lerp(seasonTint, 0.3);
+    const seasonTint = season === 'autumn' ? new THREE.Color(0xd4a574) : season === 'winter' ? new THREE.Color(0xc8d8e8) : null;
+    if (seasonTint) {
+      scene.background.lerp(seasonTint, 0.15);
+      scene.fog.color.lerp(seasonTint, 0.15);
+    }
   }
 
   renderer.render(scene, camera);
@@ -2472,53 +2474,55 @@ function updateDayNightCycle(dt) {
   gameTime = (gameTime + dt) % DAY_CYCLE;
   const t = gameTime / DAY_CYCLE; // 0-1
 
+  // Smooth interpolation between phases (no hard jumps)
   let skyColor, fogColor, sunIntensity, sunAngle;
 
-  if (t < 20/120) {
-    // Dawn (0-20s): pink/orange sky, dim sun
-    const p = t / (20/120);
-    skyColor = new THREE.Color(0xffb6c1).lerp(new THREE.Color(0xff8c00), p);
-    fogColor = skyColor.clone();
-    sunIntensity = 0.2 + p * 0.3;
-    sunAngle = p * Math.PI * 0.3; // rising
-  } else if (t < 60/120) {
-    // Day (20-60s): blue sky, bright sun
-    const p = (t - 20/120) / (40/120);
-    skyColor = new THREE.Color(0x87ceeb).lerp(new THREE.Color(0x7ec8e3), Math.sin(p * Math.PI));
-    fogColor = skyColor.clone();
-    sunIntensity = 0.5 + Math.sin(p * Math.PI) * 0.7;
-    sunAngle = Math.PI * 0.3 + p * Math.PI * 0.4;
-  } else if (t < 80/120) {
-    // Dusk (60-80s): purple/orange sky, dim sun
-    const p = (t - 60/120) / (20/120);
-    skyColor = new THREE.Color(0xff8c00).lerp(new THREE.Color(0x9b59b6), p);
-    fogColor = skyColor.clone();
-    sunIntensity = 0.5 - p * 0.35;
-    sunAngle = Math.PI * 0.7 + p * Math.PI * 0.3;
-  } else {
-    // Night (80-120s): dark blue sky, moonlight
-    const p = (t - 80/120) / (40/120);
-    skyColor = new THREE.Color(0x1a1a3e).lerp(new THREE.Color(0x0a0a2e), Math.sin(p * Math.PI));
-    fogColor = skyColor.clone();
-    sunIntensity = 0.15 + Math.sin(p * Math.PI) * 0.05;
-    sunAngle = Math.PI + p * Math.PI * 0.5;
+  // Define key points: [time, sky, sunIntensity, sunAngle]
+  const phases = [
+    { t: 0.00, sky: new THREE.Color(0x6a8caf), sun: 0.35, angle: 0.0 },         // pre-dawn
+    { t: 0.12, sky: new THREE.Color(0xffa07a), sun: 0.5,  angle: 0.2 },          // dawn
+    { t: 0.20, sky: new THREE.Color(0x87ceeb), sun: 0.9,  angle: 0.35 },         // morning
+    { t: 0.40, sky: new THREE.Color(0x7ec8e3), sun: 1.0,  angle: 0.5 },          // noon
+    { t: 0.55, sky: new THREE.Color(0x87ceeb), sun: 0.85, angle: 0.65 },         // afternoon
+    { t: 0.65, sky: new THREE.Color(0xe8835a), sun: 0.55, angle: 0.75 },         // dusk
+    { t: 0.75, sky: new THREE.Color(0x6a5acd), sun: 0.35, angle: 0.85 },         // evening
+    { t: 0.85, sky: new THREE.Color(0x2a3a5e), sun: 0.25, angle: 0.95 },         // night
+    { t: 0.95, sky: new THREE.Color(0x3a4a6e), sun: 0.3,  angle: 0.98 },         // late night
+    { t: 1.00, sky: new THREE.Color(0x6a8caf), sun: 0.35, angle: 1.0 },          // back to pre-dawn
+  ];
+
+  // Find the two phases to interpolate between
+  let lo = phases[0], hi = phases[phases.length - 1];
+  for (let i = 0; i < phases.length - 1; i++) {
+    if (t >= phases[i].t && t < phases[i + 1].t) {
+      lo = phases[i]; hi = phases[i + 1]; break;
+    }
   }
+  const range = hi.t - lo.t || 1;
+  const p = (t - lo.t) / range;
+  // Smooth step for nicer transitions
+  const smooth = p * p * (3 - 2 * p);
+
+  skyColor = lo.sky.clone().lerp(hi.sky, smooth);
+  sunIntensity = lo.sun + (hi.sun - lo.sun) * smooth;
+  sunAngle = lo.angle + (hi.angle - lo.angle) * smooth;
+  fogColor = skyColor.clone();
 
   scene.background = skyColor;
   scene.fog.color = fogColor;
   sun.intensity = sunIntensity;
-  sun.color.copy(skyColor).lerp(new THREE.Color(0xffeedd), 0.5);
+  sun.color.set(0xffeedd).lerp(skyColor, 0.3);
   sun.position.set(
-    Math.cos(sunAngle) * 40,
-    20 + Math.sin(sunAngle) * 30,
-    Math.sin(sunAngle) * 30
+    Math.cos(sunAngle * Math.PI * 2) * 40,
+    20 + Math.sin(sunAngle * Math.PI * 2) * 30,
+    Math.sin(sunAngle * Math.PI * 2) * 30
   );
 
   // Lamp posts: on at night, off during day
-  const isNight = t > 70/120 || t < 10/120;
+  const isNight = sunIntensity < 0.4;
   scene.traverse(obj => {
     if (obj.isPointLight && obj.color.getHex() === 0xffee58) {
-      obj.intensity = isNight ? 0.8 : 0;
+      obj.intensity = isNight ? 0.6 + (1 - sunIntensity / 0.4) * 0.4 : 0;
     }
   });
 }
