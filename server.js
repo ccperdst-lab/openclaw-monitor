@@ -129,23 +129,30 @@ function loadSessionMap() {
 
 function parseSessionEntry(line) {
   try {
+    // Skip obviously incomplete lines (too short or not valid JSON start)
+    if (!line || line.length < 20 || !line.startsWith('{')) return null;
     const d = JSON.parse(line);
     if (d.type !== 'message') return null;
     const msg = d.message || {};
     const role = msg.role;
+    if (!role) return null;
     const content = msg.content;
     let result = { role, texts: [], thinking: '', toolName: '', toolArgs: '' };
 
     if (typeof content === 'string') {
+      // Skip if content is just a tiny fragment (likely incomplete)
+      if (content.length < 5) return null;
       result.texts.push(content.slice(0, 300));
     } else if (Array.isArray(content)) {
       for (const c of content) {
-        if (typeof c === 'string') { result.texts.push(c.slice(0, 300)); continue; }
-        if (c.type === 'text') result.texts.push((c.text || '').slice(0, 300));
+        if (typeof c === 'string') { if (c.length >= 5) result.texts.push(c.slice(0, 300)); continue; }
+        if (c.type === 'text' && (c.text || '').length >= 5) result.texts.push((c.text || '').slice(0, 300));
         if (c.type === 'thinking') result.thinking = (c.thinking || '').slice(0, 300);
         if (c.type === 'toolCall') { result.toolName = c.name || ''; result.toolArgs = JSON.stringify(c.arguments || {}).slice(0, 200); }
       }
     }
+    // Skip entries with no meaningful content
+    if (result.texts.length === 0 && !result.thinking && !result.toolName) return null;
     return result;
   } catch { return null; }
 }

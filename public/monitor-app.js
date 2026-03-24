@@ -245,7 +245,7 @@ const mat = {
 function buildRoom(ox, oz, w, d, label) {
   const group = new THREE.Group();
   const TH = 0.15; // tile height
-  wallMeshes = []; // Reset wall tracking
+  // Don't reset wallMeshes here - reset in init() instead
 
   // Floor
   for (let x = 0; x < w; x++) {
@@ -756,9 +756,10 @@ function init(d) {
   if (initKey === lastInitKey && minions.length > 0) return; // No change, skip reinit
   lastInitKey = initKey;
 
-  // Clear old minions & room groups
+  // Clear old minions, rooms, and walls
   minions.forEach(m => scene.remove(m));
   minions = [];
+  wallMeshes = [];
   scene.children.filter(c => c.isGroup && c.userData && c.userData.isRoom).forEach(g => scene.remove(g));
 
   const agents = d.agents || [{ id: 'default', sessions: d.channels || [] }];

@@ -27321,7 +27321,6 @@ var mat = {
 function buildRoom(ox, oz, w, d, label) {
   const group = new Group();
   const TH = 0.15;
-  wallMeshes = [];
   for (let x = 0; x < w; x++) {
     for (let z = 0; z < d; z++) {
       const tile = new Mesh(new BoxGeometry(1, TH, 1), (x + z) % 2 === 0 ? mat.floor : mat.floorAlt);
@@ -27765,6 +27764,7 @@ function init(d) {
   lastInitKey = initKey;
   minions.forEach((m) => scene.remove(m));
   minions = [];
+  wallMeshes = [];
   scene.children.filter((c) => c.isGroup && c.userData && c.userData.isRoom).forEach((g) => scene.remove(g));
   const agents = d.agents || [{ id: "default", sessions: d.channels || [] }];
   const colors = [16109619, 16763904, 15251456, 13935872, 13145615];
