@@ -3,8 +3,8 @@ import * as THREE from 'three';
 // ===== Globals =====
 const container = document.getElementById('scene3d');
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x87CEEB);
-scene.fog = new THREE.FogExp2(0x87CEEB, 0.012);
+scene.background = new THREE.Color(0x7ec8e3);
+scene.fog = new THREE.FogExp2(0x7ec8e3, 0.008);
 
 const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 300);
 camera.position.set(25, 30, 35);
@@ -92,9 +92,10 @@ window.addEventListener('keyup', e => {
 });
 window.addEventListener('wheel', e => { moveSpeed = Math.max(4, Math.min(30, moveSpeed - e.deltaY * 0.01)); }, { passive: true });
 
-// Lighting
-scene.add(new THREE.AmbientLight(0xffffff, 0.5));
-const sun = new THREE.DirectionalLight(0xffeedd, 1.2);
+// Lighting - warm, Pokemon-style
+scene.add(new THREE.AmbientLight(0xffe4c4, 0.4));
+scene.add(new THREE.HemisphereLight(0x87ceeb, 0x4ade80, 0.5)); // sky blue top, green bottom
+const sun = new THREE.DirectionalLight(0xffeedd, 1.0);
 sun.position.set(30, 50, 20); sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
 const sc = sun.shadow.camera; sc.left = -60; sc.right = 60; sc.top = 60; sc.bottom = -60;
@@ -102,15 +103,46 @@ scene.add(sun);
 
 // ===== Materials =====
 const mat = {
-  grass: new THREE.MeshStandardMaterial({ color: 0x4ade80, roughness: 0.9 }),
-  dirt: new THREE.MeshStandardMaterial({ color: 0x8B7355, roughness: 1 }),
+  // Ground
+  grass: new THREE.MeshStandardMaterial({ color: 0x5ec269, roughness: 0.95 }),
+  grassDark: new THREE.MeshStandardMaterial({ color: 0x48a854, roughness: 0.95 }),
+  dirt: new THREE.MeshStandardMaterial({ color: 0xc4a672, roughness: 1 }),
+  stone: new THREE.MeshStandardMaterial({ color: 0x9ca3af, roughness: 0.8 }),
+  cobblestone: new THREE.MeshStandardMaterial({ color: 0xa89078, roughness: 0.9 }),
+  water: new THREE.MeshStandardMaterial({ color: 0x5bc0eb, roughness: 0.1, metalness: 0.2, transparent: true, opacity: 0.7 }),
+  // House
+  wallPink: new THREE.MeshStandardMaterial({ color: 0xfce4ec, roughness: 0.8 }),
+  wallBlue: new THREE.MeshStandardMaterial({ color: 0xe3f2fd, roughness: 0.8 }),
+  wallYellow: new THREE.MeshStandardMaterial({ color: 0xfff9c4, roughness: 0.8 }),
+  wallGreen: new THREE.MeshStandardMaterial({ color: 0xe8f5e9, roughness: 0.8 }),
+  doorWood: new THREE.MeshStandardMaterial({ color: 0x8d6e63, roughness: 0.7 }),
+  windowGlass: new THREE.MeshStandardMaterial({ color: 0xbbdefb, roughness: 0.1, metalness: 0.3, transparent: true, opacity: 0.6 }),
+  chimney: new THREE.MeshStandardMaterial({ color: 0x795548, roughness: 0.9 }),
+  // Decorations
+  wood: new THREE.MeshStandardMaterial({ color: 0xa1887f, roughness: 0.85 }),
+  fencePost: new THREE.MeshStandardMaterial({ color: 0xd7ccc8, roughness: 0.8 }),
+  trunkBrown: new THREE.MeshStandardMaterial({ color: 0x795548, roughness: 0.9 }),
+  leafGreen: new THREE.MeshStandardMaterial({ color: 0x66bb6a, roughness: 0.8 }),
+  leafDark: new THREE.MeshStandardMaterial({ color: 0x388e3c, roughness: 0.8 }),
+  flowerRed: new THREE.MeshStandardMaterial({ color: 0xef5350, roughness: 0.6 }),
+  flowerPink: new THREE.MeshStandardMaterial({ color: 0xf48fb1, roughness: 0.6 }),
+  flowerYellow: new THREE.MeshStandardMaterial({ color: 0xfff176, roughness: 0.6 }),
+  flowerPurple: new THREE.MeshStandardMaterial({ color: 0xce93d8, roughness: 0.6 }),
+  flowerWhite: new THREE.MeshStandardMaterial({ color: 0xf5f5f5, roughness: 0.6 }),
+  bushGreen: new THREE.MeshStandardMaterial({ color: 0x4caf50, roughness: 0.85 }),
+  lampPost: new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.4, metalness: 0.6 }),
+  lampGlow: new THREE.MeshStandardMaterial({ color: 0xffee58, emissive: 0xffee58, emissiveIntensity: 0.6 }),
+  rock: new THREE.MeshStandardMaterial({ color: 0x9e9e9e, roughness: 0.95 }),
+  // Minion
   minionYellow: new THREE.MeshStandardMaterial({ color: 0xf5d033, roughness: 0.5 }),
   minionBlue: new THREE.MeshStandardMaterial({ color: 0x3b82f6, roughness: 0.5 }),
   goggle: new THREE.MeshStandardMaterial({ color: 0x888888, metalness: 0.8, roughness: 0.2 }),
   eye: new THREE.MeshStandardMaterial({ color: 0xffffff }),
   pupil: new THREE.MeshStandardMaterial({ color: 0x111111 }),
-  roofColors: [0x4a90d9, 0xd94a4a, 0x4ad97a, 0xd9a84a, 0x9b59b6, 0x1abc9c],
+  roofColors: [0x5c6bc0, 0xef5350, 0x66bb6a, 0xffa726, 0xab47bc, 0x26c6da, 0xec407a, 0xff7043],
+  wallColors: null, // set below
 };
+mat.wallColors = [mat.wallPink, mat.wallBlue, mat.wallYellow, mat.wallGreen];
 
 // ===== Chinese Names =====
 const MINION_NAMES = [
@@ -357,105 +389,233 @@ function addNameLabel(minion, line1, line2) {
 
 // ===== Continent (Agent Area) =====
 function createContinent(agentName, index) {
-  const W = 18, D = 18;
+  const W = 22, D = 22;
   const cols = Math.ceil(Math.sqrt(agents.length));
   const col = index % cols, row = Math.floor(index / cols);
-  const ox = col * (W + 8) - (cols - 1) * (W + 8) / 2;
-  const oz = row * (D + 8) - (Math.ceil(agents.length / cols) - 1) * (D + 8) / 2;
+  const ox = col * (W + 6) - (cols - 1) * (W + 6) / 2;
+  const oz = row * (D + 6) - (Math.ceil(agents.length / cols) - 1) * (D + 6) / 2;
+  const cx = ox + W/2, cz = oz + D/2; // center
 
-  // Ground
+  // ===== Ground: multi-layer grass =====
   const ground = new THREE.Mesh(new THREE.BoxGeometry(W, 0.3, D), mat.grass);
-  ground.position.set(ox + W/2, -0.15, oz + D/2);
-  ground.receiveShadow = true;
+  ground.position.set(cx, -0.15, cz); ground.receiveShadow = true;
   scene.add(ground);
+  // Dark grass patches
+  for (let i = 0; i < 6; i++) {
+    const px = ox + 2 + Math.random() * (W - 4), pz = oz + 2 + Math.random() * (D - 4);
+    const sz = 1.5 + Math.random() * 2.5;
+    const patch = new THREE.Mesh(new THREE.CircleGeometry(sz, 16), mat.grassDark);
+    patch.rotation.x = -Math.PI/2; patch.position.set(px, 0.01, pz);
+    scene.add(patch);
+  }
 
-  // House
-  const houseW = 5, houseD = 5, houseH = 3;
+  // ===== Cobblestone path =====
+  const pathMat = mat.cobblestone;
+  for (let i = 0; i < 8; i++) {
+    const stone = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.3 + Math.random()*0.2, 0.35 + Math.random()*0.15, 0.06, 6),
+      pathMat
+    );
+    stone.position.set(cx - 0.5 + Math.random(), 0.03, oz + 2 + i * 2.2);
+    stone.rotation.y = Math.random() * Math.PI;
+    scene.add(stone);
+  }
+
+  // ===== House (cute Pokemon-style) =====
+  const houseW = 4.5, houseD = 4.5, houseH = 2.8;
   const roofColor = mat.roofColors[index % mat.roofColors.length];
-  const hx = ox + W/2 - houseW/2, hz = oz + D/2 - houseD/2;
+  const wallMat = mat.wallColors[index % mat.wallColors.length];
+  const hx = cx - 2, hz = cz - 2;
 
   // Walls
-  const wallMat = new THREE.MeshStandardMaterial({ color: 0xf0e6d3 });
   const walls = new THREE.Mesh(new THREE.BoxGeometry(houseW, houseH, houseD), wallMat);
   walls.position.set(hx, houseH/2, hz); walls.castShadow = true;
   scene.add(walls);
 
-  // Roof
-  const roofGeo = new THREE.ConeGeometry(houseW*0.85, 2, 4);
-  const roof = new THREE.Mesh(roofGeo, new THREE.MeshStandardMaterial({ color: roofColor }));
-  roof.position.set(hx, houseH + 1, hz); roof.rotation.y = Math.PI/4; roof.castShadow = true;
+  // Roof (thicker, more round)
+  const roofGeo = new THREE.ConeGeometry(houseW * 0.9, 2.2, 4);
+  const roof = new THREE.Mesh(roofGeo, new THREE.MeshStandardMaterial({ color: roofColor, roughness: 0.7 }));
+  roof.position.set(hx, houseH + 1.1, hz); roof.rotation.y = Math.PI/4; roof.castShadow = true;
   scene.add(roof);
 
-  // Sign
+  // Door
+  const door = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.5, 0.1), mat.doorWood);
+  door.position.set(hx, 0.75, hz + houseD/2 + 0.05); scene.add(door);
+  // Door knob
+  const knob = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 8), new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.8 }));
+  knob.position.set(hx + 0.25, 0.85, hz + houseD/2 + 0.12); scene.add(knob);
+
+  // Windows (2 on front)
+  [-1, 1].forEach(side => {
+    const win = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.7, 0.1), mat.windowGlass);
+    win.position.set(hx + side * 1.5, houseH * 0.6, hz + houseD/2 + 0.05); scene.add(win);
+    // Window frame
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.05), mat.doorWood);
+    frame.position.set(hx + side * 1.5, houseH * 0.6, hz + houseD/2 + 0.02); scene.add(frame);
+  });
+
+  // Chimney
+  const chimney = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.5, 0.5), mat.chimney);
+  chimney.position.set(hx + 1.2, houseH + 1.8, hz - 0.8); scene.add(chimney);
+
+  // ===== Sign (agent name) =====
   const signCanvas = document.createElement('canvas');
   signCanvas.width = 256; signCanvas.height = 64;
   const sctx = signCanvas.getContext('2d');
-  sctx.fillStyle = '#1a1a2e'; sctx.fillRect(0, 0, 256, 64);
-  sctx.font = 'bold 24px sans-serif'; sctx.textAlign = 'center';
-  sctx.fillStyle = '#53d8fb'; sctx.fillText(agentName, 128, 42);
+  sctx.fillStyle = '#2d1b00'; sctx.fillRect(0, 0, 256, 64);
+  sctx.strokeStyle = '#8d6e63'; sctx.lineWidth = 4; sctx.strokeRect(2, 2, 252, 60);
+  sctx.font = 'bold 22px sans-serif'; sctx.textAlign = 'center';
+  sctx.fillStyle = '#ffcc02'; sctx.fillText(agentName, 128, 42);
   const signTex = new THREE.CanvasTexture(signCanvas);
   const sign = new THREE.Sprite(new THREE.SpriteMaterial({ map: signTex, transparent: true }));
-  sign.position.set(hx, houseH + 3.5, hz); sign.scale.set(3, 0.75, 1);
+  sign.position.set(hx, houseH + 3.8, hz); sign.scale.set(3.5, 0.875, 1);
   scene.add(sign);
 
-  // Furniture: table
-  const table = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.08, 0.8), new THREE.MeshStandardMaterial({ color: 0x8B6914 }));
-  table.position.set(hx - 1, 0.72, hz + 1); scene.add(table);
-  [-0.6, 0.6].forEach(xo => [-0.3, 0.3].forEach(zo => {
-    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.7, 6), new THREE.MeshStandardMaterial({ color: 0x8B6914 }));
-    leg.position.set(hx - 1 + xo, 0.35, hz + 1 + zo); scene.add(leg);
+  // ===== Furniture (inside house area) =====
+  // Table
+  const table = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.08, 0.7), mat.wood);
+  table.position.set(hx - 1.5, 0.72, hz + 1); scene.add(table);
+  [-0.55, 0.55].forEach(xo => [-0.25, 0.25].forEach(zo => {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.7, 6), mat.wood);
+    leg.position.set(hx - 1.5 + xo, 0.35, hz + 1 + zo); scene.add(leg);
   }));
-
   // Chairs
   [-1, 1].forEach(side => {
-    const chair = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), new THREE.MeshStandardMaterial({ color: 0xa0522d }));
-    chair.position.set(hx - 1 + side*1.2, 0.25, hz + 1); scene.add(chair);
+    const chair = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.45, 0.45), mat.doorWood);
+    chair.position.set(hx - 1.5 + side * 1.1, 0.22, hz + 1); scene.add(chair);
+  });
+  // Bed
+  const bed = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.25, 2.2), new THREE.MeshStandardMaterial({ color: 0x90caf9, roughness: 0.7 }));
+  bed.position.set(hx + 1.5, 0.12, hz - 0.8); scene.add(bed);
+  const pillow = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.1, 0.45), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5 }));
+  pillow.position.set(hx + 1.5, 0.3, hz - 1.7); scene.add(pillow);
+
+  // ===== Trees (Pokemon round-canopy style) =====
+  const treePositions = [
+    [ox + 2, oz + 2], [ox + W - 2, oz + 2], [ox + 2, oz + D - 2], [ox + W - 2, oz + D - 2],
+    [cx + 5, cz + 3], [cx - 6, cz - 4], [cx + 3, cz - 6],
+  ];
+  treePositions.forEach(([tx, tz], ti) => {
+    const treeH = 1.5 + Math.random() * 1;
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.18, treeH, 8), mat.trunkBrown);
+    trunk.position.set(tx, treeH/2, tz); trunk.castShadow = true; scene.add(trunk);
+    // Canopy (2-3 overlapping spheres for fluffy look)
+    const canopyR = 0.9 + Math.random() * 0.4;
+    const canopyMat = ti % 2 === 0 ? mat.leafGreen : mat.leafDark;
+    [[0, 0, 0], [0.3, 0.1, 0.2], [-0.2, 0.15, -0.15]].forEach(([dx, dy, dz]) => {
+      const canopy = new THREE.Mesh(new THREE.SphereGeometry(canopyR * (0.8 + Math.random()*0.3), 12, 10), canopyMat);
+      canopy.position.set(tx + dx, treeH + canopyR * 0.5 + dy, tz + dz);
+      canopy.castShadow = true; scene.add(canopy);
+    });
+    addObstacle(tx - 0.4, tx + 0.4, tz - 0.4, tz + 0.4, 'tree');
   });
 
-  // Bed
-  const bed = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.3, 2.5), new THREE.MeshStandardMaterial({ color: 0x5b8dd9 }));
-  bed.position.set(hx + 1.5, 0.15, hz - 0.5); scene.add(bed);
-  const pillow = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.12, 0.5), new THREE.MeshStandardMaterial({ color: 0xffffff }));
-  pillow.position.set(hx + 1.5, 0.36, hz - 1.5); scene.add(pillow);
-
-  // Bookshelf
-  const shelf = new THREE.Mesh(new THREE.BoxGeometry(0.8, 2, 0.4), new THREE.MeshStandardMaterial({ color: 0x8B6914 }));
-  shelf.position.set(hx - 2.2, 1, hz - 1); scene.add(shelf);
-  for (let i = 0; i < 4; i++) {
-    const book = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.25, 0.3), new THREE.MeshStandardMaterial({ color: [0xc0392b, 0x2980b9, 0x27ae60, 0xf39c12][i] }));
-    book.position.set(hx - 2.2, 0.3 + i*0.45, hz - 1); scene.add(book);
+  // ===== Flowers =====
+  const flowerColors = [mat.flowerRed, mat.flowerPink, mat.flowerYellow, mat.flowerPurple, mat.flowerWhite];
+  for (let i = 0; i < 15; i++) {
+    const fx = ox + 1 + Math.random() * (W - 2);
+    const fz = oz + 1 + Math.random() * (D - 2);
+    // Skip if too close to house or trees
+    if (Math.abs(fx - hx) < 3.5 && Math.abs(fz - hz) < 3.5) continue;
+    // Stem
+    const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.25, 4), mat.leafGreen);
+    stem.position.set(fx, 0.12, fz); scene.add(stem);
+    // Flower head
+    const fColor = flowerColors[Math.floor(Math.random() * flowerColors.length)];
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 6), fColor);
+    head.position.set(fx, 0.28, fz); scene.add(head);
   }
 
-  // Lamp
-  const lampPole = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.2, 6), new THREE.MeshStandardMaterial({ color: 0x888 }));
-  lampPole.position.set(hx + 2, 0.6, hz + 1.5); scene.add(lampPole);
-  const lampShade = new THREE.Mesh(new THREE.ConeGeometry(0.3, 0.4, 8), new THREE.MeshStandardMaterial({ color: 0xffd700, emissive: 0xffd700, emissiveIntensity: 0.3 }));
-  lampShade.position.set(hx + 2, 1.4, hz + 1.5); scene.add(lampShade);
-  const lampLight = new THREE.PointLight(0xffd700, 0.5, 5);
-  lampLight.position.set(hx + 2, 1.2, hz + 1.5); scene.add(lampLight);
+  // ===== Bushes =====
+  for (let i = 0; i < 5; i++) {
+    const bx = ox + 1.5 + Math.random() * (W - 3);
+    const bz = oz + 1.5 + Math.random() * (D - 3);
+    if (Math.abs(bx - hx) < 3 && Math.abs(bz - hz) < 3) continue;
+    const bush = new THREE.Mesh(new THREE.SphereGeometry(0.4 + Math.random()*0.2, 10, 8), mat.bushGreen);
+    bush.position.set(bx, 0.25, bz); bush.scale.y = 0.7; bush.castShadow = true; scene.add(bush);
+  }
 
-  // ===== Register Obstacles (AABB) =====
-  const pad = 0.3; // extra padding around obstacles
-  // House building
-  addObstacle(hx - houseW/2 - pad, hx + houseW/2 + pad, hz - houseD/2 - pad, hz + houseD/2 + pad, 'house');
-  // Table + area around it
-  addObstacle(hx - 1 - 0.75 - pad, hx - 1 + 0.75 + pad, hz + 1 - 0.4 - pad, hz + 1 + 0.4 + pad, 'table');
-  // Chairs
-  [-1, 1].forEach(side => {
-    const cx = hx - 1 + side * 1.2;
-    addObstacle(cx - 0.25 - pad, cx + 0.25 + pad, hz + 1 - 0.25 - pad, hz + 1 + 0.25 + pad, 'chair');
+  // ===== Small Pond =====
+  const pondX = cx + 4, pondZ = cz + 4;
+  const pond = new THREE.Mesh(new THREE.CircleGeometry(1.8, 20), mat.water);
+  pond.rotation.x = -Math.PI/2; pond.position.set(pondX, 0.02, pondZ); scene.add(pond);
+  // Pond edge stones
+  for (let a = 0; a < Math.PI * 2; a += Math.PI / 6) {
+    const r = 1.8 + (Math.random() - 0.5) * 0.3;
+    const rs = new THREE.Mesh(new THREE.SphereGeometry(0.15 + Math.random()*0.1, 6, 5), mat.rock);
+    rs.position.set(pondX + Math.cos(a) * r, 0.1, pondZ + Math.sin(a) * r);
+    rs.scale.y = 0.6; scene.add(rs);
+  }
+
+  // ===== Rocks =====
+  for (let i = 0; i < 4; i++) {
+    const rx = ox + 1 + Math.random() * (W - 2);
+    const rz = oz + 1 + Math.random() * (D - 2);
+    if (Math.abs(rx - hx) < 3 && Math.abs(rz - hz) < 3) continue;
+    const rock = new THREE.Mesh(
+      new THREE.DodecahedronGeometry(0.2 + Math.random() * 0.15, 0),
+      mat.rock
+    );
+    rock.position.set(rx, 0.12, rz);
+    rock.rotation.set(Math.random(), Math.random(), Math.random());
+    rock.scale.y = 0.7; scene.add(rock);
+  }
+
+  // ===== Fence (wooden picket around front yard) =====
+  const fenceYard = { x1: hx - 3.5, x2: hx + 3.5, z1: hz + houseD/2 + 0.5, z2: hz + houseD/2 + 4 };
+  for (let fx = fenceYard.x1; fx <= fenceYard.x2; fx += 0.8) {
+    [fenceYard.z1, fenceYard.z2].forEach(fz => {
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.6, 0.08), mat.fencePost);
+      post.position.set(fx, 0.3, fz); scene.add(post);
+      // Pointed top
+      const cap = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.12, 4), mat.fencePost);
+      cap.position.set(fx, 0.66, fz); scene.add(cap);
+    });
+  }
+  // Horizontal rails
+  [fenceYard.z1, fenceYard.z2].forEach(fz => {
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(fenceYard.x2 - fenceYard.x1, 0.05, 0.05), mat.fencePost);
+    rail.position.set((fenceYard.x1 + fenceYard.x2)/2, 0.45, fz); scene.add(rail);
   });
-  // Bed
-  addObstacle(hx + 1.5 - 0.75 - pad, hx + 1.5 + 0.75 + pad, hz - 0.5 - 1.25 - pad, hz - 0.5 + 1.25 + pad, 'bed');
-  // Bookshelf
-  addObstacle(hx - 2.2 - 0.4 - pad, hx - 2.2 + 0.4 + pad, hz - 1 - 0.2 - pad, hz - 1 + 0.2 + pad, 'bookshelf');
-  // Lamp
-  addObstacle(hx + 2 - 0.3 - pad, hx + 2 + 0.3 + pad, hz + 1.5 - 0.3 - pad, hz + 1.5 + 0.3 + pad, 'lamp');
-  // Continent boundary walls (invisible barriers at edges)
-  addObstacle(ox - 1, ox + 0.5, oz - 1, oz + D + 1, 'wall_west');
-  addObstacle(ox + W - 0.5, ox + W + 1, oz - 1, oz + D + 1, 'wall_east');
-  addObstacle(ox - 1, ox + W + 1, oz - 1, oz + 0.5, 'wall_north');
-  addObstacle(ox - 1, ox + W + 1, oz + D - 0.5, oz + D + 1, 'wall_south');
+
+  // ===== Lamp Post =====
+  const lmpx = hx + houseW/2 + 1.5, lmpz = hz + houseD/2 + 1;
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 2.2, 8), mat.lampPost);
+  pole.position.set(lmpx, 1.1, lmpz); scene.add(pole);
+  const lampHead = new THREE.Mesh(new THREE.SphereGeometry(0.2, 10, 8), mat.lampGlow);
+  lampHead.position.set(lmpx, 2.3, lmpz); scene.add(lampHead);
+  const lampLight = new THREE.PointLight(0xffee58, 0.4, 8);
+  lampLight.position.set(lmpx, 2.2, lmpz); scene.add(lampLight);
+
+  // ===== Bench (outside) =====
+  const benchX = cx - 5, benchZ = cz + 1;
+  const benchSeat = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.08, 0.4), mat.wood);
+  benchSeat.position.set(benchX, 0.45, benchZ); scene.add(benchSeat);
+  const benchBack = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.5, 0.06), mat.wood);
+  benchBack.position.set(benchX, 0.7, benchZ - 0.18); scene.add(benchBack);
+  [-0.5, 0.5].forEach(xo => {
+    const bLeg = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.45, 0.35), mat.doorWood);
+    bLeg.position.set(benchX + xo, 0.22, benchZ); scene.add(bLeg);
+  });
+
+  // ===== Register Obstacles =====
+  const pad = 0.3;
+  addObstacle(hx - houseW/2 - pad, hx + houseW/2 + pad, hz - houseD/2 - pad, hz + houseD/2 + pad, 'house');
+  addObstacle(hx - 1.5 - 0.7 - pad, hx - 1.5 + 0.7 + pad, hz + 1 - 0.35 - pad, hz + 1 + 0.35 + pad, 'table');
+  [-1, 1].forEach(side => {
+    const ccx = hx - 1.5 + side * 1.1;
+    addObstacle(ccx - 0.22 - pad, ccx + 0.22 + pad, hz + 1 - 0.22 - pad, hz + 1 + 0.22 + pad, 'chair');
+  });
+  addObstacle(hx + 1.5 - 0.7 - pad, hx + 1.5 + 0.7 + pad, hz - 0.8 - 1.1 - pad, hz - 0.8 + 1.1 + pad, 'bed');
+  addObstacle(lmpx - 0.2, lmpx + 0.2, lmpz - 0.2, lmpz + 0.2, 'lamp');
+  addObstacle(benchX - 0.7, benchX + 0.7, benchZ - 0.3, benchZ + 0.3, 'bench');
+  // Pond
+  addObstacle(pondX - 2, pondX + 2, pondZ - 2, pondZ + 2, 'pond');
+  // Boundary walls
+  addObstacle(ox - 1, ox + 0.3, oz - 1, oz + D + 1, 'wall_west');
+  addObstacle(ox + W - 0.3, ox + W + 1, oz - 1, oz + D + 1, 'wall_east');
+  addObstacle(ox - 1, ox + W + 1, oz - 1, oz + 0.3, 'wall_north');
+  addObstacle(ox - 1, ox + W + 1, oz + D - 0.3, oz + D + 1, 'wall_south');
 
   return { ox, oz, W, D, hx, hz, houseH };
 }
@@ -1431,6 +1591,9 @@ function animate() {
   // Report positions to server periodically
   reportPositions();
 
+  // Update floating petals
+  updatePetals(dt, time);
+
   renderer.render(scene, camera);
 }
 
@@ -1525,6 +1688,74 @@ window.addEventListener('resize', () => {
   drawer.addEventListener('mousedown', (e) => e.stopPropagation());
   drawer.addEventListener('mouseup', (e) => e.stopPropagation());
 })();
+
+// ===== Clouds (sky decoration) =====
+function initClouds() {
+  const cloudMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6 });
+  for (let i = 0; i < 12; i++) {
+    const cloud = new THREE.Group();
+    const count = 3 + Math.floor(Math.random() * 3);
+    for (let j = 0; j < count; j++) {
+      const r = 1.5 + Math.random() * 2;
+      const puff = new THREE.Mesh(new THREE.SphereGeometry(r, 8, 6), cloudMat);
+      puff.position.set(j * 2 - count, Math.random() * 0.5, Math.random() * 0.8);
+      puff.scale.y = 0.4 + Math.random() * 0.2;
+      cloud.add(puff);
+    }
+    cloud.position.set(
+      (Math.random() - 0.5) * 120,
+      25 + Math.random() * 10,
+      (Math.random() - 0.5) * 120
+    );
+    cloud.userData = { speed: 0.2 + Math.random() * 0.3, dir: Math.random() > 0.5 ? 1 : -1 };
+    scene.add(cloud);
+  }
+}
+initClouds();
+
+// ===== Floating Petals (atmosphere particles) =====
+const petals = [];
+const petalColors = [0xffc0cb, 0xffb7c5, 0xfff0f5, 0xffe4e1, 0xfce4ec, 0xe8f5e9];
+function initPetals() {
+  const petalGeo = new THREE.PlaneGeometry(0.12, 0.08);
+  for (let i = 0; i < 30; i++) {
+    const color = petalColors[Math.floor(Math.random() * petalColors.length)];
+    const pmat = new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide, transparent: true, opacity: 0.7 });
+    const petal = new THREE.Mesh(petalGeo, pmat);
+    petal.position.set(
+      (Math.random() - 0.5) * 100,
+      2 + Math.random() * 15,
+      (Math.random() - 0.5) * 100
+    );
+    petal.userData = {
+      speed: 0.3 + Math.random() * 0.5,
+      wobble: Math.random() * Math.PI * 2,
+      wobbleSpeed: 1 + Math.random() * 2,
+      rotSpeed: (Math.random() - 0.5) * 3,
+      drift: (Math.random() - 0.5) * 0.3,
+    };
+    scene.add(petal);
+    petals.push(petal);
+  }
+}
+initPetals();
+
+function updatePetals(dt, time) {
+  for (const p of petals) {
+    const ud = p.userData;
+    p.position.y -= ud.speed * dt;
+    p.position.x += Math.sin(time * ud.wobbleSpeed + ud.wobble) * ud.drift * dt;
+    p.position.z += Math.cos(time * ud.wobbleSpeed * 0.7 + ud.wobble) * ud.drift * dt * 0.5;
+    p.rotation.x += ud.rotSpeed * dt;
+    p.rotation.z += ud.rotSpeed * 0.5 * dt;
+    // Reset when below ground
+    if (p.position.y < 0) {
+      p.position.y = 12 + Math.random() * 5;
+      p.position.x = (Math.random() - 0.5) * 100;
+      p.position.z = (Math.random() - 0.5) * 100;
+    }
+  }
+}
 
 // ===== Start =====
 connectSSE();

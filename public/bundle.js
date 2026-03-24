@@ -12985,6 +12985,69 @@ var BoxGeometry = class _BoxGeometry extends BufferGeometry {
     return new _BoxGeometry(data.width, data.height, data.depth, data.widthSegments, data.heightSegments, data.depthSegments);
   }
 };
+var CircleGeometry = class _CircleGeometry extends BufferGeometry {
+  /**
+   * Constructs a new circle geometry.
+   *
+   * @param {number} [radius=1] - Radius of the circle.
+   * @param {number} [segments=32] - Number of segments (triangles), minimum = `3`.
+   * @param {number} [thetaStart=0] - Start angle for first segment in radians.
+   * @param {number} [thetaLength=Math.PI*2] - The central angle, often called theta,
+   * of the circular sector in radians. The default value results in a complete circle.
+   */
+  constructor(radius = 1, segments = 32, thetaStart = 0, thetaLength = Math.PI * 2) {
+    super();
+    this.type = "CircleGeometry";
+    this.parameters = {
+      radius,
+      segments,
+      thetaStart,
+      thetaLength
+    };
+    segments = Math.max(3, segments);
+    const indices = [];
+    const vertices = [];
+    const normals = [];
+    const uvs = [];
+    const vertex2 = new Vector3();
+    const uv = new Vector2();
+    vertices.push(0, 0, 0);
+    normals.push(0, 0, 1);
+    uvs.push(0.5, 0.5);
+    for (let s = 0, i = 3; s <= segments; s++, i += 3) {
+      const segment = thetaStart + s / segments * thetaLength;
+      vertex2.x = radius * Math.cos(segment);
+      vertex2.y = radius * Math.sin(segment);
+      vertices.push(vertex2.x, vertex2.y, vertex2.z);
+      normals.push(0, 0, 1);
+      uv.x = (vertices[i] / radius + 1) / 2;
+      uv.y = (vertices[i + 1] / radius + 1) / 2;
+      uvs.push(uv.x, uv.y);
+    }
+    for (let i = 1; i <= segments; i++) {
+      indices.push(i, i + 1, 0);
+    }
+    this.setIndex(indices);
+    this.setAttribute("position", new Float32BufferAttribute(vertices, 3));
+    this.setAttribute("normal", new Float32BufferAttribute(normals, 3));
+    this.setAttribute("uv", new Float32BufferAttribute(uvs, 2));
+  }
+  copy(source) {
+    super.copy(source);
+    this.parameters = Object.assign({}, source.parameters);
+    return this;
+  }
+  /**
+   * Factory method for creating an instance of this class from the given
+   * JSON object.
+   *
+   * @param {Object} data - A JSON object representing the serialized geometry.
+   * @return {CircleGeometry} A new instance.
+   */
+  static fromJSON(data) {
+    return new _CircleGeometry(data.radius, data.segments, data.thetaStart, data.thetaLength);
+  }
+};
 var CylinderGeometry = class _CylinderGeometry extends BufferGeometry {
   /**
    * Constructs a new cylinder geometry.
@@ -13170,6 +13233,384 @@ var ConeGeometry = class _ConeGeometry extends CylinderGeometry {
    */
   static fromJSON(data) {
     return new _ConeGeometry(data.radius, data.height, data.radialSegments, data.heightSegments, data.openEnded, data.thetaStart, data.thetaLength);
+  }
+};
+var PolyhedronGeometry = class _PolyhedronGeometry extends BufferGeometry {
+  /**
+   * Constructs a new polyhedron geometry.
+   *
+   * @param {Array<number>} [vertices] - A flat array of vertices describing the base shape.
+   * @param {Array<number>} [indices] - A flat array of indices describing the base shape.
+   * @param {number} [radius=1] - The radius of the shape.
+   * @param {number} [detail=0] - How many levels to subdivide the geometry. The more detail, the smoother the shape.
+   */
+  constructor(vertices = [], indices = [], radius = 1, detail = 0) {
+    super();
+    this.type = "PolyhedronGeometry";
+    this.parameters = {
+      vertices,
+      indices,
+      radius,
+      detail
+    };
+    const vertexBuffer = [];
+    const uvBuffer = [];
+    subdivide(detail);
+    applyRadius(radius);
+    generateUVs();
+    this.setAttribute("position", new Float32BufferAttribute(vertexBuffer, 3));
+    this.setAttribute("normal", new Float32BufferAttribute(vertexBuffer.slice(), 3));
+    this.setAttribute("uv", new Float32BufferAttribute(uvBuffer, 2));
+    if (detail === 0) {
+      this.computeVertexNormals();
+    } else {
+      this.normalizeNormals();
+    }
+    function subdivide(detail2) {
+      const a = new Vector3();
+      const b = new Vector3();
+      const c = new Vector3();
+      for (let i = 0; i < indices.length; i += 3) {
+        getVertexByIndex(indices[i + 0], a);
+        getVertexByIndex(indices[i + 1], b);
+        getVertexByIndex(indices[i + 2], c);
+        subdivideFace(a, b, c, detail2);
+      }
+    }
+    function subdivideFace(a, b, c, detail2) {
+      const cols = detail2 + 1;
+      const v = [];
+      for (let i = 0; i <= cols; i++) {
+        v[i] = [];
+        const aj = a.clone().lerp(c, i / cols);
+        const bj = b.clone().lerp(c, i / cols);
+        const rows = cols - i;
+        for (let j = 0; j <= rows; j++) {
+          if (j === 0 && i === cols) {
+            v[i][j] = aj;
+          } else {
+            v[i][j] = aj.clone().lerp(bj, j / rows);
+          }
+        }
+      }
+      for (let i = 0; i < cols; i++) {
+        for (let j = 0; j < 2 * (cols - i) - 1; j++) {
+          const k = Math.floor(j / 2);
+          if (j % 2 === 0) {
+            pushVertex(v[i][k + 1]);
+            pushVertex(v[i + 1][k]);
+            pushVertex(v[i][k]);
+          } else {
+            pushVertex(v[i][k + 1]);
+            pushVertex(v[i + 1][k + 1]);
+            pushVertex(v[i + 1][k]);
+          }
+        }
+      }
+    }
+    function applyRadius(radius2) {
+      const vertex2 = new Vector3();
+      for (let i = 0; i < vertexBuffer.length; i += 3) {
+        vertex2.x = vertexBuffer[i + 0];
+        vertex2.y = vertexBuffer[i + 1];
+        vertex2.z = vertexBuffer[i + 2];
+        vertex2.normalize().multiplyScalar(radius2);
+        vertexBuffer[i + 0] = vertex2.x;
+        vertexBuffer[i + 1] = vertex2.y;
+        vertexBuffer[i + 2] = vertex2.z;
+      }
+    }
+    function generateUVs() {
+      const vertex2 = new Vector3();
+      for (let i = 0; i < vertexBuffer.length; i += 3) {
+        vertex2.x = vertexBuffer[i + 0];
+        vertex2.y = vertexBuffer[i + 1];
+        vertex2.z = vertexBuffer[i + 2];
+        const u = azimuth(vertex2) / 2 / Math.PI + 0.5;
+        const v = inclination(vertex2) / Math.PI + 0.5;
+        uvBuffer.push(u, 1 - v);
+      }
+      correctUVs();
+      correctSeam();
+    }
+    function correctSeam() {
+      for (let i = 0; i < uvBuffer.length; i += 6) {
+        const x0 = uvBuffer[i + 0];
+        const x1 = uvBuffer[i + 2];
+        const x2 = uvBuffer[i + 4];
+        const max = Math.max(x0, x1, x2);
+        const min = Math.min(x0, x1, x2);
+        if (max > 0.9 && min < 0.1) {
+          if (x0 < 0.2) uvBuffer[i + 0] += 1;
+          if (x1 < 0.2) uvBuffer[i + 2] += 1;
+          if (x2 < 0.2) uvBuffer[i + 4] += 1;
+        }
+      }
+    }
+    function pushVertex(vertex2) {
+      vertexBuffer.push(vertex2.x, vertex2.y, vertex2.z);
+    }
+    function getVertexByIndex(index, vertex2) {
+      const stride = index * 3;
+      vertex2.x = vertices[stride + 0];
+      vertex2.y = vertices[stride + 1];
+      vertex2.z = vertices[stride + 2];
+    }
+    function correctUVs() {
+      const a = new Vector3();
+      const b = new Vector3();
+      const c = new Vector3();
+      const centroid = new Vector3();
+      const uvA = new Vector2();
+      const uvB = new Vector2();
+      const uvC = new Vector2();
+      for (let i = 0, j = 0; i < vertexBuffer.length; i += 9, j += 6) {
+        a.set(vertexBuffer[i + 0], vertexBuffer[i + 1], vertexBuffer[i + 2]);
+        b.set(vertexBuffer[i + 3], vertexBuffer[i + 4], vertexBuffer[i + 5]);
+        c.set(vertexBuffer[i + 6], vertexBuffer[i + 7], vertexBuffer[i + 8]);
+        uvA.set(uvBuffer[j + 0], uvBuffer[j + 1]);
+        uvB.set(uvBuffer[j + 2], uvBuffer[j + 3]);
+        uvC.set(uvBuffer[j + 4], uvBuffer[j + 5]);
+        centroid.copy(a).add(b).add(c).divideScalar(3);
+        const azi = azimuth(centroid);
+        correctUV(uvA, j + 0, a, azi);
+        correctUV(uvB, j + 2, b, azi);
+        correctUV(uvC, j + 4, c, azi);
+      }
+    }
+    function correctUV(uv, stride, vector, azimuth2) {
+      if (azimuth2 < 0 && uv.x === 1) {
+        uvBuffer[stride] = uv.x - 1;
+      }
+      if (vector.x === 0 && vector.z === 0) {
+        uvBuffer[stride] = azimuth2 / 2 / Math.PI + 0.5;
+      }
+    }
+    function azimuth(vector) {
+      return Math.atan2(vector.z, -vector.x);
+    }
+    function inclination(vector) {
+      return Math.atan2(-vector.y, Math.sqrt(vector.x * vector.x + vector.z * vector.z));
+    }
+  }
+  copy(source) {
+    super.copy(source);
+    this.parameters = Object.assign({}, source.parameters);
+    return this;
+  }
+  /**
+   * Factory method for creating an instance of this class from the given
+   * JSON object.
+   *
+   * @param {Object} data - A JSON object representing the serialized geometry.
+   * @return {PolyhedronGeometry} A new instance.
+   */
+  static fromJSON(data) {
+    return new _PolyhedronGeometry(data.vertices, data.indices, data.radius, data.detail);
+  }
+};
+var DodecahedronGeometry = class _DodecahedronGeometry extends PolyhedronGeometry {
+  /**
+   * Constructs a new dodecahedron geometry.
+   *
+   * @param {number} [radius=1] - Radius of the dodecahedron.
+   * @param {number} [detail=0] - Setting this to a value greater than `0` adds vertices making it no longer a dodecahedron.
+   */
+  constructor(radius = 1, detail = 0) {
+    const t = (1 + Math.sqrt(5)) / 2;
+    const r = 1 / t;
+    const vertices = [
+      // (±1, ±1, ±1)
+      -1,
+      -1,
+      -1,
+      -1,
+      -1,
+      1,
+      -1,
+      1,
+      -1,
+      -1,
+      1,
+      1,
+      1,
+      -1,
+      -1,
+      1,
+      -1,
+      1,
+      1,
+      1,
+      -1,
+      1,
+      1,
+      1,
+      // (0, ±1/φ, ±φ)
+      0,
+      -r,
+      -t,
+      0,
+      -r,
+      t,
+      0,
+      r,
+      -t,
+      0,
+      r,
+      t,
+      // (±1/φ, ±φ, 0)
+      -r,
+      -t,
+      0,
+      -r,
+      t,
+      0,
+      r,
+      -t,
+      0,
+      r,
+      t,
+      0,
+      // (±φ, 0, ±1/φ)
+      -t,
+      0,
+      -r,
+      t,
+      0,
+      -r,
+      -t,
+      0,
+      r,
+      t,
+      0,
+      r
+    ];
+    const indices = [
+      3,
+      11,
+      7,
+      3,
+      7,
+      15,
+      3,
+      15,
+      13,
+      7,
+      19,
+      17,
+      7,
+      17,
+      6,
+      7,
+      6,
+      15,
+      17,
+      4,
+      8,
+      17,
+      8,
+      10,
+      17,
+      10,
+      6,
+      8,
+      0,
+      16,
+      8,
+      16,
+      2,
+      8,
+      2,
+      10,
+      0,
+      12,
+      1,
+      0,
+      1,
+      18,
+      0,
+      18,
+      16,
+      6,
+      10,
+      2,
+      6,
+      2,
+      13,
+      6,
+      13,
+      15,
+      2,
+      16,
+      18,
+      2,
+      18,
+      3,
+      2,
+      3,
+      13,
+      18,
+      1,
+      9,
+      18,
+      9,
+      11,
+      18,
+      11,
+      3,
+      4,
+      14,
+      12,
+      4,
+      12,
+      0,
+      4,
+      0,
+      8,
+      11,
+      9,
+      5,
+      11,
+      5,
+      19,
+      11,
+      19,
+      7,
+      19,
+      5,
+      14,
+      19,
+      14,
+      4,
+      19,
+      4,
+      17,
+      1,
+      12,
+      14,
+      1,
+      14,
+      5,
+      1,
+      5,
+      9
+    ];
+    super(vertices, indices, radius, detail);
+    this.type = "DodecahedronGeometry";
+    this.parameters = {
+      radius,
+      detail
+    };
+  }
+  /**
+   * Factory method for creating an instance of this class from the given
+   * JSON object.
+   *
+   * @param {Object} data - A JSON object representing the serialized geometry.
+   * @return {DodecahedronGeometry} A new instance.
+   */
+  static fromJSON(data) {
+    return new _DodecahedronGeometry(data.radius, data.detail);
   }
 };
 var PlaneGeometry = class _PlaneGeometry extends BufferGeometry {
@@ -14849,6 +15290,33 @@ var Light = class extends Object3D {
     const data = super.toJSON(meta);
     data.object.color = this.color.getHex();
     data.object.intensity = this.intensity;
+    return data;
+  }
+};
+var HemisphereLight = class extends Light {
+  /**
+   * Constructs a new hemisphere light.
+   *
+   * @param {(number|Color|string)} [skyColor=0xffffff] - The light's sky color.
+   * @param {(number|Color|string)} [groundColor=0xffffff] - The light's ground color.
+   * @param {number} [intensity=1] - The light's strength/intensity.
+   */
+  constructor(skyColor, groundColor, intensity) {
+    super(skyColor, intensity);
+    this.isHemisphereLight = true;
+    this.type = "HemisphereLight";
+    this.position.copy(Object3D.DEFAULT_UP);
+    this.updateMatrix();
+    this.groundColor = new Color(groundColor);
+  }
+  copy(source, recursive) {
+    super.copy(source, recursive);
+    this.groundColor.copy(source.groundColor);
+    return this;
+  }
+  toJSON(meta) {
+    const data = super.toJSON(meta);
+    data.object.groundColor = this.groundColor.getHex();
     return data;
   }
 };
@@ -27739,8 +28207,8 @@ var WebGLRenderer = class {
 // app.js
 var container = document.getElementById("scene3d");
 var scene = new Scene();
-scene.background = new Color(8900331);
-scene.fog = new FogExp2(8900331, 0.012);
+scene.background = new Color(8308963);
+scene.fog = new FogExp2(8308963, 8e-3);
 var camera = new PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 300);
 camera.position.set(25, 30, 35);
 var renderer = new WebGLRenderer({ antialias: true });
@@ -27821,8 +28289,9 @@ window.addEventListener("keyup", (e) => {
 window.addEventListener("wheel", (e) => {
   moveSpeed = Math.max(4, Math.min(30, moveSpeed - e.deltaY * 0.01));
 }, { passive: true });
-scene.add(new AmbientLight(16777215, 0.5));
-var sun = new DirectionalLight(16772829, 1.2);
+scene.add(new AmbientLight(16770244, 0.4));
+scene.add(new HemisphereLight(8900331, 4906624, 0.5));
+var sun = new DirectionalLight(16772829, 1);
 sun.position.set(30, 50, 20);
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
@@ -27833,15 +28302,47 @@ sc.top = 60;
 sc.bottom = -60;
 scene.add(sun);
 var mat = {
-  grass: new MeshStandardMaterial({ color: 4906624, roughness: 0.9 }),
-  dirt: new MeshStandardMaterial({ color: 9139029, roughness: 1 }),
+  // Ground
+  grass: new MeshStandardMaterial({ color: 6210153, roughness: 0.95 }),
+  grassDark: new MeshStandardMaterial({ color: 4761684, roughness: 0.95 }),
+  dirt: new MeshStandardMaterial({ color: 12887666, roughness: 1 }),
+  stone: new MeshStandardMaterial({ color: 10265519, roughness: 0.8 }),
+  cobblestone: new MeshStandardMaterial({ color: 11047032, roughness: 0.9 }),
+  water: new MeshStandardMaterial({ color: 6013163, roughness: 0.1, metalness: 0.2, transparent: true, opacity: 0.7 }),
+  // House
+  wallPink: new MeshStandardMaterial({ color: 16573676, roughness: 0.8 }),
+  wallBlue: new MeshStandardMaterial({ color: 14938877, roughness: 0.8 }),
+  wallYellow: new MeshStandardMaterial({ color: 16775620, roughness: 0.8 }),
+  wallGreen: new MeshStandardMaterial({ color: 15267305, roughness: 0.8 }),
+  doorWood: new MeshStandardMaterial({ color: 9268835, roughness: 0.7 }),
+  windowGlass: new MeshStandardMaterial({ color: 12312315, roughness: 0.1, metalness: 0.3, transparent: true, opacity: 0.6 }),
+  chimney: new MeshStandardMaterial({ color: 7951688, roughness: 0.9 }),
+  // Decorations
+  wood: new MeshStandardMaterial({ color: 10586239, roughness: 0.85 }),
+  fencePost: new MeshStandardMaterial({ color: 14142664, roughness: 0.8 }),
+  trunkBrown: new MeshStandardMaterial({ color: 7951688, roughness: 0.9 }),
+  leafGreen: new MeshStandardMaterial({ color: 6732650, roughness: 0.8 }),
+  leafDark: new MeshStandardMaterial({ color: 3706428, roughness: 0.8 }),
+  flowerRed: new MeshStandardMaterial({ color: 15684432, roughness: 0.6 }),
+  flowerPink: new MeshStandardMaterial({ color: 16027569, roughness: 0.6 }),
+  flowerYellow: new MeshStandardMaterial({ color: 16773494, roughness: 0.6 }),
+  flowerPurple: new MeshStandardMaterial({ color: 13538264, roughness: 0.6 }),
+  flowerWhite: new MeshStandardMaterial({ color: 16119285, roughness: 0.6 }),
+  bushGreen: new MeshStandardMaterial({ color: 5025616, roughness: 0.85 }),
+  lampPost: new MeshStandardMaterial({ color: 5592405, roughness: 0.4, metalness: 0.6 }),
+  lampGlow: new MeshStandardMaterial({ color: 16772696, emissive: 16772696, emissiveIntensity: 0.6 }),
+  rock: new MeshStandardMaterial({ color: 10395294, roughness: 0.95 }),
+  // Minion
   minionYellow: new MeshStandardMaterial({ color: 16109619, roughness: 0.5 }),
   minionBlue: new MeshStandardMaterial({ color: 3900150, roughness: 0.5 }),
   goggle: new MeshStandardMaterial({ color: 8947848, metalness: 0.8, roughness: 0.2 }),
   eye: new MeshStandardMaterial({ color: 16777215 }),
   pupil: new MeshStandardMaterial({ color: 1118481 }),
-  roofColors: [4886745, 14240330, 4905338, 14264394, 10181046, 1752220]
+  roofColors: [6056896, 15684432, 6732650, 16754470, 11225020, 2541274, 15483002, 16740419],
+  wallColors: null
+  // set below
 };
+mat.wallColors = [mat.wallPink, mat.wallBlue, mat.wallYellow, mat.wallGreen];
 var MINION_NAMES = [
   "\u5C0F\u660E",
   "\u963F\u82B1",
@@ -28064,94 +28565,228 @@ function addNameLabel(minion, line1, line2) {
   minion.add(sprite);
 }
 function createContinent(agentName, index) {
-  const W = 18, D = 18;
+  const W = 22, D = 22;
   const cols = Math.ceil(Math.sqrt(agents.length));
   const col = index % cols, row = Math.floor(index / cols);
-  const ox = col * (W + 8) - (cols - 1) * (W + 8) / 2;
-  const oz = row * (D + 8) - (Math.ceil(agents.length / cols) - 1) * (D + 8) / 2;
+  const ox = col * (W + 6) - (cols - 1) * (W + 6) / 2;
+  const oz = row * (D + 6) - (Math.ceil(agents.length / cols) - 1) * (D + 6) / 2;
+  const cx = ox + W / 2, cz = oz + D / 2;
   const ground = new Mesh(new BoxGeometry(W, 0.3, D), mat.grass);
-  ground.position.set(ox + W / 2, -0.15, oz + D / 2);
+  ground.position.set(cx, -0.15, cz);
   ground.receiveShadow = true;
   scene.add(ground);
-  const houseW = 5, houseD = 5, houseH = 3;
+  for (let i = 0; i < 6; i++) {
+    const px = ox + 2 + Math.random() * (W - 4), pz = oz + 2 + Math.random() * (D - 4);
+    const sz = 1.5 + Math.random() * 2.5;
+    const patch = new Mesh(new CircleGeometry(sz, 16), mat.grassDark);
+    patch.rotation.x = -Math.PI / 2;
+    patch.position.set(px, 0.01, pz);
+    scene.add(patch);
+  }
+  const pathMat = mat.cobblestone;
+  for (let i = 0; i < 8; i++) {
+    const stone = new Mesh(
+      new CylinderGeometry(0.3 + Math.random() * 0.2, 0.35 + Math.random() * 0.15, 0.06, 6),
+      pathMat
+    );
+    stone.position.set(cx - 0.5 + Math.random(), 0.03, oz + 2 + i * 2.2);
+    stone.rotation.y = Math.random() * Math.PI;
+    scene.add(stone);
+  }
+  const houseW = 4.5, houseD = 4.5, houseH = 2.8;
   const roofColor = mat.roofColors[index % mat.roofColors.length];
-  const hx = ox + W / 2 - houseW / 2, hz = oz + D / 2 - houseD / 2;
-  const wallMat = new MeshStandardMaterial({ color: 15787731 });
+  const wallMat = mat.wallColors[index % mat.wallColors.length];
+  const hx = cx - 2, hz = cz - 2;
   const walls = new Mesh(new BoxGeometry(houseW, houseH, houseD), wallMat);
   walls.position.set(hx, houseH / 2, hz);
   walls.castShadow = true;
   scene.add(walls);
-  const roofGeo = new ConeGeometry(houseW * 0.85, 2, 4);
-  const roof = new Mesh(roofGeo, new MeshStandardMaterial({ color: roofColor }));
-  roof.position.set(hx, houseH + 1, hz);
+  const roofGeo = new ConeGeometry(houseW * 0.9, 2.2, 4);
+  const roof = new Mesh(roofGeo, new MeshStandardMaterial({ color: roofColor, roughness: 0.7 }));
+  roof.position.set(hx, houseH + 1.1, hz);
   roof.rotation.y = Math.PI / 4;
   roof.castShadow = true;
   scene.add(roof);
+  const door = new Mesh(new BoxGeometry(0.8, 1.5, 0.1), mat.doorWood);
+  door.position.set(hx, 0.75, hz + houseD / 2 + 0.05);
+  scene.add(door);
+  const knob = new Mesh(new SphereGeometry(0.06, 8, 8), new MeshStandardMaterial({ color: 16766720, metalness: 0.8 }));
+  knob.position.set(hx + 0.25, 0.85, hz + houseD / 2 + 0.12);
+  scene.add(knob);
+  [-1, 1].forEach((side) => {
+    const win = new Mesh(new BoxGeometry(0.7, 0.7, 0.1), mat.windowGlass);
+    win.position.set(hx + side * 1.5, houseH * 0.6, hz + houseD / 2 + 0.05);
+    scene.add(win);
+    const frame = new Mesh(new BoxGeometry(0.8, 0.8, 0.05), mat.doorWood);
+    frame.position.set(hx + side * 1.5, houseH * 0.6, hz + houseD / 2 + 0.02);
+    scene.add(frame);
+  });
+  const chimney = new Mesh(new BoxGeometry(0.5, 1.5, 0.5), mat.chimney);
+  chimney.position.set(hx + 1.2, houseH + 1.8, hz - 0.8);
+  scene.add(chimney);
   const signCanvas = document.createElement("canvas");
   signCanvas.width = 256;
   signCanvas.height = 64;
   const sctx = signCanvas.getContext("2d");
-  sctx.fillStyle = "#1a1a2e";
+  sctx.fillStyle = "#2d1b00";
   sctx.fillRect(0, 0, 256, 64);
-  sctx.font = "bold 24px sans-serif";
+  sctx.strokeStyle = "#8d6e63";
+  sctx.lineWidth = 4;
+  sctx.strokeRect(2, 2, 252, 60);
+  sctx.font = "bold 22px sans-serif";
   sctx.textAlign = "center";
-  sctx.fillStyle = "#53d8fb";
+  sctx.fillStyle = "#ffcc02";
   sctx.fillText(agentName, 128, 42);
   const signTex = new CanvasTexture(signCanvas);
   const sign = new Sprite(new SpriteMaterial({ map: signTex, transparent: true }));
-  sign.position.set(hx, houseH + 3.5, hz);
-  sign.scale.set(3, 0.75, 1);
+  sign.position.set(hx, houseH + 3.8, hz);
+  sign.scale.set(3.5, 0.875, 1);
   scene.add(sign);
-  const table = new Mesh(new BoxGeometry(1.5, 0.08, 0.8), new MeshStandardMaterial({ color: 9136404 }));
-  table.position.set(hx - 1, 0.72, hz + 1);
+  const table = new Mesh(new BoxGeometry(1.4, 0.08, 0.7), mat.wood);
+  table.position.set(hx - 1.5, 0.72, hz + 1);
   scene.add(table);
-  [-0.6, 0.6].forEach((xo) => [-0.3, 0.3].forEach((zo) => {
-    const leg = new Mesh(new CylinderGeometry(0.04, 0.04, 0.7, 6), new MeshStandardMaterial({ color: 9136404 }));
-    leg.position.set(hx - 1 + xo, 0.35, hz + 1 + zo);
+  [-0.55, 0.55].forEach((xo) => [-0.25, 0.25].forEach((zo) => {
+    const leg = new Mesh(new CylinderGeometry(0.04, 0.04, 0.7, 6), mat.wood);
+    leg.position.set(hx - 1.5 + xo, 0.35, hz + 1 + zo);
     scene.add(leg);
   }));
   [-1, 1].forEach((side) => {
-    const chair = new Mesh(new BoxGeometry(0.5, 0.5, 0.5), new MeshStandardMaterial({ color: 10506797 }));
-    chair.position.set(hx - 1 + side * 1.2, 0.25, hz + 1);
+    const chair = new Mesh(new BoxGeometry(0.45, 0.45, 0.45), mat.doorWood);
+    chair.position.set(hx - 1.5 + side * 1.1, 0.22, hz + 1);
     scene.add(chair);
   });
-  const bed = new Mesh(new BoxGeometry(1.5, 0.3, 2.5), new MeshStandardMaterial({ color: 6000089 }));
-  bed.position.set(hx + 1.5, 0.15, hz - 0.5);
+  const bed = new Mesh(new BoxGeometry(1.4, 0.25, 2.2), new MeshStandardMaterial({ color: 9489145, roughness: 0.7 }));
+  bed.position.set(hx + 1.5, 0.12, hz - 0.8);
   scene.add(bed);
-  const pillow = new Mesh(new BoxGeometry(1.2, 0.12, 0.5), new MeshStandardMaterial({ color: 16777215 }));
-  pillow.position.set(hx + 1.5, 0.36, hz - 1.5);
+  const pillow = new Mesh(new BoxGeometry(1.1, 0.1, 0.45), new MeshStandardMaterial({ color: 16777215, roughness: 0.5 }));
+  pillow.position.set(hx + 1.5, 0.3, hz - 1.7);
   scene.add(pillow);
-  const shelf = new Mesh(new BoxGeometry(0.8, 2, 0.4), new MeshStandardMaterial({ color: 9136404 }));
-  shelf.position.set(hx - 2.2, 1, hz - 1);
-  scene.add(shelf);
-  for (let i = 0; i < 4; i++) {
-    const book = new Mesh(new BoxGeometry(0.6, 0.25, 0.3), new MeshStandardMaterial({ color: [12597547, 2719929, 2600544, 15965202][i] }));
-    book.position.set(hx - 2.2, 0.3 + i * 0.45, hz - 1);
-    scene.add(book);
+  const treePositions = [
+    [ox + 2, oz + 2],
+    [ox + W - 2, oz + 2],
+    [ox + 2, oz + D - 2],
+    [ox + W - 2, oz + D - 2],
+    [cx + 5, cz + 3],
+    [cx - 6, cz - 4],
+    [cx + 3, cz - 6]
+  ];
+  treePositions.forEach(([tx, tz], ti) => {
+    const treeH = 1.5 + Math.random() * 1;
+    const trunk = new Mesh(new CylinderGeometry(0.12, 0.18, treeH, 8), mat.trunkBrown);
+    trunk.position.set(tx, treeH / 2, tz);
+    trunk.castShadow = true;
+    scene.add(trunk);
+    const canopyR = 0.9 + Math.random() * 0.4;
+    const canopyMat = ti % 2 === 0 ? mat.leafGreen : mat.leafDark;
+    [[0, 0, 0], [0.3, 0.1, 0.2], [-0.2, 0.15, -0.15]].forEach(([dx, dy, dz]) => {
+      const canopy = new Mesh(new SphereGeometry(canopyR * (0.8 + Math.random() * 0.3), 12, 10), canopyMat);
+      canopy.position.set(tx + dx, treeH + canopyR * 0.5 + dy, tz + dz);
+      canopy.castShadow = true;
+      scene.add(canopy);
+    });
+    addObstacle(tx - 0.4, tx + 0.4, tz - 0.4, tz + 0.4, "tree");
+  });
+  const flowerColors = [mat.flowerRed, mat.flowerPink, mat.flowerYellow, mat.flowerPurple, mat.flowerWhite];
+  for (let i = 0; i < 15; i++) {
+    const fx = ox + 1 + Math.random() * (W - 2);
+    const fz = oz + 1 + Math.random() * (D - 2);
+    if (Math.abs(fx - hx) < 3.5 && Math.abs(fz - hz) < 3.5) continue;
+    const stem = new Mesh(new CylinderGeometry(0.02, 0.02, 0.25, 4), mat.leafGreen);
+    stem.position.set(fx, 0.12, fz);
+    scene.add(stem);
+    const fColor = flowerColors[Math.floor(Math.random() * flowerColors.length)];
+    const head = new Mesh(new SphereGeometry(0.1, 8, 6), fColor);
+    head.position.set(fx, 0.28, fz);
+    scene.add(head);
   }
-  const lampPole = new Mesh(new CylinderGeometry(0.03, 0.03, 1.2, 6), new MeshStandardMaterial({ color: 2184 }));
-  lampPole.position.set(hx + 2, 0.6, hz + 1.5);
-  scene.add(lampPole);
-  const lampShade = new Mesh(new ConeGeometry(0.3, 0.4, 8), new MeshStandardMaterial({ color: 16766720, emissive: 16766720, emissiveIntensity: 0.3 }));
-  lampShade.position.set(hx + 2, 1.4, hz + 1.5);
-  scene.add(lampShade);
-  const lampLight = new PointLight(16766720, 0.5, 5);
-  lampLight.position.set(hx + 2, 1.2, hz + 1.5);
+  for (let i = 0; i < 5; i++) {
+    const bx = ox + 1.5 + Math.random() * (W - 3);
+    const bz = oz + 1.5 + Math.random() * (D - 3);
+    if (Math.abs(bx - hx) < 3 && Math.abs(bz - hz) < 3) continue;
+    const bush = new Mesh(new SphereGeometry(0.4 + Math.random() * 0.2, 10, 8), mat.bushGreen);
+    bush.position.set(bx, 0.25, bz);
+    bush.scale.y = 0.7;
+    bush.castShadow = true;
+    scene.add(bush);
+  }
+  const pondX = cx + 4, pondZ = cz + 4;
+  const pond = new Mesh(new CircleGeometry(1.8, 20), mat.water);
+  pond.rotation.x = -Math.PI / 2;
+  pond.position.set(pondX, 0.02, pondZ);
+  scene.add(pond);
+  for (let a = 0; a < Math.PI * 2; a += Math.PI / 6) {
+    const r = 1.8 + (Math.random() - 0.5) * 0.3;
+    const rs = new Mesh(new SphereGeometry(0.15 + Math.random() * 0.1, 6, 5), mat.rock);
+    rs.position.set(pondX + Math.cos(a) * r, 0.1, pondZ + Math.sin(a) * r);
+    rs.scale.y = 0.6;
+    scene.add(rs);
+  }
+  for (let i = 0; i < 4; i++) {
+    const rx = ox + 1 + Math.random() * (W - 2);
+    const rz = oz + 1 + Math.random() * (D - 2);
+    if (Math.abs(rx - hx) < 3 && Math.abs(rz - hz) < 3) continue;
+    const rock = new Mesh(
+      new DodecahedronGeometry(0.2 + Math.random() * 0.15, 0),
+      mat.rock
+    );
+    rock.position.set(rx, 0.12, rz);
+    rock.rotation.set(Math.random(), Math.random(), Math.random());
+    rock.scale.y = 0.7;
+    scene.add(rock);
+  }
+  const fenceYard = { x1: hx - 3.5, x2: hx + 3.5, z1: hz + houseD / 2 + 0.5, z2: hz + houseD / 2 + 4 };
+  for (let fx = fenceYard.x1; fx <= fenceYard.x2; fx += 0.8) {
+    [fenceYard.z1, fenceYard.z2].forEach((fz) => {
+      const post = new Mesh(new BoxGeometry(0.08, 0.6, 0.08), mat.fencePost);
+      post.position.set(fx, 0.3, fz);
+      scene.add(post);
+      const cap = new Mesh(new ConeGeometry(0.06, 0.12, 4), mat.fencePost);
+      cap.position.set(fx, 0.66, fz);
+      scene.add(cap);
+    });
+  }
+  [fenceYard.z1, fenceYard.z2].forEach((fz) => {
+    const rail = new Mesh(new BoxGeometry(fenceYard.x2 - fenceYard.x1, 0.05, 0.05), mat.fencePost);
+    rail.position.set((fenceYard.x1 + fenceYard.x2) / 2, 0.45, fz);
+    scene.add(rail);
+  });
+  const lmpx = hx + houseW / 2 + 1.5, lmpz = hz + houseD / 2 + 1;
+  const pole = new Mesh(new CylinderGeometry(0.04, 0.05, 2.2, 8), mat.lampPost);
+  pole.position.set(lmpx, 1.1, lmpz);
+  scene.add(pole);
+  const lampHead = new Mesh(new SphereGeometry(0.2, 10, 8), mat.lampGlow);
+  lampHead.position.set(lmpx, 2.3, lmpz);
+  scene.add(lampHead);
+  const lampLight = new PointLight(16772696, 0.4, 8);
+  lampLight.position.set(lmpx, 2.2, lmpz);
   scene.add(lampLight);
+  const benchX = cx - 5, benchZ = cz + 1;
+  const benchSeat = new Mesh(new BoxGeometry(1.2, 0.08, 0.4), mat.wood);
+  benchSeat.position.set(benchX, 0.45, benchZ);
+  scene.add(benchSeat);
+  const benchBack = new Mesh(new BoxGeometry(1.2, 0.5, 0.06), mat.wood);
+  benchBack.position.set(benchX, 0.7, benchZ - 0.18);
+  scene.add(benchBack);
+  [-0.5, 0.5].forEach((xo) => {
+    const bLeg = new Mesh(new BoxGeometry(0.08, 0.45, 0.35), mat.doorWood);
+    bLeg.position.set(benchX + xo, 0.22, benchZ);
+    scene.add(bLeg);
+  });
   const pad = 0.3;
   addObstacle(hx - houseW / 2 - pad, hx + houseW / 2 + pad, hz - houseD / 2 - pad, hz + houseD / 2 + pad, "house");
-  addObstacle(hx - 1 - 0.75 - pad, hx - 1 + 0.75 + pad, hz + 1 - 0.4 - pad, hz + 1 + 0.4 + pad, "table");
+  addObstacle(hx - 1.5 - 0.7 - pad, hx - 1.5 + 0.7 + pad, hz + 1 - 0.35 - pad, hz + 1 + 0.35 + pad, "table");
   [-1, 1].forEach((side) => {
-    const cx = hx - 1 + side * 1.2;
-    addObstacle(cx - 0.25 - pad, cx + 0.25 + pad, hz + 1 - 0.25 - pad, hz + 1 + 0.25 + pad, "chair");
+    const ccx = hx - 1.5 + side * 1.1;
+    addObstacle(ccx - 0.22 - pad, ccx + 0.22 + pad, hz + 1 - 0.22 - pad, hz + 1 + 0.22 + pad, "chair");
   });
-  addObstacle(hx + 1.5 - 0.75 - pad, hx + 1.5 + 0.75 + pad, hz - 0.5 - 1.25 - pad, hz - 0.5 + 1.25 + pad, "bed");
-  addObstacle(hx - 2.2 - 0.4 - pad, hx - 2.2 + 0.4 + pad, hz - 1 - 0.2 - pad, hz - 1 + 0.2 + pad, "bookshelf");
-  addObstacle(hx + 2 - 0.3 - pad, hx + 2 + 0.3 + pad, hz + 1.5 - 0.3 - pad, hz + 1.5 + 0.3 + pad, "lamp");
-  addObstacle(ox - 1, ox + 0.5, oz - 1, oz + D + 1, "wall_west");
-  addObstacle(ox + W - 0.5, ox + W + 1, oz - 1, oz + D + 1, "wall_east");
-  addObstacle(ox - 1, ox + W + 1, oz - 1, oz + 0.5, "wall_north");
-  addObstacle(ox - 1, ox + W + 1, oz + D - 0.5, oz + D + 1, "wall_south");
+  addObstacle(hx + 1.5 - 0.7 - pad, hx + 1.5 + 0.7 + pad, hz - 0.8 - 1.1 - pad, hz - 0.8 + 1.1 + pad, "bed");
+  addObstacle(lmpx - 0.2, lmpx + 0.2, lmpz - 0.2, lmpz + 0.2, "lamp");
+  addObstacle(benchX - 0.7, benchX + 0.7, benchZ - 0.3, benchZ + 0.3, "bench");
+  addObstacle(pondX - 2, pondX + 2, pondZ - 2, pondZ + 2, "pond");
+  addObstacle(ox - 1, ox + 0.3, oz - 1, oz + D + 1, "wall_west");
+  addObstacle(ox + W - 0.3, ox + W + 1, oz - 1, oz + D + 1, "wall_east");
+  addObstacle(ox - 1, ox + W + 1, oz - 1, oz + 0.3, "wall_north");
+  addObstacle(ox - 1, ox + W + 1, oz + D - 0.3, oz + D + 1, "wall_south");
   return { ox, oz, W, D, hx, hz, houseH };
 }
 function parseSessionKey(key) {
@@ -29011,6 +29646,7 @@ function animate() {
     updateBubblePosition(m, time);
   });
   reportPositions();
+  updatePetals(dt, time);
   renderer.render(scene, camera);
 }
 window.runCmd = function() {
@@ -29098,6 +29734,68 @@ window.addEventListener("resize", () => {
   drawer.addEventListener("mousedown", (e) => e.stopPropagation());
   drawer.addEventListener("mouseup", (e) => e.stopPropagation());
 })();
+function initClouds() {
+  const cloudMat = new MeshBasicMaterial({ color: 16777215, transparent: true, opacity: 0.6 });
+  for (let i = 0; i < 12; i++) {
+    const cloud = new Group();
+    const count = 3 + Math.floor(Math.random() * 3);
+    for (let j = 0; j < count; j++) {
+      const r = 1.5 + Math.random() * 2;
+      const puff = new Mesh(new SphereGeometry(r, 8, 6), cloudMat);
+      puff.position.set(j * 2 - count, Math.random() * 0.5, Math.random() * 0.8);
+      puff.scale.y = 0.4 + Math.random() * 0.2;
+      cloud.add(puff);
+    }
+    cloud.position.set(
+      (Math.random() - 0.5) * 120,
+      25 + Math.random() * 10,
+      (Math.random() - 0.5) * 120
+    );
+    cloud.userData = { speed: 0.2 + Math.random() * 0.3, dir: Math.random() > 0.5 ? 1 : -1 };
+    scene.add(cloud);
+  }
+}
+initClouds();
+var petals = [];
+var petalColors = [16761035, 16758725, 16773365, 16770273, 16573676, 15267305];
+function initPetals() {
+  const petalGeo = new PlaneGeometry(0.12, 0.08);
+  for (let i = 0; i < 30; i++) {
+    const color = petalColors[Math.floor(Math.random() * petalColors.length)];
+    const pmat = new MeshBasicMaterial({ color, side: DoubleSide, transparent: true, opacity: 0.7 });
+    const petal = new Mesh(petalGeo, pmat);
+    petal.position.set(
+      (Math.random() - 0.5) * 100,
+      2 + Math.random() * 15,
+      (Math.random() - 0.5) * 100
+    );
+    petal.userData = {
+      speed: 0.3 + Math.random() * 0.5,
+      wobble: Math.random() * Math.PI * 2,
+      wobbleSpeed: 1 + Math.random() * 2,
+      rotSpeed: (Math.random() - 0.5) * 3,
+      drift: (Math.random() - 0.5) * 0.3
+    };
+    scene.add(petal);
+    petals.push(petal);
+  }
+}
+initPetals();
+function updatePetals(dt, time) {
+  for (const p of petals) {
+    const ud = p.userData;
+    p.position.y -= ud.speed * dt;
+    p.position.x += Math.sin(time * ud.wobbleSpeed + ud.wobble) * ud.drift * dt;
+    p.position.z += Math.cos(time * ud.wobbleSpeed * 0.7 + ud.wobble) * ud.drift * dt * 0.5;
+    p.rotation.x += ud.rotSpeed * dt;
+    p.rotation.z += ud.rotSpeed * 0.5 * dt;
+    if (p.position.y < 0) {
+      p.position.y = 12 + Math.random() * 5;
+      p.position.x = (Math.random() - 0.5) * 100;
+      p.position.z = (Math.random() - 0.5) * 100;
+    }
+  }
+}
 connectSSE();
 animate();
 /*! Bundled license information:
