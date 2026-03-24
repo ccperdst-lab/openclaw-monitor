@@ -26,14 +26,16 @@ const keys = { w: false, a: false, s: false, d: false, space: false, shift: fals
 
 // Request pointer lock on click (only on canvas, not on UI elements)
 renderer.domElement.addEventListener('click', () => {
-  if (!pointerLocked) renderer.domElement.requestPointerLock();
-});
-// Auto-exit pointer lock when clicking on bubbles or UI
-document.addEventListener('mousedown', e => {
-  if (pointerLocked && (e.target.closest('.bubble3d') || e.target.closest('#drawer') || e.target.closest('#toggle'))) {
-    document.exitPointerLock();
+  if (!pointerLocked && !document.querySelector('.bubble3d.show')) {
+    renderer.domElement.requestPointerLock();
   }
-}, true); // capture phase to run before pointer lock swallows the event
+});
+// Auto-exit pointer lock when interacting with UI
+function exitLockIfActive() {
+  if (document.pointerLockElement) document.exitPointerLock();
+}
+document.getElementById('drawer').addEventListener('pointerdown', exitLockIfActive);
+document.getElementById('toggle').addEventListener('pointerdown', exitLockIfActive);
 
 document.addEventListener('pointerlockchange', () => {
   pointerLocked = document.pointerLockElement === renderer.domElement;
@@ -1174,12 +1176,21 @@ function updateBubbles() {
         el.className = 'bubble3d';
         el.innerHTML = '<div class="bx">✕</div><div class="bc"></div>';
         el.querySelector('.bx').addEventListener('click', function(e) {
-          e.stopPropagation();
           el.classList.remove('show');
+          e.preventDefault();
+          e.stopPropagation();
         });
-        // Prevent 3D controls from capturing bubble clicks
-        el.addEventListener('mousedown', e => e.stopPropagation());
+
+        // Capture ALL pointer events on bubble - exit pointer lock and consume events
+        el.addEventListener('pointerdown', function(e) {
+          if (document.pointerLockElement) document.exitPointerLock();
+          e.stopPropagation();
+        }, false);
+        el.addEventListener('pointerup', e => e.stopPropagation(), false);
+        el.addEventListener('click', e => e.stopPropagation(), false);
         el.addEventListener('wheel', e => e.stopPropagation(), { passive: true });
+        el.style.touchAction = 'pan-y';
+
         document.body.appendChild(el);
         bubbles[key] = el;
       }

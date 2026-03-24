@@ -27108,13 +27108,15 @@ var moveSpeed = 12;
 var pointerLocked = false;
 var keys = { w: false, a: false, s: false, d: false, space: false, shift: false };
 renderer.domElement.addEventListener("click", () => {
-  if (!pointerLocked) renderer.domElement.requestPointerLock();
-});
-document.addEventListener("mousedown", (e) => {
-  if (pointerLocked && (e.target.closest(".bubble3d") || e.target.closest("#drawer") || e.target.closest("#toggle"))) {
-    document.exitPointerLock();
+  if (!pointerLocked && !document.querySelector(".bubble3d.show")) {
+    renderer.domElement.requestPointerLock();
   }
-}, true);
+});
+function exitLockIfActive() {
+  if (document.pointerLockElement) document.exitPointerLock();
+}
+document.getElementById("drawer").addEventListener("pointerdown", exitLockIfActive);
+document.getElementById("toggle").addEventListener("pointerdown", exitLockIfActive);
 document.addEventListener("pointerlockchange", () => {
   pointerLocked = document.pointerLockElement === renderer.domElement;
   document.body.style.cursor = pointerLocked ? "none" : "default";
@@ -28116,11 +28118,18 @@ function updateBubbles() {
         el.className = "bubble3d";
         el.innerHTML = '<div class="bx">\u2715</div><div class="bc"></div>';
         el.querySelector(".bx").addEventListener("click", function(e) {
-          e.stopPropagation();
           el.classList.remove("show");
+          e.preventDefault();
+          e.stopPropagation();
         });
-        el.addEventListener("mousedown", (e) => e.stopPropagation());
+        el.addEventListener("pointerdown", function(e) {
+          if (document.pointerLockElement) document.exitPointerLock();
+          e.stopPropagation();
+        }, false);
+        el.addEventListener("pointerup", (e) => e.stopPropagation(), false);
+        el.addEventListener("click", (e) => e.stopPropagation(), false);
         el.addEventListener("wheel", (e) => e.stopPropagation(), { passive: true });
+        el.style.touchAction = "pan-y";
         document.body.appendChild(el);
         bubbles[key] = el;
       }
