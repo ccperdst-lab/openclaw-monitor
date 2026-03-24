@@ -494,9 +494,11 @@ function initWorld(worldData) {
     // Save bubble visibility + content state
     const bub = bubbles[sk];
     if (bub) {
+      const actsEl = bub.querySelector('.bub-acts');
       savedBubbles[sk] = {
         show: bub.classList.contains('show'),
         dismissed: bub._dismissed,
+        collapsed: actsEl ? actsEl.classList.contains('collapsed') : true,
         userMsg: m.userData.userMsg,
         userName: m.userData.userName,
         state: m.userData.state,
@@ -593,6 +595,14 @@ function initWorld(worldData) {
         m.userData.replyCount = sb.replyCount;
         const el = getOrCreateBubble(sess.key);
         el._dismissed = sb.dismissed;
+        // Restore collapsed state
+        if (sb.collapsed !== undefined) {
+          const acts = el.querySelector('.bub-acts');
+          if (acts) {
+            if (sb.collapsed) acts.classList.add('collapsed');
+            else acts.classList.remove('collapsed');
+          }
+        }
         if (!sb.dismissed) showBubble(m);
       }
     });
@@ -626,12 +636,7 @@ function getOrCreateBubble(sessionKey) {
     const closeBtn = el.querySelector('.bub-close');
     closeBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      el.classList.remove('show');
-      el._dismissed = true;
-      interactingWithOverlay = false;
-      stopBubbleRefresh(sk);
-      // Return focus to canvas area
-      renderer.domElement.focus();
+      hideBubble(sk);
     });
 
     // Collapse/expand thinking panel
@@ -657,10 +662,8 @@ function getOrCreateBubble(sessionKey) {
       }
       // Escape closes bubble
       if (e.key === 'Escape') {
-        el.classList.remove('show');
-        el._dismissed = true;
-        interactingWithOverlay = false;
-        stopBubbleRefresh(sk);
+        hideBubble(sk);
+        inputEl.blur();
         inputEl.blur();
       }
     });
@@ -736,6 +739,19 @@ function updateBubbleContent(m) {
     ud.state === 'thinking' ? `🧠 思考中 (${tc}步, ${oc}工具)...` :
     ud.state === 'streaming' ? `✍️ 流式输出中...` :
     `✅ 思考了${tc}步 · 🔧${oc}工具 · 📤${ud.replyCount}条`;
+}
+
+// Unified bubble hide: cleans up focus, state, and refresh timer
+function hideBubble(sessionKey) {
+  const el = bubbles[sessionKey];
+  if (!el) return;
+  el.classList.remove('show');
+  el._dismissed = true;
+  // Blur input to release focus
+  const inputEl = el.querySelector('.bub-chat-in');
+  if (inputEl) inputEl.blur();
+  interactingWithOverlay = false;
+  stopBubbleRefresh(sessionKey);
 }
 
 function showBubble(m) {
@@ -911,10 +927,8 @@ function handleEvent(ev) {
           const inputEl = b2.querySelector('.bub-chat-in');
           if (inputEl && inputEl.value) ud.savedInput = inputEl.value;
           if (document.activeElement === inputEl && inputEl.value.trim()) return;
-          b2.classList.remove('show');
-          b2._dismissed = true;
+          hideBubble(ud.sessionKey);
           ud.state = 'idle';
-          stopBubbleRefresh(ud.sessionKey);
         }
       }
     }, 30000);
@@ -1149,9 +1163,7 @@ window.addEventListener('click', (e) => {
       // Toggle bubble
       const b = bubbles[target.userData.sessionKey];
       if (b && b.classList.contains('show')) {
-        b.classList.remove('show'); b._dismissed = true;
-        interactingWithOverlay = false;
-        stopBubbleRefresh(target.userData.sessionKey);
+        hideBubble(target.userData.sessionKey);
       } else {
         // Load messages from API
         fetch(`/api/messages/${target.userData.sessionId}`).then(r => r.json()).then(data => {

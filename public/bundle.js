@@ -28184,9 +28184,11 @@ function initWorld(worldData) {
     };
     const bub = bubbles[sk];
     if (bub) {
+      const actsEl = bub.querySelector(".bub-acts");
       savedBubbles[sk] = {
         show: bub.classList.contains("show"),
         dismissed: bub._dismissed,
+        collapsed: actsEl ? actsEl.classList.contains("collapsed") : true,
         userMsg: m.userData.userMsg,
         userName: m.userData.userName,
         state: m.userData.state,
@@ -28267,6 +28269,13 @@ function initWorld(worldData) {
         m.userData.replyCount = sb.replyCount;
         const el = getOrCreateBubble(sess.key);
         el._dismissed = sb.dismissed;
+        if (sb.collapsed !== void 0) {
+          const acts = el.querySelector(".bub-acts");
+          if (acts) {
+            if (sb.collapsed) acts.classList.add("collapsed");
+            else acts.classList.remove("collapsed");
+          }
+        }
         if (!sb.dismissed) showBubble(m);
       }
     });
@@ -28300,11 +28309,7 @@ function getOrCreateBubble(sessionKey) {
     const closeBtn = el.querySelector(".bub-close");
     closeBtn.addEventListener("click", (e) => {
       e.stopPropagation();
-      el.classList.remove("show");
-      el._dismissed = true;
-      interactingWithOverlay = false;
-      stopBubbleRefresh(sk);
-      renderer.domElement.focus();
+      hideBubble(sk);
     });
     const actsEl = el.querySelector(".bub-acts");
     const actsHd = el.querySelector(".bub-acts-hd");
@@ -28330,10 +28335,8 @@ function getOrCreateBubble(sessionKey) {
         sendDirectChat(sk, inputEl);
       }
       if (e.key === "Escape") {
-        el.classList.remove("show");
-        el._dismissed = true;
-        interactingWithOverlay = false;
-        stopBubbleRefresh(sk);
+        hideBubble(sk);
+        inputEl.blur();
         inputEl.blur();
       }
     });
@@ -28399,6 +28402,16 @@ function updateBubbleContent(m) {
   const tc = log2.filter((e) => e.type === "think").length;
   const oc = log2.filter((e) => e.type === "tool_use" || e.type === "tool_result").length;
   el.querySelector(".bub-foot").textContent = ud.state === "thinking" ? `\u{1F9E0} \u601D\u8003\u4E2D (${tc}\u6B65, ${oc}\u5DE5\u5177)...` : ud.state === "streaming" ? `\u270D\uFE0F \u6D41\u5F0F\u8F93\u51FA\u4E2D...` : `\u2705 \u601D\u8003\u4E86${tc}\u6B65 \xB7 \u{1F527}${oc}\u5DE5\u5177 \xB7 \u{1F4E4}${ud.replyCount}\u6761`;
+}
+function hideBubble(sessionKey) {
+  const el = bubbles[sessionKey];
+  if (!el) return;
+  el.classList.remove("show");
+  el._dismissed = true;
+  const inputEl = el.querySelector(".bub-chat-in");
+  if (inputEl) inputEl.blur();
+  interactingWithOverlay = false;
+  stopBubbleRefresh(sessionKey);
 }
 function showBubble(m) {
   const el = getOrCreateBubble(m.userData.sessionKey);
@@ -28562,10 +28575,8 @@ function handleEvent(ev) {
           const inputEl = b2.querySelector(".bub-chat-in");
           if (inputEl && inputEl.value) ud.savedInput = inputEl.value;
           if (document.activeElement === inputEl && inputEl.value.trim()) return;
-          b2.classList.remove("show");
-          b2._dismissed = true;
+          hideBubble(ud.sessionKey);
           ud.state = "idle";
-          stopBubbleRefresh(ud.sessionKey);
         }
       }
     }, 3e4);
@@ -28790,10 +28801,7 @@ window.addEventListener("click", (e) => {
     if (target.userData.sessionKey) {
       const b = bubbles[target.userData.sessionKey];
       if (b && b.classList.contains("show")) {
-        b.classList.remove("show");
-        b._dismissed = true;
-        interactingWithOverlay = false;
-        stopBubbleRefresh(target.userData.sessionKey);
+        hideBubble(target.userData.sessionKey);
       } else {
         fetch(`/api/messages/${target.userData.sessionId}`).then((r) => r.json()).then((data) => {
           if (data.messages) {
