@@ -27618,13 +27618,11 @@ function addNameLabel(minion, feishuName, chineseName) {
   tex.needsUpdate = true;
   const label = new Mesh(
     new PlaneGeometry(2.2, 0.8),
-    new MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, side: DoubleSide })
+    new MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, depthTest: false, side: DoubleSide })
   );
   label.position.set(0, 2.5, 0);
   label.userData.isNameLabel = true;
-  label.onBeforeRender = function(renderer2, scene2, camera2) {
-    this.quaternion.copy(camera2.quaternion);
-  };
+  label.renderOrder = 9999;
   minion.add(label);
 }
 function createMinion(colorHex) {
@@ -28331,6 +28329,13 @@ function animate() {
   });
   animateMinions(time, dt);
   updateBubbles();
+  minions.forEach((m) => {
+    const label = m.children.find((c) => c.userData && c.userData.isNameLabel);
+    if (label) {
+      label.quaternion.copy(camera.quaternion);
+      label.position.y = 2.5;
+    }
+  });
   lampLight.intensity = 0.7 + Math.sin(time * 2) * 0.1;
   renderer.render(scene, camera);
 }

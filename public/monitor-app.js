@@ -575,14 +575,11 @@ function addNameLabel(minion, feishuName, chineseName) {
   tex.needsUpdate = true;
   const label = new THREE.Mesh(
     new THREE.PlaneGeometry(2.2, 0.8),
-    new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, side: THREE.DoubleSide })
+    new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, depthTest: false, side: THREE.DoubleSide })
   );
-  label.position.set(0, 2.5, 0); // above minion head
+  label.position.set(0, 2.5, 0);
   label.userData.isNameLabel = true;
-  // Make label always face camera (billboard)
-  label.onBeforeRender = function(renderer, scene, camera) {
-    this.quaternion.copy(camera.quaternion);
-  };
+  label.renderOrder = 9999; // render on top of everything
   minion.add(label);
 }
 
@@ -1409,6 +1406,15 @@ function animate() {
 
   animateMinions(time, dt);
   updateBubbles();
+  // Billboard: make all name labels face camera
+  minions.forEach(m => {
+    const label = m.children.find(c => c.userData && c.userData.isNameLabel);
+    if (label) {
+      label.quaternion.copy(camera.quaternion);
+      // Keep label above head even when minion bobs
+      label.position.y = 2.5;
+    }
+  });
   // Lamp flicker
   lampLight.intensity = 0.7 + Math.sin(time * 2) * 0.1;
   renderer.render(scene, camera);
