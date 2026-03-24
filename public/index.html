@@ -101,16 +101,21 @@
   .mcp-bubble{
     position:fixed;z-index:85;
     background:linear-gradient(135deg,#1e1b4b,#312e81);
-    border:2px solid rgba(139,92,246,0.5);
+    border:2px solid rgba(139,92,246,0.6);
     border-radius:14px;
-    min-width:120px;max-width:240px;
-    box-shadow:0 8px 32px rgba(99,40,180,0.3),0 0 20px rgba(139,92,246,0.15);
+    min-width:140px;max-width:280px;
+    box-shadow:0 8px 32px rgba(99,40,180,0.4),0 0 30px rgba(139,92,246,0.2),0 0 60px rgba(139,92,246,0.1);
     pointer-events:none;
     opacity:1;
     transform:translateY(0) scale(1);
     transition:opacity .3s ease,transform .3s ease;
     overflow:hidden;
     font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    animation: mcp-glow 1.5s ease-in-out infinite alternate;
+  }
+  @keyframes mcp-glow {
+    from { box-shadow: 0 8px 32px rgba(99,40,180,0.4), 0 0 30px rgba(139,92,246,0.2); border-color: rgba(139,92,246,0.6); }
+    to { box-shadow: 0 8px 32px rgba(99,40,180,0.6), 0 0 50px rgba(139,92,246,0.35); border-color: rgba(167,139,250,0.9); }
   }
   .mcp-bubble::after{
     content:'';position:absolute;top:100%;left:30px;
@@ -118,16 +123,17 @@
     pointer-events:none;
   }
   .mcp-bub-hd{
-    padding:6px 12px 4px;
-    font-size:10px;font-weight:700;
-    color:#a78bfa;
-    border-bottom:1px solid rgba(139,92,246,0.2);
+    padding:8px 14px 5px;
+    font-size:11px;font-weight:700;
+    color:#c4b5fd;
+    border-bottom:1px solid rgba(139,92,246,0.25);
+    letter-spacing:0.3px;
   }
   .mcp-bub-text{
-    padding:8px 12px 10px;
-    font-size:12px;
+    padding:10px 14px 12px;
+    font-size:13px;
     color:#e0e7ff;
-    line-height:1.5;
+    line-height:1.6;
     word-break:break-word;
   }
 </style>

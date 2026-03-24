@@ -219,9 +219,6 @@ function createMinion(profile) {
     savedInput: '',
     // Notification: "!" indicator when conversation ends and bubble is closed
     hasNotification: false, notificationSprite: null,
-    // Attention animation (jump/wave)
-    attentionAnim: 0, // 0 = off, >0 = time remaining
-    attentionType: 'jump', // 'jump' or 'wave'
     // Movement
     idleTimer: 0, idleAction: 'stand', idleActionTimer: 0,
     bounds: null,
@@ -266,9 +263,9 @@ function showNotification(minion) {
   minion.add(sprite);
   minion.userData.notificationSprite = sprite;
   minion.userData.hasNotification = true;
-  // Trigger attention animation
-  minion.userData.attentionAnim = 2.5; // seconds
-  minion.userData.attentionType = Math.random() > 0.5 ? 'jump' : 'wave';
+  // Trigger attention animation via new system
+  const animType = Math.random() > 0.5 ? 'jump' : 'wave';
+  triggerAnimation(minion, animType, 2.5);
 }
 
 function clearNotification(minion) {
@@ -277,7 +274,15 @@ function clearNotification(minion) {
     minion.userData.notificationSprite = null;
   }
   minion.userData.hasNotification = false;
-  minion.userData.attentionAnim = 0;
+  // Clear active animation for this minion
+  const sk = minion.userData.sessionKey;
+  if (activeAnimations[sk]) {
+    clearTimeout(activeAnimations[sk].timer);
+    if (activeAnimations[sk].ring) scene.remove(activeAnimations[sk].ring);
+    delete activeAnimations[sk];
+    minion.scale.set(1, 1, 1);
+    minion.rotation.x = 0;
+  }
 }
 
 // ===== Name Label (billboard) =====
@@ -840,36 +845,58 @@ function handleControl(data) {
 }
 
 // MCP-triggered animations
-const activeAnimations = {}; // sessionKey -> { type, timer, endTime }
+const activeAnimations = {}; // sessionKey -> { type, timer, endTime, duration, ring }
+
+// Shared ring geometry & materials for animation effects
+let ringGeo = null;
+const ringColors = {
+  jump: 0x22d3ee,    // cyan
+  wave: 0xa78bfa,    // purple
+  dance: 0xf472b6,   // pink
+  spin: 0xfbbf24,    // amber
+  nod: 0x60a5fa,     // blue
+  shake: 0xef4444,   // red
+  bow: 0x34d399,     // green
+  clap: 0xf59e0b,    // orange
+  think: 0x818cf8,   // indigo
+  celebrate: 0xf43f5e, // rose
+};
 
 function triggerAnimation(minion, animType, duration) {
   const sk = minion.userData.sessionKey;
   // Clear any existing animation
   if (activeAnimations[sk]) {
     clearTimeout(activeAnimations[sk].timer);
+    if (activeAnimations[sk].ring) scene.remove(activeAnimations[sk].ring);
   }
+
+  // Create glow ring
+  if (!ringGeo) ringGeo = new THREE.RingGeometry(0.6, 0.9, 32);
+  const ringColor = ringColors[animType] || 0x22d3ee;
+  const ringMat = new THREE.MeshBasicMaterial({
+    color: ringColor, transparent: true, opacity: 0.5,
+    side: THREE.DoubleSide, depthWrite: false
+  });
+  const ring = new THREE.Mesh(ringGeo, ringMat);
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.set(minion.position.x, 0.02, minion.position.z);
+  scene.add(ring);
 
   const endTime = Date.now() + duration * 1000;
-  activeAnimations[sk] = { type: animType, endTime, timer: null };
-
-  // Visual feedback: brief scale/glow
-  const origScale = { x: minion.scale.x, y: minion.scale.y, z: minion.scale.z };
-
-  if (animType === 'jump' || animType === 'celebrate') {
-    minion.userData.attentionAnim = duration;
-    minion.userData.attentionType = 'jump';
-  } else if (animType === 'wave') {
-    minion.userData.attentionAnim = duration;
-    minion.userData.attentionType = 'wave';
-  } else {
-    // Custom animation handled in animate loop via activeAnimations
-    minion.userData.attentionAnim = duration;
-    minion.userData.attentionType = animType;
-  }
+  activeAnimations[sk] = { type: animType, endTime, duration, timer: null, ring };
 
   activeAnimations[sk].timer = setTimeout(() => {
+    if (activeAnimations[sk]?.ring) scene.remove(activeAnimations[sk].ring);
     delete activeAnimations[sk];
-    minion.userData.attentionAnim = 0;
+    // Reset minion scale
+    minion.scale.set(1, 1, 1);
+    minion.rotation.x = 0;
+    // Reset child rotations (head, arms)
+    minion.children.forEach(c => {
+      if (c.userData?.isArm || c.geometry?.type === 'SphereGeometry') {
+        c.rotation.x = 0; c.rotation.z = 0;
+      }
+    });
   }, duration * 1000);
 }
 
@@ -1058,73 +1085,124 @@ function animate() {
 
     // Subtle bob (base)
     let yOff = Math.sin(time * 1.5 + ud.bobPhase) * 0.02;
+    let extraRotY = 0;
+    let extraRotX = 0;
+    let pulseScale = 1;
 
-    // MCP custom animations
+    // MCP custom animations (dramatic and visible)
     const anim = activeAnimations[ud.sessionKey];
     if (anim && Date.now() < anim.endTime) {
-      const elapsed = (anim.endTime - Date.now()) / 1000;
-      const t = 1 - elapsed / (anim.endTime - Date.now() + elapsed); // 0..1 progress-ish
+      const remaining = (anim.endTime - Date.now()) / 1000;
+      const progress = 1 - remaining / anim.duration; // 0→1
+
       switch (anim.type) {
+        case 'jump':
+          // Big bouncing jumps
+          yOff += Math.abs(Math.sin(time * 6)) * 0.6;
+          pulseScale = 1 + Math.sin(time * 8) * 0.08;
+          break;
         case 'dance':
-          m.rotation.y += Math.sin(time * 6) * 0.05;
-          yOff += Math.abs(Math.sin(time * 4)) * 0.15;
+          // Rhythmic body sway + bounce
+          extraRotY = Math.sin(time * 5) * 0.4;
+          extraRotX = Math.sin(time * 7) * 0.1;
+          yOff += Math.abs(Math.sin(time * 4)) * 0.3;
+          pulseScale = 1 + Math.sin(time * 6) * 0.05;
           break;
         case 'spin':
-          m.rotation.y += dt * 8;
-          yOff += 0.05;
+          // Fast spinning
+          extraRotY = dt * 12;
+          yOff += 0.15;
+          pulseScale = 1 + Math.sin(time * 10) * 0.06;
           break;
         case 'nod':
-          // Tilt head forward and back
+          // Dramatic head nod
           m.children.forEach(c => {
             if (c.geometry?.type === 'SphereGeometry') {
-              c.rotation.x = Math.sin(time * 5) * 0.2;
+              c.rotation.x = Math.sin(time * 6) * 0.4;
             }
           });
+          yOff += Math.abs(Math.sin(time * 3)) * 0.1;
           break;
         case 'shake':
-          m.position.x += Math.sin(time * 15) * 0.03;
+          // Vigorous shaking
+          m.position.x += Math.sin(time * 20) * 0.08;
+          m.position.z += Math.cos(time * 20) * 0.04;
+          pulseScale = 1 + Math.sin(time * 15) * 0.04;
           break;
         case 'bow':
-          m.rotation.x = Math.sin(Math.min(1, (2.0 - elapsed) / 0.5) * Math.PI) * 0.3;
+          // Deep bow
+          const bowAngle = Math.sin(Math.min(1, progress * 2) * Math.PI) * 0.5;
+          extraRotX = bowAngle;
+          yOff -= Math.abs(bowAngle) * 0.3;
           break;
         case 'clap':
+          // Arms clapping together
           m.children.forEach(c => {
             if (c.userData?.isArm) {
-              c.rotation.x = -0.8 + Math.sin(time * 10) * 0.3;
-              c.rotation.z = c.userData.side * (0.3 + Math.sin(time * 10) * 0.2);
+              c.rotation.x = -1.0 + Math.sin(time * 12) * 0.5;
+              c.rotation.z = c.userData.side * (0.5 + Math.sin(time * 12) * 0.3);
             }
           });
+          yOff += Math.abs(Math.sin(time * 4)) * 0.15;
           break;
         case 'celebrate':
-          yOff += Math.abs(Math.sin(time * 5)) * 0.25;
-          m.rotation.y += Math.sin(time * 3) * 0.03;
+          // Big jumps + wiggle
+          yOff += Math.abs(Math.sin(time * 5)) * 0.55;
+          extraRotY = Math.sin(time * 4) * 0.3;
+          pulseScale = 1 + Math.sin(time * 8) * 0.1;
+          break;
+        case 'wave':
+          // One arm waving high
+          m.children.forEach(c => {
+            if (c.userData?.isArm && c.userData.side > 0) {
+              c.rotation.x = Math.sin(time * 8) * 0.6 - 0.9;
+            }
+          });
+          yOff += 0.08;
+          break;
+        case 'think':
+          // Tilted head + slow sway
+          extraRotY = Math.sin(time * 1.5) * 0.15;
+          m.children.forEach(c => {
+            if (c.geometry?.type === 'SphereGeometry') {
+              c.rotation.z = 0.2;
+            }
+          });
+          yOff += Math.sin(time * 2) * 0.05;
           break;
       }
+
+      // Glow ring under minion during animation
+      if (anim.ring) {
+        anim.ring.position.set(m.position.x, 0.02, m.position.z);
+        anim.ring.material.opacity = 0.4 + Math.sin(time * 8) * 0.2;
+        anim.ring.rotation.z = time * 2;
+        const ringScale = 1 + Math.sin(time * 6) * 0.2;
+        anim.ring.scale.set(ringScale, ringScale, 1);
+      }
+
+      // Apply scale pulse
+      m.scale.set(pulseScale, pulseScale, pulseScale);
+    } else {
+      // Not animating: reset scale smoothly
+      m.scale.lerp(new THREE.Vector3(1, 1, 1), 0.1);
     }
 
-    // Attention animation (jump or wave from notifications)
-    if (ud.attentionAnim > 0) {
-      ud.attentionAnim -= dt;
-      const t = ud.attentionAnim;
-      if (ud.attentionType === 'jump') {
-        // Jump: quick up-down bounce
-        const cycle = (2.5 - t) % 0.8;
-        if (cycle < 0.4) yOff += Math.sin(cycle / 0.4 * Math.PI) * 0.35;
-      }
-    }
+    // Apply rotation
+    m.rotation.y += extraRotY;
+    m.rotation.x = extraRotX;
+
+    // (attentionAnim replaced by activeAnimations system)
+
     m.position.y = yOff;
 
-    // Arm swing (enhanced during attention)
+    // Arm swing (default subtle, animations override via switch above)
     m.children.forEach(c => {
       if (c.userData?.isArm) {
-        let armAngle = Math.sin(time * 2 + ud.bobPhase + (c.userData.side > 0 ? 0 : Math.PI)) * 0.15;
-        if (ud.attentionAnim > 0 && ud.attentionType === 'wave') {
-          // Wave: one arm swings high
-          if (c.userData.side > 0) {
-            armAngle = Math.sin(time * 8) * 0.6 - 0.8;
-          }
+        if (!anim || (anim.type !== 'wave' && anim.type !== 'clap')) {
+          c.rotation.x = Math.sin(time * 2 + ud.bobPhase + (c.userData.side > 0 ? 0 : Math.PI)) * 0.15;
+          c.rotation.z = 0;
         }
-        c.rotation.x = armAngle;
       }
     });
 

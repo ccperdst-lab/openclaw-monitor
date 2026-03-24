@@ -13243,6 +13243,84 @@ var PlaneGeometry = class _PlaneGeometry extends BufferGeometry {
     return new _PlaneGeometry(data.width, data.height, data.widthSegments, data.heightSegments);
   }
 };
+var RingGeometry = class _RingGeometry extends BufferGeometry {
+  /**
+   * Constructs a new ring geometry.
+   *
+   * @param {number} [innerRadius=0.5] - The inner radius of the ring.
+   * @param {number} [outerRadius=1] - The outer radius of the ring.
+   * @param {number} [thetaSegments=32] - Number of segments. A higher number means the ring will be more round. Minimum is `3`.
+   * @param {number} [phiSegments=1] - Number of segments per ring segment. Minimum is `1`.
+   * @param {number} [thetaStart=0] - Starting angle in radians.
+   * @param {number} [thetaLength=Math.PI*2] - Central angle in radians.
+   */
+  constructor(innerRadius = 0.5, outerRadius = 1, thetaSegments = 32, phiSegments = 1, thetaStart = 0, thetaLength = Math.PI * 2) {
+    super();
+    this.type = "RingGeometry";
+    this.parameters = {
+      innerRadius,
+      outerRadius,
+      thetaSegments,
+      phiSegments,
+      thetaStart,
+      thetaLength
+    };
+    thetaSegments = Math.max(3, thetaSegments);
+    phiSegments = Math.max(1, phiSegments);
+    const indices = [];
+    const vertices = [];
+    const normals = [];
+    const uvs = [];
+    let radius = innerRadius;
+    const radiusStep = (outerRadius - innerRadius) / phiSegments;
+    const vertex2 = new Vector3();
+    const uv = new Vector2();
+    for (let j = 0; j <= phiSegments; j++) {
+      for (let i = 0; i <= thetaSegments; i++) {
+        const segment = thetaStart + i / thetaSegments * thetaLength;
+        vertex2.x = radius * Math.cos(segment);
+        vertex2.y = radius * Math.sin(segment);
+        vertices.push(vertex2.x, vertex2.y, vertex2.z);
+        normals.push(0, 0, 1);
+        uv.x = (vertex2.x / outerRadius + 1) / 2;
+        uv.y = (vertex2.y / outerRadius + 1) / 2;
+        uvs.push(uv.x, uv.y);
+      }
+      radius += radiusStep;
+    }
+    for (let j = 0; j < phiSegments; j++) {
+      const thetaSegmentLevel = j * (thetaSegments + 1);
+      for (let i = 0; i < thetaSegments; i++) {
+        const segment = i + thetaSegmentLevel;
+        const a = segment;
+        const b = segment + thetaSegments + 1;
+        const c = segment + thetaSegments + 2;
+        const d = segment + 1;
+        indices.push(a, b, d);
+        indices.push(b, c, d);
+      }
+    }
+    this.setIndex(indices);
+    this.setAttribute("position", new Float32BufferAttribute(vertices, 3));
+    this.setAttribute("normal", new Float32BufferAttribute(normals, 3));
+    this.setAttribute("uv", new Float32BufferAttribute(uvs, 2));
+  }
+  copy(source) {
+    super.copy(source);
+    this.parameters = Object.assign({}, source.parameters);
+    return this;
+  }
+  /**
+   * Factory method for creating an instance of this class from the given
+   * JSON object.
+   *
+   * @param {Object} data - A JSON object representing the serialized geometry.
+   * @return {RingGeometry} A new instance.
+   */
+  static fromJSON(data) {
+    return new _RingGeometry(data.innerRadius, data.outerRadius, data.thetaSegments, data.phiSegments, data.thetaStart, data.thetaLength);
+  }
+};
 var SphereGeometry = class _SphereGeometry extends BufferGeometry {
   /**
    * Constructs a new sphere geometry.
@@ -27909,11 +27987,6 @@ function createMinion(profile) {
     // Notification: "!" indicator when conversation ends and bubble is closed
     hasNotification: false,
     notificationSprite: null,
-    // Attention animation (jump/wave)
-    attentionAnim: 0,
-    // 0 = off, >0 = time remaining
-    attentionType: "jump",
-    // 'jump' or 'wave'
     // Movement
     idleTimer: 0,
     idleAction: "stand",
@@ -27929,7 +28002,14 @@ function clearNotification(minion) {
     minion.userData.notificationSprite = null;
   }
   minion.userData.hasNotification = false;
-  minion.userData.attentionAnim = 0;
+  const sk = minion.userData.sessionKey;
+  if (activeAnimations[sk]) {
+    clearTimeout(activeAnimations[sk].timer);
+    if (activeAnimations[sk].ring) scene.remove(activeAnimations[sk].ring);
+    delete activeAnimations[sk];
+    minion.scale.set(1, 1, 1);
+    minion.rotation.x = 0;
+  }
 }
 function addNameLabel(minion, line1, line2) {
   const old = minion.children.find((c) => c.userData?.isNameLabel);
@@ -28437,27 +28517,61 @@ function handleControl(data) {
   }
 }
 var activeAnimations = {};
+var ringGeo = null;
+var ringColors = {
+  jump: 2282478,
+  // cyan
+  wave: 10980346,
+  // purple
+  dance: 16020150,
+  // pink
+  spin: 16498468,
+  // amber
+  nod: 6333946,
+  // blue
+  shake: 15680580,
+  // red
+  bow: 3462041,
+  // green
+  clap: 16096779,
+  // orange
+  think: 8490232,
+  // indigo
+  celebrate: 16007006
+  // rose
+};
 function triggerAnimation(minion, animType, duration) {
   const sk = minion.userData.sessionKey;
   if (activeAnimations[sk]) {
     clearTimeout(activeAnimations[sk].timer);
+    if (activeAnimations[sk].ring) scene.remove(activeAnimations[sk].ring);
   }
+  if (!ringGeo) ringGeo = new RingGeometry(0.6, 0.9, 32);
+  const ringColor = ringColors[animType] || 2282478;
+  const ringMat = new MeshBasicMaterial({
+    color: ringColor,
+    transparent: true,
+    opacity: 0.5,
+    side: DoubleSide,
+    depthWrite: false
+  });
+  const ring = new Mesh(ringGeo, ringMat);
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.set(minion.position.x, 0.02, minion.position.z);
+  scene.add(ring);
   const endTime = Date.now() + duration * 1e3;
-  activeAnimations[sk] = { type: animType, endTime, timer: null };
-  const origScale = { x: minion.scale.x, y: minion.scale.y, z: minion.scale.z };
-  if (animType === "jump" || animType === "celebrate") {
-    minion.userData.attentionAnim = duration;
-    minion.userData.attentionType = "jump";
-  } else if (animType === "wave") {
-    minion.userData.attentionAnim = duration;
-    minion.userData.attentionType = "wave";
-  } else {
-    minion.userData.attentionAnim = duration;
-    minion.userData.attentionType = animType;
-  }
+  activeAnimations[sk] = { type: animType, endTime, duration, timer: null, ring };
   activeAnimations[sk].timer = setTimeout(() => {
+    if (activeAnimations[sk]?.ring) scene.remove(activeAnimations[sk].ring);
     delete activeAnimations[sk];
-    minion.userData.attentionAnim = 0;
+    minion.scale.set(1, 1, 1);
+    minion.rotation.x = 0;
+    minion.children.forEach((c) => {
+      if (c.userData?.isArm || c.geometry?.type === "SphereGeometry") {
+        c.rotation.x = 0;
+        c.rotation.z = 0;
+      }
+    });
   }, duration * 1e3);
 }
 var mcpBubbles = {};
@@ -28626,64 +28740,99 @@ function animate() {
       m.position.z = Math.max(ud.bounds.minZ, Math.min(ud.bounds.maxZ, m.position.z));
     }
     let yOff = Math.sin(time * 1.5 + ud.bobPhase) * 0.02;
+    let extraRotY = 0;
+    let extraRotX = 0;
+    let pulseScale = 1;
     const anim = activeAnimations[ud.sessionKey];
     if (anim && Date.now() < anim.endTime) {
-      const elapsed = (anim.endTime - Date.now()) / 1e3;
-      const t = 1 - elapsed / (anim.endTime - Date.now() + elapsed);
+      const remaining = (anim.endTime - Date.now()) / 1e3;
+      const progress = 1 - remaining / anim.duration;
       switch (anim.type) {
+        case "jump":
+          yOff += Math.abs(Math.sin(time * 6)) * 0.6;
+          pulseScale = 1 + Math.sin(time * 8) * 0.08;
+          break;
         case "dance":
-          m.rotation.y += Math.sin(time * 6) * 0.05;
-          yOff += Math.abs(Math.sin(time * 4)) * 0.15;
+          extraRotY = Math.sin(time * 5) * 0.4;
+          extraRotX = Math.sin(time * 7) * 0.1;
+          yOff += Math.abs(Math.sin(time * 4)) * 0.3;
+          pulseScale = 1 + Math.sin(time * 6) * 0.05;
           break;
         case "spin":
-          m.rotation.y += dt * 8;
-          yOff += 0.05;
+          extraRotY = dt * 12;
+          yOff += 0.15;
+          pulseScale = 1 + Math.sin(time * 10) * 0.06;
           break;
         case "nod":
           m.children.forEach((c) => {
             if (c.geometry?.type === "SphereGeometry") {
-              c.rotation.x = Math.sin(time * 5) * 0.2;
+              c.rotation.x = Math.sin(time * 6) * 0.4;
             }
           });
+          yOff += Math.abs(Math.sin(time * 3)) * 0.1;
           break;
         case "shake":
-          m.position.x += Math.sin(time * 15) * 0.03;
+          m.position.x += Math.sin(time * 20) * 0.08;
+          m.position.z += Math.cos(time * 20) * 0.04;
+          pulseScale = 1 + Math.sin(time * 15) * 0.04;
           break;
         case "bow":
-          m.rotation.x = Math.sin(Math.min(1, (2 - elapsed) / 0.5) * Math.PI) * 0.3;
+          const bowAngle = Math.sin(Math.min(1, progress * 2) * Math.PI) * 0.5;
+          extraRotX = bowAngle;
+          yOff -= Math.abs(bowAngle) * 0.3;
           break;
         case "clap":
           m.children.forEach((c) => {
             if (c.userData?.isArm) {
-              c.rotation.x = -0.8 + Math.sin(time * 10) * 0.3;
-              c.rotation.z = c.userData.side * (0.3 + Math.sin(time * 10) * 0.2);
+              c.rotation.x = -1 + Math.sin(time * 12) * 0.5;
+              c.rotation.z = c.userData.side * (0.5 + Math.sin(time * 12) * 0.3);
             }
           });
+          yOff += Math.abs(Math.sin(time * 4)) * 0.15;
           break;
         case "celebrate":
-          yOff += Math.abs(Math.sin(time * 5)) * 0.25;
-          m.rotation.y += Math.sin(time * 3) * 0.03;
+          yOff += Math.abs(Math.sin(time * 5)) * 0.55;
+          extraRotY = Math.sin(time * 4) * 0.3;
+          pulseScale = 1 + Math.sin(time * 8) * 0.1;
+          break;
+        case "wave":
+          m.children.forEach((c) => {
+            if (c.userData?.isArm && c.userData.side > 0) {
+              c.rotation.x = Math.sin(time * 8) * 0.6 - 0.9;
+            }
+          });
+          yOff += 0.08;
+          break;
+        case "think":
+          extraRotY = Math.sin(time * 1.5) * 0.15;
+          m.children.forEach((c) => {
+            if (c.geometry?.type === "SphereGeometry") {
+              c.rotation.z = 0.2;
+            }
+          });
+          yOff += Math.sin(time * 2) * 0.05;
           break;
       }
-    }
-    if (ud.attentionAnim > 0) {
-      ud.attentionAnim -= dt;
-      const t = ud.attentionAnim;
-      if (ud.attentionType === "jump") {
-        const cycle = (2.5 - t) % 0.8;
-        if (cycle < 0.4) yOff += Math.sin(cycle / 0.4 * Math.PI) * 0.35;
+      if (anim.ring) {
+        anim.ring.position.set(m.position.x, 0.02, m.position.z);
+        anim.ring.material.opacity = 0.4 + Math.sin(time * 8) * 0.2;
+        anim.ring.rotation.z = time * 2;
+        const ringScale = 1 + Math.sin(time * 6) * 0.2;
+        anim.ring.scale.set(ringScale, ringScale, 1);
       }
+      m.scale.set(pulseScale, pulseScale, pulseScale);
+    } else {
+      m.scale.lerp(new Vector3(1, 1, 1), 0.1);
     }
+    m.rotation.y += extraRotY;
+    m.rotation.x = extraRotX;
     m.position.y = yOff;
     m.children.forEach((c) => {
       if (c.userData?.isArm) {
-        let armAngle = Math.sin(time * 2 + ud.bobPhase + (c.userData.side > 0 ? 0 : Math.PI)) * 0.15;
-        if (ud.attentionAnim > 0 && ud.attentionType === "wave") {
-          if (c.userData.side > 0) {
-            armAngle = Math.sin(time * 8) * 0.6 - 0.8;
-          }
+        if (!anim || anim.type !== "wave" && anim.type !== "clap") {
+          c.rotation.x = Math.sin(time * 2 + ud.bobPhase + (c.userData.side > 0 ? 0 : Math.PI)) * 0.15;
+          c.rotation.z = 0;
         }
-        c.rotation.x = armAngle;
       }
     });
     if (ud.notificationSprite) {
