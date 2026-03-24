@@ -28390,12 +28390,20 @@ window.addEventListener("click", (e) => {
             const lastReply = data.messages.filter((m) => m.role === "assistant" && m.texts?.length).pop();
             if (lastReply) target.userData.replyText = lastReply.texts.join(" ").slice(0, 200);
             const histLog = [];
-            data.messages.filter((m) => m.role === "assistant" && m.thinking).slice(-3).forEach((m) => {
-              histLog.push({ type: "think", text: m.thinking.slice(0, 100) });
-            });
-            data.messages.filter((m) => m.role === "toolResult").slice(-5).forEach((m) => {
-              histLog.push({ type: "tool_result", text: m.toolName, detail: m.result?.slice(0, 60) });
-            });
+            const recent = data.messages.slice(-20);
+            for (const msg of recent) {
+              if (msg.role === "assistant") {
+                if (msg.thinking) histLog.push({ type: "think", text: msg.thinking.slice(0, 100) });
+                if (msg.toolCalls) {
+                  for (const tc of msg.toolCalls) {
+                    histLog.push({ type: "tool_use", text: tc.name, detail: (tc.args || "").slice(0, 80) });
+                  }
+                }
+                if (msg.texts?.length) histLog.push({ type: "reply_snippet", text: msg.texts.join(" ").slice(0, 100) });
+              } else if (msg.role === "toolResult") {
+                histLog.push({ type: "tool_result", text: (msg.toolName || "?") + " \u2713", detail: (msg.result || "").slice(0, 60) });
+              }
+            }
             target.userData.eventLog = histLog;
           }
           const b2 = getOrCreateBubble(target.userData.sessionKey);
