@@ -28362,6 +28362,21 @@ function updateUI(d) {
   document.getElementById("h-rooms").textContent = "Rooms: " + agents.length;
   document.getElementById("h-sess").textContent = "Sessions: " + totalSess;
 }
+async function runCmd() {
+  const inp = document.getElementById("cmd-in"), out = document.getElementById("cmd-out");
+  const cmd = inp.value.trim();
+  if (!cmd) return;
+  out.style.display = "block";
+  out.textContent = "\u6267\u884C\u4E2D...";
+  try {
+    const r = await fetch("/api/exec", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ command: cmd }) });
+    const d = await r.json();
+    out.textContent = d.stdout || d.stderr || `exit: ${d.code}`;
+  } catch (e) {
+    out.textContent = "Error: " + e.message;
+  }
+}
+window.runCmd = runCmd;
 function animate() {
   requestAnimationFrame(animate);
   const dt = clock.getDelta();

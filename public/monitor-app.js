@@ -1412,6 +1412,7 @@ async function runCmd() {
   const cmd = inp.value.trim(); if (!cmd) return; out.style.display = 'block'; out.textContent = '执行中...';
   try { const r = await fetch('/api/exec', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ command: cmd }) }); const d = await r.json(); out.textContent = d.stdout || d.stderr || `exit: ${d.code}`; } catch (e) { out.textContent = 'Error: ' + e.message; }
 }
+window.runCmd = runCmd; // expose for inline onclick/onkeydown handlers
 
 // ===== Main Loop =====
 function animate() {
