@@ -460,17 +460,20 @@ app.get('/api/resolve/:id', async (req, res) => {
   res.json({ id: req.params.id, name });
 });
 
-// Minion name persistence
-const NAMES_FILE = path.join(LOG_DIR, 'minion-names.json');
-app.get('/api/minion-names', (req, res) => {
-  try { res.json(JSON.parse(fs.readFileSync(NAMES_FILE, 'utf-8'))); } catch { res.json({}); }
+// Minion profile persistence (name, appearance, config)
+const PROFILES_FILE = path.join(LOG_DIR, 'minion-profiles.json');
+app.get('/api/minion-profiles', (req, res) => {
+  try { res.json(JSON.parse(fs.readFileSync(PROFILES_FILE, 'utf-8'))); } catch { res.json({}); }
 });
-app.post('/api/minion-names', (req, res) => {
+app.post('/api/minion-profiles', (req, res) => {
   try {
     let existing = {};
-    try { existing = JSON.parse(fs.readFileSync(NAMES_FILE, 'utf-8')); } catch {}
-    const merged = { ...existing, ...req.body };
-    fs.writeFileSync(NAMES_FILE, JSON.stringify(merged, null, 2));
+    try { existing = JSON.parse(fs.readFileSync(PROFILES_FILE, 'utf-8')); } catch {}
+    // Merge: for each key in body, update or create
+    for (const [key, profile] of Object.entries(req.body)) {
+      existing[key] = { ...(existing[key] || {}), ...profile };
+    }
+    fs.writeFileSync(PROFILES_FILE, JSON.stringify(existing, null, 2));
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

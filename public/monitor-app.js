@@ -524,7 +524,7 @@ const MINION_NAMES = [
   '阿飞', '小云', '大山', '小雨', '阿军', '小星', '大龙', '小霞', '阿峰', '小玉',
   '阿文', '小兰', '大海', '小凤', '阿勇', '小莲', '大鹏', '小琴', '阿华', '小菊',
 ];
-let minionNameMap = {}; // sessionKey → chineseName (persisted server-side)
+let minionProfiles = {}; // sessionKey → { name, color, heightScale, widthScale, ... }
 const usedMinionNames = new Set();
 function getRandomChineseName() {
   const available = MINION_NAMES.filter(n => !usedMinionNames.has(n));
@@ -590,17 +590,19 @@ function addNameLabel(minion, feishuName, chineseName) {
 }
 
 // Randomize minion appearance with variations
-function createMinion(colorHex) {
+function createMinion(profile) {
+  const p = profile || {};
   const group = new THREE.Group();
-  const bodyMat = new THREE.MeshStandardMaterial({ color: colorHex || 0xf5d033, roughness: 0.5 });
+  const bodyMat = new THREE.MeshStandardMaterial({ color: p.color || 0xf5d033, roughness: 0.5 });
 
-  // Randomize size variations
-  const heightScale = 0.8 + Math.random() * 0.4; // 0.8x - 1.2x
-  const widthScale = 0.9 + Math.random() * 0.2;  // 0.9x - 1.1x
+  // Use profile values or generate new random ones
+  const heightScale = p.heightScale || (0.8 + Math.random() * 0.4);
+  const widthScale = p.widthScale || (0.9 + Math.random() * 0.2);
   const bodyRadius = 0.35 * widthScale;
   const bodyHeight = 1.2 * heightScale;
   group.userData.heightScale = heightScale;
   group.userData.widthScale = widthScale;
+  group.userData.chineseName = p.name || '';
 
   // Body (rounded cylinder)
   const body = new THREE.Mesh(new THREE.CylinderGeometry(bodyRadius, bodyRadius * 1.08, bodyHeight, 16), bodyMat);
@@ -830,7 +832,26 @@ function init(d) {
       const row = Math.floor(i / cols);
       const px = ox + 3 + col * (ROOM_W - 6) / Math.max(cols - 1, 1);
       const pz = oz + 3 + row * (ROOM_D - 6) / Math.max(rows - 1, 1);
-      const m = createMinion(colors[(ai * 3 + i) % colors.length]);
+
+      // Get or create profile for this session
+      let profile = minionProfiles[sess.key];
+      const isNew = !profile;
+      if (isNew) {
+        profile = {
+          name: getRandomChineseName(),
+          color: colors[(ai * 3 + i) % colors.length],
+          heightScale: 0.8 + Math.random() * 0.4,
+          widthScale: 0.9 + Math.random() * 0.2,
+        };
+        minionProfiles[sess.key] = profile;
+        // Save to server
+        fetch('/api/minion-profiles', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ [sess.key]: profile })
+        }).catch(() => {});
+      }
+
+      const m = createMinion(profile);
       m.position.set(px, 0, pz);
       m.userData.id = sess.key;
       m.userData.label = sess.name;
@@ -843,29 +864,14 @@ function init(d) {
       };
       m.userData.houseOffset = { ox, oz };
 
-      // Assign Chinese name: use persisted or generate new
-      let cName = minionNameMap[sess.key];
-      if (!cName) {
-        cName = getRandomChineseName();
-        minionNameMap[sess.key] = cName;
-        // Save to server
-        fetch('/api/minion-names', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ [sess.key]: cName })
-        }).catch(() => {});
-      }
-      m.userData.chineseName = cName;
-
       // Resolve and display Feishu name + Chinese name label
       const feishuId = (sess.key || '').match(/(oc_\w+|ou_\w+)/)?.[1];
+      const cName = profile.name;
       if (feishuId) {
         fetch(`/api/resolve/${feishuId}`).then(r => r.json()).then(d => {
-          if (d.name && d.name !== feishuId) {
-            m.userData.displayName = d.name;
-            addNameLabel(m, d.name, cName);
-          } else {
-            addNameLabel(m, sess.name || 'session', cName);
-          }
+          const fName = (d.name && d.name !== feishuId) ? d.name : (sess.name || 'session');
+          m.userData.displayName = fName;
+          addNameLabel(m, fName, cName);
         }).catch(() => {
           addNameLabel(m, sess.name || 'session', cName);
         });
@@ -1492,11 +1498,11 @@ function sse() {
   };
   es.onerror = () => setTimeout(sse, 3000);
 }
-// Load persisted minion names, then start SSE
-fetch('/api/minion-names').then(r => r.json()).then(names => {
-  minionNameMap = names || {};
-  // Also populate usedMinionNames set to avoid collisions
-  Object.values(minionNameMap).forEach(n => usedMinionNames.add(n));
+// Load persisted minion profiles, then start SSE
+fetch('/api/minion-profiles').then(r => r.json()).then(profiles => {
+  minionProfiles = profiles || {};
+  // Populate used names to avoid collisions
+  Object.values(minionProfiles).forEach(p => { if (p.name) usedMinionNames.add(p.name); });
 }).catch(() => {}).finally(() => sse());
 fetch('/api/state').then(r => r.json()).then(init);
 fetch('/api/logs/tail').then(r => r.json()).then(d => { if (d.events) d.events.forEach(addLog); });

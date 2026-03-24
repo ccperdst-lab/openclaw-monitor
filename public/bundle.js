@@ -27585,7 +27585,7 @@ var MINION_NAMES = [
   "\u963F\u534E",
   "\u5C0F\u83CA"
 ];
-var minionNameMap = {};
+var minionProfiles = {};
 var usedMinionNames = /* @__PURE__ */ new Set();
 function getRandomChineseName() {
   const available = MINION_NAMES.filter((n) => !usedMinionNames.has(n));
@@ -27636,15 +27636,17 @@ function addNameLabel(minion, feishuName, chineseName) {
   label.renderOrder = 9999;
   minion.add(label);
 }
-function createMinion(colorHex) {
+function createMinion(profile) {
+  const p = profile || {};
   const group = new Group();
-  const bodyMat = new MeshStandardMaterial({ color: colorHex || 16109619, roughness: 0.5 });
-  const heightScale = 0.8 + Math.random() * 0.4;
-  const widthScale = 0.9 + Math.random() * 0.2;
+  const bodyMat = new MeshStandardMaterial({ color: p.color || 16109619, roughness: 0.5 });
+  const heightScale = p.heightScale || 0.8 + Math.random() * 0.4;
+  const widthScale = p.widthScale || 0.9 + Math.random() * 0.2;
   const bodyRadius = 0.35 * widthScale;
   const bodyHeight = 1.2 * heightScale;
   group.userData.heightScale = heightScale;
   group.userData.widthScale = widthScale;
+  group.userData.chineseName = p.name || "";
   const body = new Mesh(new CylinderGeometry(bodyRadius, bodyRadius * 1.08, bodyHeight, 16), bodyMat);
   body.position.y = 0.5 + bodyHeight / 2;
   body.castShadow = true;
@@ -27841,7 +27843,24 @@ function init(d) {
       const row = Math.floor(i / cols);
       const px = ox + 3 + col * (ROOM_W - 6) / Math.max(cols - 1, 1);
       const pz = oz + 3 + row * (ROOM_D - 6) / Math.max(rows - 1, 1);
-      const m = createMinion(colors[(ai * 3 + i) % colors.length]);
+      let profile = minionProfiles[sess.key];
+      const isNew = !profile;
+      if (isNew) {
+        profile = {
+          name: getRandomChineseName(),
+          color: colors[(ai * 3 + i) % colors.length],
+          heightScale: 0.8 + Math.random() * 0.4,
+          widthScale: 0.9 + Math.random() * 0.2
+        };
+        minionProfiles[sess.key] = profile;
+        fetch("/api/minion-profiles", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ [sess.key]: profile })
+        }).catch(() => {
+        });
+      }
+      const m = createMinion(profile);
       m.position.set(px, 0, pz);
       m.userData.id = sess.key;
       m.userData.label = sess.name;
@@ -27855,27 +27874,13 @@ function init(d) {
         maxZ: oz + ROOM_D - 1.5
       };
       m.userData.houseOffset = { ox, oz };
-      let cName = minionNameMap[sess.key];
-      if (!cName) {
-        cName = getRandomChineseName();
-        minionNameMap[sess.key] = cName;
-        fetch("/api/minion-names", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ [sess.key]: cName })
-        }).catch(() => {
-        });
-      }
-      m.userData.chineseName = cName;
       const feishuId = (sess.key || "").match(/(oc_\w+|ou_\w+)/)?.[1];
+      const cName = profile.name;
       if (feishuId) {
         fetch(`/api/resolve/${feishuId}`).then((r) => r.json()).then((d2) => {
-          if (d2.name && d2.name !== feishuId) {
-            m.userData.displayName = d2.name;
-            addNameLabel(m, d2.name, cName);
-          } else {
-            addNameLabel(m, sess.name || "session", cName);
-          }
+          const fName = d2.name && d2.name !== feishuId ? d2.name : sess.name || "session";
+          m.userData.displayName = fName;
+          addNameLabel(m, fName, cName);
         }).catch(() => {
           addNameLabel(m, sess.name || "session", cName);
         });
@@ -28451,9 +28456,11 @@ function sse() {
   };
   es.onerror = () => setTimeout(sse, 3e3);
 }
-fetch("/api/minion-names").then((r) => r.json()).then((names) => {
-  minionNameMap = names || {};
-  Object.values(minionNameMap).forEach((n) => usedMinionNames.add(n));
+fetch("/api/minion-profiles").then((r) => r.json()).then((profiles) => {
+  minionProfiles = profiles || {};
+  Object.values(minionProfiles).forEach((p) => {
+    if (p.name) usedMinionNames.add(p.name);
+  });
 }).catch(() => {
 }).finally(() => sse());
 fetch("/api/state").then((r) => r.json()).then(init);
