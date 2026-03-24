@@ -28610,8 +28610,7 @@ function applySeasonalTheme() {
     scene.fog.color.set(12111840);
   }
 }
-applySeasonalTheme();
-initSnowSystem();
+var _seasonalApplied = false;
 var gameTime = 0;
 var DAY_CYCLE = 120;
 var isRaining = false;
@@ -28802,6 +28801,11 @@ var mat = {
   // set below
 };
 mat.wallColors = [mat.wallPink, mat.wallBlue, mat.wallYellow, mat.wallGreen];
+if (!_seasonalApplied) {
+  _seasonalApplied = true;
+  applySeasonalTheme();
+  initSnowSystem();
+}
 var MINION_NAMES = [
   "\u5C0F\u660E",
   "\u963F\u82B1",

@@ -201,9 +201,8 @@ function applySeasonalTheme() {
   }
 }
 
-// Apply theme immediately
-applySeasonalTheme();
-initSnowSystem();
+// Seasonal theme will be applied after mat is defined (see below)
+let _seasonalApplied = false;
 
 // ===== Day/Night Cycle =====
 let gameTime = 0; // 0-120s cycle
@@ -408,6 +407,13 @@ const mat = {
   wallColors: null, // set below
 };
 mat.wallColors = [mat.wallPink, mat.wallBlue, mat.wallYellow, mat.wallGreen];
+
+// Apply seasonal theme now that mat is defined
+if (!_seasonalApplied) {
+  _seasonalApplied = true;
+  applySeasonalTheme();
+  initSnowSystem();
+}
 
 // ===== Chinese Names =====
 const MINION_NAMES = [
