@@ -30291,11 +30291,43 @@ function animate() {
       const ud = m.userData;
       ud.idleTimer -= dt;
       if (ud.idleTimer <= 0) {
-        ud.idleTimer = 2 + Math.random() * 5;
-        ud.idleAction = Math.random() < 0.3 ? "walk" : "stand";
-        if (ud.idleAction === "walk" && ud.bounds) {
-          ud.targetX = ud.bounds.minX + Math.random() * (ud.bounds.maxX - ud.bounds.minX);
-          ud.targetZ = ud.bounds.minZ + Math.random() * (ud.bounds.maxZ - ud.bounds.minZ);
+        const roll = Math.random();
+        if (roll < 0.4 && ud.bounds) {
+          const cx = (ud.bounds.minX + ud.bounds.maxX) / 2;
+          const cz = (ud.bounds.minZ + ud.bounds.maxZ) / 2;
+          const targets = [
+            [cx, cz],
+            // center (house area)
+            [cx - 3, cz + 2],
+            // table area
+            [cx + 4, cz + 4],
+            // pond area
+            [cx - 5, cz + 1],
+            // bench area
+            [ud.bounds.minX + 2, ud.bounds.minZ + 2],
+            // corner tree
+            [ud.bounds.maxX - 2, ud.bounds.minZ + 2],
+            // corner tree
+            [cx + 2, cz - 3]
+            // house side
+          ];
+          const pick = targets[Math.floor(Math.random() * targets.length)];
+          ud.targetX = pick[0] + (Math.random() - 0.5) * 2;
+          ud.targetZ = pick[1] + (Math.random() - 0.5) * 2;
+          ud.idleAction = "walk";
+          ud.idleTimer = 4 + Math.random() * 6;
+        } else if (roll < 0.7 && ud.bounds) {
+          ud.targetX = m.position.x + (Math.random() - 0.5) * 4;
+          ud.targetZ = m.position.z + (Math.random() - 0.5) * 4;
+          ud.idleAction = "walk";
+          ud.idleTimer = 2 + Math.random() * 4;
+        } else {
+          ud.idleAction = "stand";
+          ud.idleTimer = 3 + Math.random() * 5;
+        }
+        if (ud.bounds) {
+          ud.targetX = Math.max(ud.bounds.minX + 1, Math.min(ud.bounds.maxX - 1, ud.targetX));
+          ud.targetZ = Math.max(ud.bounds.minZ + 1, Math.min(ud.bounds.maxZ - 1, ud.targetZ));
         }
       }
       if (ud.bounds) {
@@ -30409,17 +30441,24 @@ function animate() {
       }
       m.rotation.y += extraRotY;
       m.rotation.x = extraRotX;
-      const GRAVITY = -15;
-      if (!ud.isGrounded || ud.velocityY !== 0) {
+      const GRAVITY = -20;
+      if (m.position.y > 0.01 || ud.velocityY !== 0) {
         ud.velocityY += GRAVITY * dt;
         m.position.y += ud.velocityY * dt;
+        ud.isGrounded = false;
         if (m.position.y <= 0) {
           m.position.y = 0;
           ud.velocityY = 0;
           ud.isGrounded = true;
         }
+      } else {
+        m.position.y = 0;
+        ud.velocityY = 0;
+        ud.isGrounded = true;
       }
-      m.position.y += yOff;
+      if (ud.isGrounded && !ud.isDragging) {
+        m.position.y += yOff;
+      }
       if (ud.isDragging) {
         const dx = ud.dragTargetX - m.position.x;
         const dz = ud.dragTargetZ - m.position.z;
@@ -31035,35 +31074,36 @@ function updateAgentDashboard() {
 var minionEmojis = ["\u{1F49A}", "\u{1F4AC}"];
 var floatingEmojis = [];
 function updateMinionInteraction(dt) {
-  const now = Date.now();
+  for (let i = floatingEmojis.length - 1; i >= 0; i--) {
+    const fe = floatingEmojis[i];
+    fe.life -= dt;
+    fe.sprite.position.y += dt * 0.5;
+    fe.sprite.material.opacity = Math.max(0, fe.life / fe.maxLife);
+    if (fe.life <= 0) {
+      scene.remove(fe.sprite);
+      fe.sprite.material.dispose();
+      floatingEmojis.splice(i, 1);
+    }
+  }
   for (let i = 0; i < minions.length; i++) {
     for (let j = i + 1; j < minions.length; j++) {
       const a = minions[i], b = minions[j];
       const dx = a.position.x - b.position.x;
       const dz = a.position.z - b.position.z;
       const dist = Math.sqrt(dx * dx + dz * dz);
-      if (dist < 2) {
-        if (Math.random() < 0.05 * dt) {
+      if (dist < 1.5 && dist > 0.3 && a.userData.isGrounded && b.userData.isGrounded) {
+        if (Math.random() < 0.01 * dt) {
           const target = Math.random() > 0.5 ? a : b;
-          triggerAnimation(target, "wave", 1.5);
-          const emoji = minionEmojis[Math.floor(Math.random() * minionEmojis.length)];
-          const midX = (a.position.x + b.position.x) / 2;
-          const midZ = (a.position.z + b.position.z) / 2;
-          const midY = Math.max(a.position.y, b.position.y) + 1.5;
-          showFloatingEmoji(emoji, midX, midY, midZ);
+          const sk = target.userData.sessionKey;
+          if (!activeAnimations[sk]) {
+            triggerAnimation(target, "wave", 1.2);
+            const emoji = minionEmojis[Math.floor(Math.random() * minionEmojis.length)];
+            const midX = (a.position.x + b.position.x) / 2;
+            const midZ = (a.position.z + b.position.z) / 2;
+            showFloatingEmoji(emoji, midX, Math.max(a.position.y, b.position.y) + 1.2, midZ);
+          }
         }
       }
-    }
-  }
-  for (let i = floatingEmojis.length - 1; i >= 0; i--) {
-    const fe = floatingEmojis[i];
-    fe.life -= dt;
-    fe.sprite.position.y += dt * 0.8;
-    fe.sprite.material.opacity = Math.max(0, fe.life / fe.maxLife);
-    if (fe.life <= 0) {
-      scene.remove(fe.sprite);
-      fe.sprite.material.dispose();
-      floatingEmojis.splice(i, 1);
     }
   }
 }
