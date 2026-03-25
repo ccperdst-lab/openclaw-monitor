@@ -1346,6 +1346,7 @@ function hideBubble(sessionKey) {
   const el = bubbles[sessionKey];
   if (!el) return;
   el.classList.remove('show');
+  el.style.pointerEvents = 'none'; // prevent invisible bubble from capturing mouse
   el._dismissed = true;
   // Blur input to release focus
   const inputEl = el.querySelector('.bub-chat-in');
@@ -1430,9 +1431,18 @@ function updateFixedPanelContent(minion) {
 }
 
 function showBubble(m) {
-  const el = getOrCreateBubble(m.userData.sessionKey);
+  const sk = m.userData.sessionKey;
+  // Don't show floating bubble if this session is in fixed panel mode
+  if (fixedPanelSession === sk) {
+    updateBubbleContent(m);
+    return;
+  }
+  const el = getOrCreateBubble(sk);
   updateBubbleContent(m);
-  if (!el._dismissed) el.classList.add('show');
+  if (!el._dismissed) {
+    el.classList.add('show');
+    el.style.pointerEvents = 'auto';
+  }
   // Restore saved input if any
   if (m.userData.savedInput) {
     const inputEl = el.querySelector('.bub-chat-in');

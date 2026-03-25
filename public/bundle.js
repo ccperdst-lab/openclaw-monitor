@@ -29643,6 +29643,7 @@ function hideBubble(sessionKey) {
   const el = bubbles[sessionKey];
   if (!el) return;
   el.classList.remove("show");
+  el.style.pointerEvents = "none";
   el._dismissed = true;
   const inputEl = el.querySelector(".bub-chat-in");
   if (inputEl) inputEl.blur();
@@ -29761,9 +29762,17 @@ function updateFixedPanelContent(minion) {
   fixedPanelEl.querySelector(".fp-foot").textContent = ud.state === "thinking" ? `\u{1F9E0} \u601D\u8003\u4E2D (${tc}\u6B65, ${oc}\u5DE5\u5177)...` : ud.state === "streaming" ? "\u270D\uFE0F \u6D41\u5F0F\u8F93\u51FA\u4E2D..." : `\u2705 \u601D\u8003\u4E86${tc}\u6B65 \xB7 \u{1F527}${oc}\u5DE5\u5177 \xB7 \u{1F4E4}${ud.replyCount}\u6761`;
 }
 function showBubble(m) {
-  const el = getOrCreateBubble(m.userData.sessionKey);
+  const sk = m.userData.sessionKey;
+  if (fixedPanelSession === sk) {
+    updateBubbleContent(m);
+    return;
+  }
+  const el = getOrCreateBubble(sk);
   updateBubbleContent(m);
-  if (!el._dismissed) el.classList.add("show");
+  if (!el._dismissed) {
+    el.classList.add("show");
+    el.style.pointerEvents = "auto";
+  }
   if (m.userData.savedInput) {
     const inputEl = el.querySelector(".bub-chat-in");
     if (inputEl && !inputEl.value) {
