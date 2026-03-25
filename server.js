@@ -8,6 +8,7 @@ const { execSync, exec } = require('child_process');
 // ===== Config =====
 const CONFIG_FILE = path.join(__dirname, 'config.yaml');
 const LOG_DIR = '/tmp/openclaw';
+const STATE_FILE = path.join(LOG_DIR, 'minion-state.json');
 
 function loadConfig() {
   try {
@@ -493,6 +494,33 @@ app.post('/api/minion-profiles', (req, res) => {
       existing[key] = { ...(existing[key] || {}), ...profile };
     }
     saveProfiles(existing);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ===== Minion State Persistence =====
+app.get('/api/state', (req, res) => {
+  try {
+    if (fs.existsSync(STATE_FILE)) {
+      const raw = fs.readFileSync(STATE_FILE, 'utf-8');
+      return res.json(JSON.parse(raw));
+    }
+  } catch {}
+  res.json({ positions: {}, states: {}, openBubbles: [], fixedPanelSession: null });
+});
+
+app.post('/api/state', (req, res) => {
+  try {
+    const state = {
+      positions: req.body.positions || {},
+      states: req.body.states || {},
+      openBubbles: req.body.openBubbles || [],
+      fixedPanelSession: req.body.fixedPanelSession || null,
+      savedAt: new Date().toISOString(),
+    };
+    fs.writeFileSync(STATE_FILE, JSON.stringify(state));
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });

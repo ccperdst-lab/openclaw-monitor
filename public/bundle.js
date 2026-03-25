@@ -28458,6 +28458,7 @@ var pressStartTime = 0;
 var pressStartPos = { x: 0, y: 0 };
 var isDraggingMinion = false;
 var interactingWithOverlay = false;
+var serverState = null;
 var hoverRaycaster = new Raycaster();
 var hoveredMinion = null;
 var lastHoverCheck = 0;
@@ -29560,6 +29561,36 @@ function initWorld(worldData) {
       };
     }
   }
+  const ss = serverState;
+  if (ss) {
+    if (ss.positions) {
+      for (const [sk, pos] of Object.entries(ss.positions)) {
+        if (!savedPositions[sk] && pos) {
+          savedPositions[sk] = { x: pos.x, z: pos.z, targetX: pos.x, targetZ: pos.z };
+        }
+      }
+    }
+    if (ss.states) {
+      for (const [sk, st] of Object.entries(ss.states)) {
+        if (!savedBubbles[sk] && st) {
+          savedBubbles[sk] = {
+            show: true,
+            dismissed: false,
+            collapsed: true,
+            userMsg: st.userMsg || "",
+            userName: st.userName || "",
+            state: st.state || "done",
+            eventLog: st.eventLog || [],
+            replyText: st.replyText || "",
+            replyCount: st.replyCount || 0
+          };
+        }
+      }
+    }
+    if (ss.fixedPanelSession && !fixedPanelSession) {
+      var _deferredFixedPanel = ss.fixedPanelSession;
+    }
+  }
   for (let i = scene.children.length - 1; i >= 0; i--) {
     const c = scene.children[i];
     if (c.isLight) continue;
@@ -29667,6 +29698,12 @@ function initWorld(worldData) {
     });
   });
   ensureAtmosphereElements();
+  if (typeof _deferredFixedPanel === "string" && _deferredFixedPanel) {
+    const mn = minions.find((m) => m.userData.sessionKey === _deferredFixedPanel);
+    if (mn) {
+      openFixedPanel(_deferredFixedPanel);
+    }
+  }
   const lo = document.getElementById("loading-overlay");
   if (lo) {
     lo.classList.add("hidden");
@@ -29778,32 +29815,31 @@ function updateBubbleContent(m) {
   const wasAtBottom = actsBody.scrollHeight - actsBody.scrollTop - actsBody.clientHeight < 30;
   const items = [];
   const log2 = ud.eventLog || [];
-  let lastReplyIdx = -1;
-  for (let i = log2.length - 1; i >= 0; i--) {
-    if (log2[i].type === "reply_snippet") {
-      lastReplyIdx = i;
-      break;
-    }
-  }
   const hasFinalReply = !!ud.replyText;
+  const replySnippetIdxs = [];
+  for (let i = 0; i < log2.length; i++) {
+    if (log2[i].type === "reply_snippet") replySnippetIdxs.push(i);
+  }
+  const hasSnippets = replySnippetIdxs.length > 0;
+  const lastSnippetIdx = hasSnippets ? replySnippetIdxs[replySnippetIdxs.length - 1] : -1;
   for (let i = 0; i < log2.length; i++) {
     const evt = log2[i];
-    if (i === lastReplyIdx || i === log2.length - 1 && hasFinalReply && evt.type !== "reply_snippet") {
+    if (hasSnippets && i === lastSnippetIdx) {
       items.push('<div class="bact-divider"><span>\u2500\u2500 \u56DE\u590D \u2500\u2500</span></div>');
     }
     if (evt.type === "think") {
-      items.push(`<div class="bact bact-think"><span>\u{1F4AD}</span><span>${esc(evt.text)}${evt.time ? ` <em style="color:#999;font-size:9px">${esc(evt.time)}</em>` : ""}</span></div>`);
+      items.push(`<div class="bact bact-think" data-full-text="${escAttr(evt.text)}"><span>\u{1F4AD}</span><span>${escFull(evt.text)}${evt.time ? ` <em style="color:#999;font-size:9px">${esc(evt.time)}</em>` : ""}</span></div>`);
     } else if (evt.type === "tool_use") {
-      items.push(`<div class="bact bact-tool"><span>\u{1F527}</span><span>${esc(evt.text)} <em>${esc(evt.detail || "")}</em>${evt.time ? ` <em style="color:#999;font-size:9px">${esc(evt.time)}</em>` : ""}</span></div>`);
+      items.push(`<div class="bact bact-tool" data-full-text="${escAttr(evt.text + " " + (evt.detail || ""))}"><span>\u{1F527}</span><span>${escFull(evt.text)} <em>${escFull(evt.detail || "")}</em>${evt.time ? ` <em style="color:#999;font-size:9px">${esc(evt.time)}</em>` : ""}</span></div>`);
     } else if (evt.type === "tool_result") {
-      items.push(`<div class="bact bact-result"><span>\u{1F4CB}</span><span>${esc(evt.text)} <em>${esc(evt.detail || "")}</em>${evt.time ? ` <em style="color:#999;font-size:9px">${esc(evt.time)}</em>` : ""}</span></div>`);
+      items.push(`<div class="bact bact-result" data-full-text="${escAttr(evt.text + " " + (evt.detail || ""))}"><span>\u{1F4CB}</span><span>${escFull(evt.text)} <em>${escFull(evt.detail || "")}</em>${evt.time ? ` <em style="color:#999;font-size:9px">${esc(evt.time)}</em>` : ""}</span></div>`);
     } else if (evt.type === "reply_snippet") {
-      items.push(`<div class="bact bact-reply"><span>\u{1F4AC}</span><span>${esc(evt.text)}${evt.time ? ` <em style="color:#999;font-size:9px">${esc(evt.time)}</em>` : ""}</span></div>`);
+      items.push(`<div class="bact bact-reply" data-full-text="${escAttr(evt.text)}"><span>\u{1F4AC}</span><span>${esc(evt.text)}${evt.time ? ` <em style="color:#999;font-size:9px">${esc(evt.time)}</em>` : ""}</span></div>`);
     }
   }
   if (hasFinalReply) {
-    if (lastReplyIdx === -1) items.push('<div class="bact-divider"><span>\u2500\u2500 \u56DE\u590D \u2500\u2500</span></div>');
-    items.push(`<div class="bact bact-reply bact-final"><span>\u{1F4AC}</span><span>${esc(ud.replyText)}</span></div>`);
+    if (!hasSnippets) items.push('<div class="bact-divider"><span>\u2500\u2500 \u56DE\u590D \u2500\u2500</span></div>');
+    items.push(`<div class="bact bact-reply bact-final" data-full-text="${escAttr(ud.replyText)}"><span>\u{1F4AC}</span><span>${esc(ud.replyText)}</span></div>`);
   }
   actsBody.innerHTML = items.slice(-30).join("");
   if (wasAtBottom) {
@@ -29978,25 +30014,24 @@ function updateFixedPanelContent(minion) {
   const wasAtBottom = actsBody.scrollHeight - actsBody.scrollTop - actsBody.clientHeight < 30;
   const items = [];
   const log2 = ud.eventLog || [];
-  let lastReplyIdx = -1;
-  for (let i = log2.length - 1; i >= 0; i--) {
-    if (log2[i].type === "reply_snippet") {
-      lastReplyIdx = i;
-      break;
-    }
-  }
   const hasFinalReply = !!ud.replyText;
+  const replySnippetIdxs = [];
+  for (let i = 0; i < log2.length; i++) {
+    if (log2[i].type === "reply_snippet") replySnippetIdxs.push(i);
+  }
+  const hasSnippets = replySnippetIdxs.length > 0;
+  const lastSnippetIdx = hasSnippets ? replySnippetIdxs[replySnippetIdxs.length - 1] : -1;
   for (let i = 0; i < log2.length; i++) {
     const evt = log2[i];
-    if (i === lastReplyIdx || i === log2.length - 1 && hasFinalReply && evt.type !== "reply_snippet") items.push('<div class="bact-divider"><span>\u2500\u2500 \u56DE\u590D \u2500\u2500</span></div>');
-    if (evt.type === "think") items.push(`<div class="bact bact-think"><span>\u{1F4AD}</span><span>${esc(evt.text)}${evt.time ? ' <em style="color:#999;font-size:9px">' + esc(evt.time) + "</em>" : ""}</span></div>`);
-    else if (evt.type === "tool_use") items.push(`<div class="bact bact-tool"><span>\u{1F527}</span><span>${esc(evt.text)} <em>${esc(evt.detail || "")}</em></span></div>`);
-    else if (evt.type === "tool_result") items.push(`<div class="bact bact-result"><span>\u{1F4CB}</span><span>${esc(evt.text)} <em>${esc(evt.detail || "")}</em></span></div>`);
-    else if (evt.type === "reply_snippet") items.push(`<div class="bact bact-reply"><span>\u{1F4AC}</span><span>${esc(evt.text)}</span></div>`);
+    if (hasSnippets && i === lastSnippetIdx) items.push('<div class="bact-divider"><span>\u2500\u2500 \u56DE\u590D \u2500\u2500</span></div>');
+    if (evt.type === "think") items.push(`<div class="bact bact-think" data-full-text="${escAttr(evt.text)}"><span>\u{1F4AD}</span><span>${esc(evt.text)}${evt.time ? ' <em style="color:#999;font-size:9px">' + esc(evt.time) + "</em>" : ""}</span></div>`);
+    else if (evt.type === "tool_use") items.push(`<div class="bact bact-tool" data-full-text="${escAttr(evt.text + " " + (evt.detail || ""))}"><span>\u{1F527}</span><span>${esc(evt.text)} <em>${esc(evt.detail || "")}</em></span></div>`);
+    else if (evt.type === "tool_result") items.push(`<div class="bact bact-result" data-full-text="${escAttr(evt.text + " " + (evt.detail || ""))}"><span>\u{1F4CB}</span><span>${esc(evt.text)} <em>${esc(evt.detail || "")}</em></span></div>`);
+    else if (evt.type === "reply_snippet") items.push(`<div class="bact bact-reply" data-full-text="${escAttr(evt.text)}"><span>\u{1F4AC}</span><span>${esc(evt.text)}</span></div>`);
   }
   if (hasFinalReply) {
-    if (lastReplyIdx === -1) items.push('<div class="bact-divider"><span>\u2500\u2500 \u56DE\u590D \u2500\u2500</span></div>');
-    items.push(`<div class="bact bact-reply bact-final"><span>\u{1F4AC}</span><span>${esc(ud.replyText)}</span></div>`);
+    if (!hasSnippets) items.push('<div class="bact-divider"><span>\u2500\u2500 \u56DE\u590D \u2500\u2500</span></div>');
+    items.push(`<div class="bact bact-reply bact-final" data-full-text="${escAttr(ud.replyText)}"><span>\u{1F4AC}</span><span>${esc(ud.replyText)}</span></div>`);
   }
   actsBody.innerHTML = items.slice(-50).join("");
   if (wasAtBottom) actsBody.scrollTop = actsBody.scrollHeight;
@@ -30967,6 +31002,7 @@ function animate() {
     checkMinionGreetings(dt);
     updateRain(dt);
     updateSaveStateTimer(dt);
+    maybeSaveServerState(dt);
     updateGrassWithLOD(time);
     if (window._waterMeshes) {
       for (const w of window._waterMeshes) {
@@ -31065,6 +31101,12 @@ function esc(s) {
   const d = document.createElement("div");
   d.textContent = s || "";
   return d.innerHTML;
+}
+function escFull(s) {
+  return esc(s);
+}
+function escAttr(s) {
+  return (s || "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 window.addEventListener("resize", () => {
   camera.aspect = window.innerWidth / window.innerHeight;
@@ -31769,6 +31811,60 @@ function updateNotifyBoxPositions() {
     box.el.style.top = topStart + i * 72 + "px";
   });
 }
+var detailPopup = document.createElement("div");
+detailPopup.id = "detail-popup";
+detailPopup.innerHTML = '<div class="dp-card"><button class="dp-close">\u2715</button><div class="dp-body"></div></div>';
+document.body.appendChild(detailPopup);
+detailPopup.querySelector(".dp-close").addEventListener("click", (e) => {
+  e.stopPropagation();
+  hideDetailPopup();
+});
+detailPopup.addEventListener("mousedown", (e) => {
+  if (e.target === detailPopup) {
+    e.stopPropagation();
+    hideDetailPopup();
+  }
+});
+detailPopup.addEventListener("click", (e) => {
+  if (e.target === detailPopup) hideDetailPopup();
+});
+function renderMarkdown(text) {
+  if (!text) return "";
+  let html = esc(text);
+  html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, "<pre><code>$2</code></pre>");
+  html = html.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>');
+  html = html.replace(/^#{1,6}\s+(.+)$/gm, '<strong class="md-h">$1</strong>');
+  html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+  html = html.replace(/\*(.+?)\*/g, "<em>$1</em>");
+  html = html.replace(/^[\-\*]\s+(.+)$/gm, "<li>$1</li>");
+  html = html.replace(/(<li>.*<\/li>\n?)+/g, "<ul>$&</ul>");
+  html = html.replace(/\n/g, "<br>");
+  return html;
+}
+function isMarkdown(text) {
+  return /[#*`\-\[\]]/.test(text || "");
+}
+function showDetailPopup(bactEl) {
+  const fullText = bactEl.getAttribute("data-full-text");
+  if (!fullText) return;
+  const body = detailPopup.querySelector(".dp-body");
+  body.innerHTML = isMarkdown(fullText) ? renderMarkdown(fullText) : esc(fullText).replace(/\n/g, "<br>");
+  detailPopup.style.display = "flex";
+  detailPopup.classList.add("show");
+  interactingWithOverlay = true;
+}
+function hideDetailPopup() {
+  detailPopup.classList.remove("show");
+  detailPopup.style.display = "none";
+  interactingWithOverlay = false;
+}
+document.addEventListener("click", (e) => {
+  const bact = e.target.closest(".bact");
+  if (!bact) return;
+  if (e.target.tagName === "BUTTON" || e.target.tagName === "A") return;
+  e.stopPropagation();
+  showDetailPopup(bact);
+});
 setTimeout(() => {
   const lo = document.getElementById("loading-overlay");
   if (lo) {
@@ -31776,7 +31872,68 @@ setTimeout(() => {
     setTimeout(() => lo.remove(), 600);
   }
 }, 3e3);
-connectSSE();
+fetch("/api/state").then((r) => r.json()).then((s) => {
+  serverState = s;
+}).catch(() => {
+}).finally(() => {
+  connectSSE();
+});
+var lastServerSave = 0;
+function maybeSaveServerState(dt) {
+  lastServerSave += dt;
+  if (lastServerSave < 5) return;
+  lastServerSave = 0;
+  const positions = {};
+  const states = {};
+  for (const m of minions) {
+    const sk = m.userData.sessionKey;
+    if (!sk) continue;
+    positions[sk] = { x: m.position.x, y: m.position.y, z: m.position.z };
+    states[sk] = {
+      state: m.userData.state || "idle",
+      eventLog: (m.userData.eventLog || []).slice(-20),
+      userMsg: m.userData.userMsg || "",
+      userName: m.userData.userName || "",
+      replyText: m.userData.replyText || "",
+      replyCount: m.userData.replyCount || 0
+    };
+  }
+  const openBubbles = [];
+  for (const sk in bubbles) {
+    const el = bubbles[sk];
+    if (el && el.classList.contains("show") && !el._dismissed) openBubbles.push(sk);
+  }
+  fetch("/api/state", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ positions, states, openBubbles, fixedPanelSession })
+  }).catch(() => {
+  });
+}
+window.addEventListener("beforeunload", () => {
+  const positions = {};
+  const states = {};
+  for (const m of minions) {
+    const sk = m.userData.sessionKey;
+    if (!sk) continue;
+    positions[sk] = { x: m.position.x, y: m.position.y, z: m.position.z };
+    states[sk] = {
+      state: m.userData.state || "idle",
+      eventLog: (m.userData.eventLog || []).slice(-20),
+      userMsg: m.userData.userMsg || "",
+      userName: m.userData.userName || "",
+      replyText: m.userData.replyText || "",
+      replyCount: m.userData.replyCount || 0
+    };
+  }
+  const openBubbles = [];
+  for (const sk in bubbles) {
+    const el = bubbles[sk];
+    if (el && el.classList.contains("show") && !el._dismissed) openBubbles.push(sk);
+  }
+  const data = JSON.stringify({ positions, states, openBubbles, fixedPanelSession });
+  navigator.sendBeacon("/api/state", new Blob([data], { type: "application/json" }));
+});
 animate();
 /*! Bundled license information:
 
