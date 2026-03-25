@@ -28451,6 +28451,12 @@ var isDragging = false;
 var dragStarted = false;
 var lastMX = 0;
 var lastMY = 0;
+var dragRaycaster = new Raycaster();
+var longPressTimer = null;
+var longPressTarget = null;
+var pressStartTime = 0;
+var pressStartPos = { x: 0, y: 0 };
+var isDraggingMinion = false;
 var interactingWithOverlay = false;
 var followMinion = null;
 var FOLLOW_OFFSET = new Vector3(0, 4, 5);
@@ -28627,6 +28633,36 @@ function isBubbleEvent(e) {
 renderer.domElement.addEventListener("mousedown", (e) => {
   if (e.button !== 0) return;
   if (!isCanvasEvent(e)) return;
+  pressStartTime = Date.now();
+  pressStartPos = { x: e.clientX, y: e.clientY };
+  const mouse = new Vector2(
+    e.clientX / window.innerWidth * 2 - 1,
+    -(e.clientY / window.innerHeight) * 2 + 1
+  );
+  dragRaycaster.setFromCamera(mouse, camera);
+  const hits = dragRaycaster.intersectObjects(clickables, true);
+  longPressTarget = null;
+  if (hits.length > 0) {
+    let target = hits[0].object;
+    while (target.parent && !target.userData.sessionKey) target = target.parent;
+    if (target.userData.sessionKey) {
+      longPressTarget = target;
+      longPressTimer = setTimeout(() => {
+        if (longPressTarget && !isDraggingMinion) {
+          isDraggingMinion = true;
+          longPressTarget.userData.isDragging = true;
+          longPressTarget.userData.velocityY = 1.5;
+          longPressTarget.userData.isGrounded = false;
+          isDragging = false;
+          renderer.domElement.classList.remove("dragging");
+          document.querySelectorAll(".bubble3d, .mcp-bubble").forEach((el) => {
+            el.style.pointerEvents = "";
+          });
+          renderer.domElement.style.cursor = "grabbing";
+        }
+      }, 400);
+    }
+  }
   isDragging = true;
   dragStarted = false;
   lastMX = e.clientX;
@@ -29979,42 +30015,6 @@ function reportPositions() {
   });
 }
 var groundPlane = new Plane(new Vector3(0, 1, 0), 0);
-var dragRaycaster = new Raycaster();
-var longPressTimer = null;
-var longPressTarget = null;
-var pressStartTime = 0;
-var pressStartPos = { x: 0, y: 0 };
-var isDraggingMinion = false;
-renderer.domElement.addEventListener("mousedown", (e) => {
-  if (e.button !== 0) return;
-  if (!isCanvasEvent(e)) return;
-  if (isDragging) return;
-  pressStartTime = Date.now();
-  pressStartPos = { x: e.clientX, y: e.clientY };
-  longPressTarget = null;
-  const mouse = new Vector2(
-    e.clientX / window.innerWidth * 2 - 1,
-    -(e.clientY / window.innerHeight) * 2 + 1
-  );
-  dragRaycaster.setFromCamera(mouse, camera);
-  const hits = dragRaycaster.intersectObjects(clickables, true);
-  if (hits.length > 0) {
-    let target = hits[0].object;
-    while (target.parent && !target.userData.sessionKey) target = target.parent;
-    if (target.userData.sessionKey) {
-      longPressTarget = target;
-      longPressTimer = setTimeout(() => {
-        if (longPressTarget && !isDraggingMinion) {
-          isDraggingMinion = true;
-          longPressTarget.userData.isDragging = true;
-          longPressTarget.userData.velocityY = 2;
-          longPressTarget.userData.isGrounded = false;
-          renderer.domElement.style.cursor = "grabbing";
-        }
-      }, 400);
-    }
-  }
-});
 window.addEventListener("mousemove", (e) => {
   if (!isDraggingMinion || !longPressTarget) return;
   const mouse = new Vector2(
@@ -30049,7 +30049,7 @@ window.addEventListener("mouseup", () => {
   }
 });
 window.addEventListener("mousemove", (e) => {
-  if (longPressTimer && !isDraggingMinion) {
+  if (longPressTimer && !isDraggingMinion && !isDragging) {
     const dx = e.clientX - pressStartPos.x;
     const dy = e.clientY - pressStartPos.y;
     if (dx * dx + dy * dy > 25) {
@@ -30194,7 +30194,7 @@ function animate() {
         m.position.x = Math.max(ud.bounds.minX, Math.min(ud.bounds.maxX, m.position.x));
         m.position.z = Math.max(ud.bounds.minZ, Math.min(ud.bounds.maxZ, m.position.z));
       }
-      let yOff = Math.sin(time * 1.5 + ud.bobPhase) * 0.02;
+      let yOff = 0;
       let extraRotY = 0;
       let extraRotX = 0;
       let pulseScale = 1;

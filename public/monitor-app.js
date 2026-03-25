@@ -22,6 +22,14 @@ let moveSpeed = 12;
 const keys = { w: false, a: false, s: false, d: false, space: false, shift: false };
 let isDragging = false, dragStarted = false, lastMX = 0, lastMY = 0;
 
+// Minion drag state
+const dragRaycaster = new THREE.Raycaster();
+let longPressTimer = null;
+let longPressTarget = null;
+let pressStartTime = 0;
+let pressStartPos = { x: 0, y: 0 };
+let isDraggingMinion = false;
+
 // Focus management: track if user is interacting with a DOM overlay
 let interactingWithOverlay = false;
 
@@ -230,11 +238,47 @@ function isBubbleEvent(e) {
 // Canvas mouse handlers — only activate when clicking directly on canvas
 renderer.domElement.addEventListener('mousedown', e => {
   if (e.button !== 0) return;
-  if (!isCanvasEvent(e)) return; // Don't interfere with overlay clicks
+  if (!isCanvasEvent(e)) return;
+
+  // First: check if we're clicking on a minion (for long-press drag)
+  pressStartTime = Date.now();
+  pressStartPos = { x: e.clientX, y: e.clientY };
+
+  const mouse = new THREE.Vector2(
+    (e.clientX / window.innerWidth) * 2 - 1,
+    -(e.clientY / window.innerHeight) * 2 + 1
+  );
+  dragRaycaster.setFromCamera(mouse, camera);
+  const hits = dragRaycaster.intersectObjects(clickables, true);
+  longPressTarget = null;
+  if (hits.length > 0) {
+    let target = hits[0].object;
+    while (target.parent && !target.userData.sessionKey) target = target.parent;
+    if (target.userData.sessionKey) {
+      longPressTarget = target;
+      // Start long press timer (400ms → enter drag mode)
+      longPressTimer = setTimeout(() => {
+        if (longPressTarget && !isDraggingMinion) {
+          isDraggingMinion = true;
+          longPressTarget.userData.isDragging = true;
+          longPressTarget.userData.velocityY = 1.5; // slight lift
+          longPressTarget.userData.isGrounded = false;
+          // Cancel camera drag
+          isDragging = false;
+          renderer.domElement.classList.remove('dragging');
+          document.querySelectorAll('.bubble3d, .mcp-bubble').forEach(el => {
+            el.style.pointerEvents = '';
+          });
+          renderer.domElement.style.cursor = 'grabbing';
+        }
+      }, 400);
+    }
+  }
+
+  // Start camera drag (will be cancelled if long press triggers)
   isDragging = true; dragStarted = false;
   lastMX = e.clientX; lastMY = e.clientY;
   renderer.domElement.classList.add('dragging');
-  // Make bubbles transparent to mouse during drag (so mousemove doesn't stutter)
   document.querySelectorAll('.bubble3d, .mcp-bubble').forEach(el => {
     el.style.pointerEvents = 'none';
   });
@@ -1688,58 +1732,13 @@ function reportPositions() {
   }).catch(() => {});
 }
 
-// ===== Long-Press Drag System =====
+// ===== Drag Target Update & Drop =====
 // Ground plane for raycasting drag positions
 const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-const dragRaycaster = new THREE.Raycaster();
-let longPressTimer = null;
-let longPressTarget = null;
-let pressStartTime = 0;
-let pressStartPos = { x: 0, y: 0 };
-let isDraggingMinion = false;
 
-// Start long press detection on mousedown
-renderer.domElement.addEventListener('mousedown', (e) => {
-  if (e.button !== 0) return;
-  if (!isCanvasEvent(e)) return;
-  if (isDragging) return; // camera drag takes priority
-
-  pressStartTime = Date.now();
-  pressStartPos = { x: e.clientX, y: e.clientY };
-  longPressTarget = null;
-
-  // Raycast to find minion under cursor
-  const mouse = new THREE.Vector2(
-    (e.clientX / window.innerWidth) * 2 - 1,
-    -(e.clientY / window.innerHeight) * 2 + 1
-  );
-  dragRaycaster.setFromCamera(mouse, camera);
-  const hits = dragRaycaster.intersectObjects(clickables, true);
-  if (hits.length > 0) {
-    let target = hits[0].object;
-    while (target.parent && !target.userData.sessionKey) target = target.parent;
-    if (target.userData.sessionKey) {
-      longPressTarget = target;
-      // Start long press timer (500ms)
-      longPressTimer = setTimeout(() => {
-        if (longPressTarget && !isDraggingMinion) {
-          isDraggingMinion = true;
-          longPressTarget.userData.isDragging = true;
-          // Visual feedback: lift minion
-          longPressTarget.userData.velocityY = 2;
-          longPressTarget.userData.isGrounded = false;
-          renderer.domElement.style.cursor = 'grabbing';
-        }
-      }, 400);
-    }
-  }
-});
-
-// Update drag target position on mousemove
+// Update drag target position on mousemove (when dragging a minion)
 window.addEventListener('mousemove', (e) => {
   if (!isDraggingMinion || !longPressTarget) return;
-
-  // Raycast to ground plane
   const mouse = new THREE.Vector2(
     (e.clientX / window.innerWidth) * 2 - 1,
     -(e.clientY / window.innerHeight) * 2 + 1
@@ -1748,7 +1747,6 @@ window.addEventListener('mousemove', (e) => {
   const intersection = new THREE.Vector3();
   dragRaycaster.ray.intersectPlane(groundPlane, intersection);
   if (intersection) {
-    // Clamp to bounds
     const ud = longPressTarget.userData;
     if (ud.bounds) {
       intersection.x = Math.max(ud.bounds.minX, Math.min(ud.bounds.maxX, intersection.x));
@@ -1776,9 +1774,9 @@ window.addEventListener('mouseup', () => {
   }
 });
 
-// Cancel long press if mouse moves too far
+// Cancel long press if mouse moves too far (but not during actual drag)
 window.addEventListener('mousemove', (e) => {
-  if (longPressTimer && !isDraggingMinion) {
+  if (longPressTimer && !isDraggingMinion && !isDragging) {
     const dx = e.clientX - pressStartPos.x;
     const dy = e.clientY - pressStartPos.y;
     if (dx * dx + dy * dy > 25) { // >5px movement cancels long press
@@ -1950,8 +1948,8 @@ function animate() {
       m.position.z = Math.max(ud.bounds.minZ, Math.min(ud.bounds.maxZ, m.position.z));
     }
 
-    // Subtle bob (base)
-    let yOff = Math.sin(time * 1.5 + ud.bobPhase) * 0.02;
+    // No constant bob - only animate when needed
+    let yOff = 0;
     let extraRotY = 0;
     let extraRotX = 0;
     let pulseScale = 1;
