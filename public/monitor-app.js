@@ -1379,7 +1379,7 @@ function initWorld(worldData) {
             else acts.classList.remove('collapsed');
           }
         }
-        if (!sb.dismissed) showBubble(m);
+        if (!sb.dismissed && sb.state === 'thinking') showBubble(m);
       }
     });
   });
@@ -1521,7 +1521,10 @@ function updateBubbleContent(m) {
   el.querySelector('.bub-user').textContent = ud.userName || ud.sessionLabel || 'Session';
 
   // User message
-  el.querySelector('.bub-msg').textContent = ud.userMsg || '';
+  const bubMsgEl = el.querySelector('.bub-msg');
+  bubMsgEl.textContent = ud.userMsg || '';
+  bubMsgEl.setAttribute('data-full-text', ud.userMsg || '');
+  bubMsgEl.style.cursor = ud.userMsg ? 'pointer' : '';
 
   // Thinking/tools - interleaved from unified eventLog
   const actsBody = el.querySelector('.bub-acts-body');
@@ -1723,7 +1726,10 @@ function updateFixedPanelContent(minion) {
   const ud = minion.userData;
   fixedPanelEl.querySelector('.fp-avatar').textContent = ud.state === 'thinking' ? '🧠' : ud.state === 'streaming' ? '✍️' : '✅';
   fixedPanelEl.querySelector('.fp-user').textContent = ud.userName || ud.sessionLabel || 'Session';
-  fixedPanelEl.querySelector('.fp-msg').textContent = ud.userMsg || '';
+  const fpMsgEl = fixedPanelEl.querySelector('.fp-msg');
+  fpMsgEl.textContent = ud.userMsg || '';
+  fpMsgEl.setAttribute('data-full-text', ud.userMsg || '');
+  fpMsgEl.style.cursor = ud.userMsg ? 'pointer' : '';
   const actsBody = fixedPanelEl.querySelector('.fp-acts-body');
   const wasAtBottom = actsBody.scrollHeight - actsBody.scrollTop - actsBody.clientHeight < 30;
   const items = []; const log = ud.eventLog || [];
@@ -1906,23 +1912,17 @@ function handleEvent(ev) {
       showNotifyBox(ud.sessionKey, ud.userName, ev.msg || '', ud.chineseName || ud.sessionLabel);
     }
   } else if (ev.type === 'thinking') {
-    const now = new Date();
-    ud.eventLog.push({ type: 'think', text: (ev.thinking || '').slice(0, 150), time: now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) });
     ud.state = 'thinking'; ud.lastEventTime = Date.now();
     const b = bubbles[ud.sessionKey]; if (b) b._dismissed = false;
     showBubble(m);
+    startBubbleRefresh(m); // ensure polling is active
   } else if (ev.type === 'tool_use') {
-    const now = new Date();
-    ud.eventLog.push({ type: 'tool_use', text: ev.tool, detail: ev.args, time: now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) });
     ud.state = 'thinking'; ud.lastEventTime = Date.now();
     showBubble(m);
   } else if (ev.type === 'tool_result') {
-    const now = new Date();
-    ud.eventLog.push({ type: 'tool_result', text: ev.tool + ' ✓', detail: ev.result, time: now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) });
+    ud.lastEventTime = Date.now();
     showBubble(m);
   } else if (ev.type === 'reply_intermediate') {
-    const now = new Date();
-    ud.eventLog.push({ type: 'reply_snippet', text: (ev.text || '').slice(0, 120), time: now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) });
     ud.replyText = ev.text || '';
     ud.state = 'thinking'; ud.lastEventTime = Date.now();
     showBubble(m);
@@ -3824,6 +3824,17 @@ document.body.appendChild(detailPopup);
 detailPopup.querySelector('.dp-close').addEventListener('click', (e) => { e.stopPropagation(); hideDetailPopup(); });
 detailPopup.addEventListener('mousedown', (e) => { if (e.target === detailPopup) { e.stopPropagation(); hideDetailPopup(); } });
 detailPopup.addEventListener('click', (e) => { if (e.target === detailPopup) hideDetailPopup(); });
+
+// Click handler for .bact, .bub-msg, .fp-msg to show detail popup
+document.addEventListener('click', (e) => {
+  const el = e.target.closest('[data-full-text]');
+  if (!el) return;
+  const fullText = el.getAttribute('data-full-text');
+  if (fullText && fullText.length > 0) {
+    e.stopPropagation();
+    showDetailPopup(fullText);
+  }
+});
 
 function renderMarkdown(text) {
   if (!text) return '';
