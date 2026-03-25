@@ -148,6 +148,7 @@ function initSnowSystem() {
       speed: 0.3 + Math.random() * 0.4,
       wobble: Math.random() * Math.PI * 2,
       drift: (Math.random() - 0.5) * 0.3,
+      _atmosphere: true,
     };
     scene.add(snow);
     snowParticles.push(snow);
@@ -415,6 +416,7 @@ const sunSphere = new THREE.Mesh(
   new THREE.MeshBasicMaterial({ color: 0xffee88 })
 );
 sunSphere.position.copy(sun.position);
+sunSphere.userData._atmosphere = true;
 scene.add(sunSphere);
 
 // Sun glow (larger transparent sphere)
@@ -423,6 +425,7 @@ const sunGlow = new THREE.Mesh(
   new THREE.MeshBasicMaterial({ color: 0xffee88, transparent: true, opacity: 0.2 })
 );
 sunGlow.position.copy(sun.position);
+sunGlow.userData._atmosphere = true;
 scene.add(sunGlow);
 
 // ===== Materials =====
@@ -1218,10 +1221,11 @@ function initWorld(worldData) {
     }
   }
 
-  // Clear old scene objects (keep lights, camera)
+  // Clear old scene objects (keep lights, camera, and atmosphere elements)
   for (let i = scene.children.length - 1; i >= 0; i--) {
     const c = scene.children[i];
     if (c.isLight) continue;
+    if (c.userData?._atmosphere) continue; // protect atmosphere elements
     scene.remove(c);
   }
   // Clear old bubbles
@@ -1340,6 +1344,20 @@ function initWorld(worldData) {
       teleportToContinent(agentIdx);
     });
   });
+
+  // Re-add atmosphere elements (initWorld clears scene, so restore them)
+  ensureAtmosphereElements();
+}
+
+function ensureAtmosphereElements() {
+  // Re-add sun sphere and glow if they were cleared
+  if (!scene.children.includes(sunSphere)) scene.add(sunSphere);
+  if (!scene.children.includes(sunGlow)) scene.add(sunGlow);
+  // Re-add clouds
+  if (petals.length === 0) initPetals();
+  if (typeof initClouds === 'function' && !scene.children.find(c => c.userData?.isCloud)) initCloudsFixed();
+  // Re-add rain if it was active
+  // Snow is already handled by initSnowSystem guard
 }
 
 // ===== Bubbles =====
@@ -1642,12 +1660,25 @@ function connectSSE() {
 
 // ===== Bubble Auto-Refresh (polling fallback for SSE gaps) =====
 const bubbleRefreshTimers = {}; // sessionKey -> intervalId
-const REFRESH_INTERVAL_MS = 3000; // refresh every 3s when bubble is active
+const REFRESH_INTERVAL_MS = 1500; // refresh every 1.5s when bubble is active
 
 function startBubbleRefresh(minion) {
   const sk = minion.userData.sessionKey;
   if (bubbleRefreshTimers[sk]) return; // already running
 
+  // Immediate first refresh
+  fetch(`/api/messages/${minion.userData.sessionId}`)
+    .then(r => r.json())
+    .then(data => {
+      if (!data.messages || data.messages.length === 0) return;
+      applyMessagesToMinion(minion, data.messages);
+      updateBubbleContent(minion);
+      // Also update fixed panel if open
+      if (fixedPanelSession === sk) updateFixedPanelContent(minion);
+    })
+    .catch(() => {});
+
+  // Then periodic refresh
   bubbleRefreshTimers[sk] = setInterval(() => {
     const el = bubbles[sk];
     if (!el || !el.classList.contains('show') || el._dismissed) {
@@ -1661,6 +1692,7 @@ function startBubbleRefresh(minion) {
         if (!data.messages || data.messages.length === 0) return;
         applyMessagesToMinion(minion, data.messages);
         updateBubbleContent(minion);
+        if (fixedPanelSession === sk) updateFixedPanelContent(minion);
       })
       .catch(() => {});
   }, REFRESH_INTERVAL_MS);
@@ -2695,7 +2727,7 @@ function initClouds() {
       25 + Math.random() * 10,
       (Math.random() - 0.5) * 120
     );
-    cloud.userData = { speed: 0.2 + Math.random() * 0.3, dir: Math.random() > 0.5 ? 1 : -1 };
+    cloud.userData = { speed: 0.2 + Math.random() * 0.3, dir: Math.random() > 0.5 ? 1 : -1, _atmosphere: true };
     scene.add(cloud);
   }
 }
@@ -2884,6 +2916,7 @@ function initPetals() {
       wobbleSpeed: 1 + Math.random() * 2,
       rotSpeed: (Math.random() - 0.5) * 3,
       drift: (Math.random() - 0.5) * 0.3,
+      _atmosphere: true,
     };
     scene.add(petal);
     petals.push(petal);
@@ -3189,6 +3222,7 @@ function initRainSystem() {
       (Math.random() - 0.5) * 80
     );
     drop.visible = false;
+    drop.userData._atmosphere = true;
     scene.add(drop);
     rainDrops.push(drop);
   }
