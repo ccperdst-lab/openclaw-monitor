@@ -386,7 +386,7 @@ window.addEventListener('keydown', e => {
   else if (e.code === 'KeyA') keys.a = true;
   else if (e.code === 'KeyS') keys.s = true;
   else if (e.code === 'KeyD') keys.d = true;
-  else if (e.code === 'Space') keys.space = true;
+  else if (e.code === 'Space') { keys.space = true; e.preventDefault(); }
   else if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') keys.shift = true;
   else if (e.code === 'KeyR') toggleRain();
 });
@@ -1610,7 +1610,15 @@ function openFixedPanel(sessionKey) {
       fixedPanelEl.style.transform = 'none';
       clampPanelToViewport();
     });
-    document.addEventListener('mouseup', () => {
+    window.addEventListener('mouseup', () => {
+      if (fpDragging) {
+        fpDragging = false;
+        fixedPanelEl.style.transition = '';
+        clampPanelToViewport();
+      }
+    });
+    // Also stop drag on window blur (user switches tabs/apps)
+    window.addEventListener('blur', () => {
       if (fpDragging) {
         fpDragging = false;
         fixedPanelEl.style.transition = '';
