@@ -1570,8 +1570,43 @@ function openFixedPanel(sessionKey) {
     chatIn.addEventListener('mousedown', (e) => e.stopPropagation());
     fixedPanelEl.addEventListener('mousedown', (e) => e.stopPropagation());
     fixedPanelEl.addEventListener('mouseup', (e) => e.stopPropagation());
+
+    // Drag to move the fixed panel (by header)
+    const fpHd = fixedPanelEl.querySelector('.fp-hd');
+    let fpDragging = false, fpStartX = 0, fpStartY = 0, fpOrigLeft = 0, fpOrigBottom = 0;
+    fpHd.style.cursor = 'move';
+    fpHd.addEventListener('mousedown', (e) => {
+      if (e.target.tagName === 'BUTTON') return; // don't drag when clicking buttons
+      fpDragging = true;
+      fpStartX = e.clientX;
+      fpStartY = e.clientY;
+      const rect = fixedPanelEl.getBoundingClientRect();
+      fpOrigLeft = rect.left;
+      fpOrigBottom = window.innerHeight - rect.bottom;
+      fixedPanelEl.style.transition = 'none';
+      e.preventDefault();
+      e.stopPropagation();
+    });
+    document.addEventListener('mousemove', (e) => {
+      if (!fpDragging) return;
+      const dx = e.clientX - fpStartX;
+      const dy = e.clientY - fpStartY;
+      fixedPanelEl.style.left = (fpOrigLeft + dx) + 'px';
+      fixedPanelEl.style.bottom = (fpOrigBottom - dy) + 'px';
+      fixedPanelEl.style.transform = 'none';
+    });
+    document.addEventListener('mouseup', () => {
+      if (fpDragging) {
+        fpDragging = false;
+        fixedPanelEl.style.transition = '';
+      }
+    });
   }
   fixedPanelEl.style.display = '';
+  // Reset position to centered bottom
+  fixedPanelEl.style.left = '50%';
+  fixedPanelEl.style.bottom = '12px';
+  fixedPanelEl.style.transform = 'translateX(-50%)';
   updateFixedPanelContent(minion);
   startBubbleRefresh(minion);
 }
