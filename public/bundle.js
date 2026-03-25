@@ -31108,8 +31108,8 @@ function animate() {
       updateBubblePosition(m, time);
     });
     reportPositions();
-    if (now - lastUserPosReport > 200) {
-      lastUserPosReport = now;
+    if (Date.now() - lastUserPosReport > 200) {
+      lastUserPosReport = Date.now();
       reportMyPosition();
     }
     if (followMinion) {

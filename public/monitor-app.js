@@ -2945,8 +2945,8 @@ function animate() {
   reportPositions();
 
   // Report my camera position to server (for multi-user)
-  if (now - lastUserPosReport > 200) { // every 200ms
-    lastUserPosReport = now;
+  if (Date.now() - lastUserPosReport > 200) { // every 200ms
+    lastUserPosReport = Date.now();
     reportMyPosition();
   }
 
