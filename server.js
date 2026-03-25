@@ -579,6 +579,15 @@ function watchSessionMaps() {
   } catch {}
 }
 
+// Watch for new agent directories being created
+try {
+  chokidar.watch(AGENTS_DIR, { ignoreInitial: true, depth: 0, awaitWriteFinish: { stabilityThreshold: 500 } }).on('addDir', (dirPath) => {
+    log('info', `New agent directory detected: ${dirPath}`);
+    // Re-scan and re-init
+    setTimeout(() => { watchSessionMaps(); initAll(); }, 1000);
+  });
+} catch (e) { log('error', 'Failed to watch agents dir: ' + e.message); }
+
 // ===== Start =====
 initAll();
 watchSessionMaps();
