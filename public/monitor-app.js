@@ -2560,17 +2560,33 @@ function animate() {
   const dt = Math.min(clock.getDelta(), 0.05);
   const time = clock.getElapsedTime();
 
-  // Camera movement (must match lookAt direction: sin(yaw), 0, cos(yaw))
+  // WASD movement (move walkPos, not camera directly)
   const forward = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
-  // right = forward × up (right-handed: if looking at +Z, right = +X)
   const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize();
   const speed = moveSpeed * dt;
-  if (keys.w) camera.position.addScaledVector(forward, speed);
-  if (keys.s) camera.position.addScaledVector(forward, -speed);
-  if (keys.a) camera.position.addScaledVector(right, -speed);
-  if (keys.d) camera.position.addScaledVector(right, speed);
-  if (keys.space) camera.position.y += speed;
-  if (keys.shift) camera.position.y -= speed;
+  if (keys.w) walkPos.addScaledVector(forward, speed);
+  if (keys.s) walkPos.addScaledVector(forward, -speed);
+  if (keys.a) walkPos.addScaledVector(right, -speed);
+  if (keys.d) walkPos.addScaledVector(right, speed);
+  if (keys.space) walkPos.y += speed;
+  if (keys.shift) walkPos.y -= speed;
+
+  // Set camera based on mode
+  if (thirdPerson && selfAvatar) {
+    // Third-person: avatar at walkPos, camera behind
+    selfAvatar.position.set(walkPos.x, 0, walkPos.z);
+    selfAvatar.rotation.y = yaw;
+    selfAvatar.visible = true;
+    camera.position.set(
+      walkPos.x - Math.sin(yaw) * 5,
+      walkPos.y + 2,
+      walkPos.z - Math.cos(yaw) * 5
+    );
+  } else {
+    // First-person: camera at walkPos
+    if (selfAvatar) selfAvatar.visible = false;
+    camera.position.copy(walkPos);
+  }
 
   // Camera rotation
   const lookTarget = camera.position.clone().add(new THREE.Vector3(
@@ -2578,15 +2594,8 @@ function animate() {
   ));
   camera.lookAt(lookTarget);
 
-  // Third-person camera
+  // Third-person: look at avatar instead
   if (thirdPerson && selfAvatar) {
-    // Avatar stands at the "first-person" position
-    selfAvatar.position.set(camera.position.x, 0, camera.position.z);
-    selfAvatar.rotation.y = yaw;
-    // Camera pulls back and up
-    const behind = new THREE.Vector3(-Math.sin(yaw) * 5, 2, -Math.cos(yaw) * 5);
-    const targetCamPos = camera.position.clone().add(behind);
-    camera.position.lerp(targetCamPos, 0.15);
     camera.lookAt(selfAvatar.position.clone().add(new THREE.Vector3(0, 0.5, 0)));
   }
 
@@ -2979,13 +2988,12 @@ function animate() {
   if (cameraTransition) {
     cameraTransition.progress += dt / cameraTransition.duration;
     if (cameraTransition.progress >= 1) {
-      camera.position.copy(cameraTransition.endPos);
+      walkPos.copy(cameraTransition.endPos);
       cameraTransition = null;
     } else {
-      // Smooth ease in-out
       const t = cameraTransition.progress;
       const ease = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
-      camera.position.lerpVectors(cameraTransition.startPos, cameraTransition.endPos, ease);
+      walkPos.lerpVectors(cameraTransition.startPos, cameraTransition.endPos, ease);
     }
   }
 
@@ -3835,9 +3843,9 @@ function updateGrassWithLOD(time) {
 function saveSceneState() {
   const state = {
     camera: {
-      x: camera.position.x,
-      y: camera.position.y,
-      z: camera.position.z,
+      x: walkPos.x,
+      y: walkPos.y,
+      z: walkPos.z,
       yaw: yaw,
       pitch: pitch,
     },
@@ -3864,7 +3872,7 @@ function restoreSceneState() {
     const state = JSON.parse(raw);
 
     if (state.camera) {
-      camera.position.set(state.camera.x || 25, state.camera.y || 30, state.camera.z || 35);
+      walkPos.set(state.camera.x || 25, state.camera.y || 30, state.camera.z || 35);
       yaw = state.camera.yaw || 0;
       pitch = state.camera.pitch || -0.5;
     }
@@ -4003,13 +4011,15 @@ detailPopup.addEventListener('mousedown', (e) => { if (e.target === detailPopup)
 detailPopup.addEventListener('click', (e) => { if (e.target === detailPopup) hideDetailPopup(); });
 
 // Click handler for .bact, .bub-msg, .fp-msg to show detail popup
+// Click handler for detail popup (catches .bact AND .bub-msg/.fp-msg)
 document.addEventListener('click', (e) => {
   const el = e.target.closest('[data-full-text]');
   if (!el) return;
+  if (e.target.tagName === 'BUTTON' || e.target.tagName === 'A') return;
   const fullText = el.getAttribute('data-full-text');
   if (fullText && fullText.length > 0) {
     e.stopPropagation();
-    showDetailPopup(fullText);
+    showDetailPopup(el);
   }
 });
 
@@ -4055,16 +4065,6 @@ function hideDetailPopup() {
   interactingWithOverlay = false;
 }
 
-// Event delegation: click on .bact inside bubbles or fixed panel
-document.addEventListener('click', (e) => {
-  const bact = e.target.closest('.bact');
-  if (!bact) return;
-  // Don't trigger for clicks on links or buttons inside
-  if (e.target.tagName === 'BUTTON' || e.target.tagName === 'A') return;
-  e.stopPropagation();
-  showDetailPopup(bact);
-});
-
 // ===== Multi-User Avatars =====
 const myUserId = localStorage.getItem('monitor-userId') || ('user-' + Math.random().toString(36).slice(2, 8));
 localStorage.setItem('monitor-userId', myUserId);
@@ -4073,6 +4073,7 @@ const myUserName = localStorage.getItem('monitor-userName') || '访客' + myUser
 // ===== Third-Person Camera =====
 let thirdPerson = false;
 let selfAvatar = null;
+const walkPos = new THREE.Vector3(25, 30, 35); // avatar/walking position (separate from camera in 3rd person)
 
 function createSelfAvatar() {
   if (selfAvatar) return;
@@ -4189,7 +4190,7 @@ function reportMyPosition() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       userId: myUserId,
-      x: camera.position.x, y: camera.position.y, z: camera.position.z,
+      x: walkPos.x, y: walkPos.y, z: walkPos.z,
       yaw, pitch,
       name: myUserName,
     })

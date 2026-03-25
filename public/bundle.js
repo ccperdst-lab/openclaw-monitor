@@ -30783,12 +30783,25 @@ function animate() {
     const forward = new Vector3(Math.sin(yaw), 0, Math.cos(yaw));
     const right = new Vector3().crossVectors(forward, new Vector3(0, 1, 0)).normalize();
     const speed = moveSpeed * dt;
-    if (keys.w) camera.position.addScaledVector(forward, speed);
-    if (keys.s) camera.position.addScaledVector(forward, -speed);
-    if (keys.a) camera.position.addScaledVector(right, -speed);
-    if (keys.d) camera.position.addScaledVector(right, speed);
-    if (keys.space) camera.position.y += speed;
-    if (keys.shift) camera.position.y -= speed;
+    if (keys.w) walkPos.addScaledVector(forward, speed);
+    if (keys.s) walkPos.addScaledVector(forward, -speed);
+    if (keys.a) walkPos.addScaledVector(right, -speed);
+    if (keys.d) walkPos.addScaledVector(right, speed);
+    if (keys.space) walkPos.y += speed;
+    if (keys.shift) walkPos.y -= speed;
+    if (thirdPerson && selfAvatar) {
+      selfAvatar.position.set(walkPos.x, 0, walkPos.z);
+      selfAvatar.rotation.y = yaw;
+      selfAvatar.visible = true;
+      camera.position.set(
+        walkPos.x - Math.sin(yaw) * 5,
+        walkPos.y + 2,
+        walkPos.z - Math.cos(yaw) * 5
+      );
+    } else {
+      if (selfAvatar) selfAvatar.visible = false;
+      camera.position.copy(walkPos);
+    }
     const lookTarget = camera.position.clone().add(new Vector3(
       Math.sin(yaw) * Math.cos(pitch),
       Math.sin(pitch),
@@ -30796,11 +30809,6 @@ function animate() {
     ));
     camera.lookAt(lookTarget);
     if (thirdPerson && selfAvatar) {
-      selfAvatar.position.set(camera.position.x, 0, camera.position.z);
-      selfAvatar.rotation.y = yaw;
-      const behind = new Vector3(-Math.sin(yaw) * 5, 2, -Math.cos(yaw) * 5);
-      const targetCamPos = camera.position.clone().add(behind);
-      camera.position.lerp(targetCamPos, 0.15);
       camera.lookAt(selfAvatar.position.clone().add(new Vector3(0, 0.5, 0)));
     }
     minions.forEach((m) => {
@@ -31135,12 +31143,12 @@ function animate() {
     if (cameraTransition) {
       cameraTransition.progress += dt / cameraTransition.duration;
       if (cameraTransition.progress >= 1) {
-        camera.position.copy(cameraTransition.endPos);
+        walkPos.copy(cameraTransition.endPos);
         cameraTransition = null;
       } else {
         const t = cameraTransition.progress;
         const ease = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
-        camera.position.lerpVectors(cameraTransition.startPos, cameraTransition.endPos, ease);
+        walkPos.lerpVectors(cameraTransition.startPos, cameraTransition.endPos, ease);
       }
     }
     updateSpawnEffects(dt);
@@ -31851,9 +31859,9 @@ function updateGrassWithLOD(time) {
 function saveSceneState() {
   const state = {
     camera: {
-      x: camera.position.x,
-      y: camera.position.y,
-      z: camera.position.z,
+      x: walkPos.x,
+      y: walkPos.y,
+      z: walkPos.z,
       yaw,
       pitch
     },
@@ -31876,7 +31884,7 @@ function restoreSceneState() {
     if (!raw) return;
     const state = JSON.parse(raw);
     if (state.camera) {
-      camera.position.set(state.camera.x || 25, state.camera.y || 30, state.camera.z || 35);
+      walkPos.set(state.camera.x || 25, state.camera.y || 30, state.camera.z || 35);
       yaw = state.camera.yaw || 0;
       pitch = state.camera.pitch || -0.5;
     }
@@ -31994,10 +32002,11 @@ detailPopup.addEventListener("click", (e) => {
 document.addEventListener("click", (e) => {
   const el = e.target.closest("[data-full-text]");
   if (!el) return;
+  if (e.target.tagName === "BUTTON" || e.target.tagName === "A") return;
   const fullText = el.getAttribute("data-full-text");
   if (fullText && fullText.length > 0) {
     e.stopPropagation();
-    showDetailPopup(fullText);
+    showDetailPopup(el);
   }
 });
 function renderMarkdown(text) {
@@ -32030,18 +32039,12 @@ function hideDetailPopup() {
   detailPopup.style.display = "none";
   interactingWithOverlay = false;
 }
-document.addEventListener("click", (e) => {
-  const bact = e.target.closest(".bact");
-  if (!bact) return;
-  if (e.target.tagName === "BUTTON" || e.target.tagName === "A") return;
-  e.stopPropagation();
-  showDetailPopup(bact);
-});
 var myUserId = localStorage.getItem("monitor-userId") || "user-" + Math.random().toString(36).slice(2, 8);
 localStorage.setItem("monitor-userId", myUserId);
 var myUserName = localStorage.getItem("monitor-userName") || "\u8BBF\u5BA2" + myUserId.slice(-3);
 var thirdPerson = false;
 var selfAvatar = null;
+var walkPos = new Vector3(25, 30, 35);
 function createSelfAvatar() {
   if (selfAvatar) return;
   const group = new Group();
@@ -32143,9 +32146,9 @@ function reportMyPosition() {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       userId: myUserId,
-      x: camera.position.x,
-      y: camera.position.y,
-      z: camera.position.z,
+      x: walkPos.x,
+      y: walkPos.y,
+      z: walkPos.z,
       yaw,
       pitch,
       name: myUserName
