@@ -1559,7 +1559,7 @@ function openFixedPanel(sessionKey) {
     document.body.appendChild(fixedPanelEl);
     fixedPanelEl.querySelector('.fp-close').addEventListener('click', (e) => { e.stopPropagation(); closeFixedPanel(); });
     fixedPanelEl.querySelector('.fp-unpin').addEventListener('click', (e) => { e.stopPropagation(); const sk = fixedPanelSession; closeFixedPanel(); if (sk && bubbles[sk]) { bubbles[sk]._dismissed = false; const mn = minions.find(m => m.userData.sessionKey === sk); if (mn) showBubble(mn); } });
-    fixedPanelEl.querySelector('.fp-acts-hd').addEventListener('click', (e) => { e.stopPropagation(); fixedPanelEl.querySelector('.fp-acts').classList.toggle('collapsed'); });
+    fixedPanelEl.querySelector('.fp-acts-hd').addEventListener('click', (e) => { e.stopPropagation(); fixedPanelEl.querySelector('.fp-acts').classList.toggle('collapsed'); setTimeout(clampPanelToViewport, 350); });
     const chatIn = fixedPanelEl.querySelector('.fp-chat-in');
     let isComposing = false;
     chatIn.addEventListener('compositionstart', () => { isComposing = true; });
@@ -1571,12 +1571,26 @@ function openFixedPanel(sessionKey) {
     fixedPanelEl.addEventListener('mousedown', (e) => e.stopPropagation());
     fixedPanelEl.addEventListener('mouseup', (e) => e.stopPropagation());
 
-    // Drag to move the fixed panel (by header)
+    // Drag to move the fixed panel (by header), with viewport clamping
     const fpHd = fixedPanelEl.querySelector('.fp-hd');
     let fpDragging = false, fpStartX = 0, fpStartY = 0, fpOrigLeft = 0, fpOrigBottom = 0;
     fpHd.style.cursor = 'move';
+
+    function clampPanelToViewport() {
+      if (!fixedPanelEl) return;
+      const rect = fixedPanelEl.getBoundingClientRect();
+      const vw = window.innerWidth, vh = window.innerHeight;
+      let left = rect.left, bottom = vh - rect.bottom;
+      // Clamp: at least 40px visible on each side
+      left = Math.max(-rect.width + 60, Math.min(vw - 60, left));
+      bottom = Math.max(4, Math.min(vh - 60, bottom));
+      fixedPanelEl.style.left = left + 'px';
+      fixedPanelEl.style.bottom = bottom + 'px';
+      fixedPanelEl.style.transform = 'none';
+    }
+
     fpHd.addEventListener('mousedown', (e) => {
-      if (e.target.tagName === 'BUTTON') return; // don't drag when clicking buttons
+      if (e.target.tagName === 'BUTTON') return;
       fpDragging = true;
       fpStartX = e.clientX;
       fpStartY = e.clientY;
@@ -1594,12 +1608,22 @@ function openFixedPanel(sessionKey) {
       fixedPanelEl.style.left = (fpOrigLeft + dx) + 'px';
       fixedPanelEl.style.bottom = (fpOrigBottom - dy) + 'px';
       fixedPanelEl.style.transform = 'none';
+      clampPanelToViewport();
     });
     document.addEventListener('mouseup', () => {
       if (fpDragging) {
         fpDragging = false;
         fixedPanelEl.style.transition = '';
+        clampPanelToViewport();
       }
+    });
+    // Double-click header to reset position
+    fpHd.addEventListener('dblclick', (e) => {
+      if (e.target.tagName === 'BUTTON') return;
+      fixedPanelEl.style.transition = 'all 0.3s ease';
+      fixedPanelEl.style.left = '50%';
+      fixedPanelEl.style.bottom = '12px';
+      fixedPanelEl.style.transform = 'translateX(-50%)';
     });
   }
   fixedPanelEl.style.display = '';

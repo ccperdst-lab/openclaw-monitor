@@ -29815,6 +29815,17 @@ function openFixedPanel(sessionKey) {
   const minion = minions.find((m) => m.userData.sessionKey === sessionKey);
   if (!minion) return;
   if (!fixedPanelEl) {
+    let clampPanelToViewport = function() {
+      if (!fixedPanelEl) return;
+      const rect = fixedPanelEl.getBoundingClientRect();
+      const vw = window.innerWidth, vh = window.innerHeight;
+      let left = rect.left, bottom = vh - rect.bottom;
+      left = Math.max(-rect.width + 60, Math.min(vw - 60, left));
+      bottom = Math.max(4, Math.min(vh - 60, bottom));
+      fixedPanelEl.style.left = left + "px";
+      fixedPanelEl.style.bottom = bottom + "px";
+      fixedPanelEl.style.transform = "none";
+    };
     fixedPanelEl = document.createElement("div");
     fixedPanelEl.id = "fixed-panel";
     fixedPanelEl.innerHTML = `<div class="fp-hd"><span class="fp-avatar">\u{1F4CC}</span><span class="fp-user"></span><button class="fp-unpin" title="\u53D6\u6D88\u56FA\u5B9A\u56DE\u6C14\u6CE1">\u{1F4CC}</button><button class="fp-close">\u2715</button></div><div class="fp-body"><div class="fp-msg"></div><div class="fp-acts collapsed"><div class="fp-acts-hd"><span class="fp-acts-tri">\u25B6</span><span class="fp-acts-lbl">\u601D\u8003\u8FC7\u7A0B</span><span class="fp-acts-cnt">0</span></div><div class="fp-acts-body"></div></div><div class="fp-chat"><input class="fp-chat-in" placeholder="\u76F4\u63A5\u5BF9\u8BDD..." /></div><div class="fp-foot"></div></div>`;
@@ -29836,6 +29847,7 @@ function openFixedPanel(sessionKey) {
     fixedPanelEl.querySelector(".fp-acts-hd").addEventListener("click", (e) => {
       e.stopPropagation();
       fixedPanelEl.querySelector(".fp-acts").classList.toggle("collapsed");
+      setTimeout(clampPanelToViewport, 350);
     });
     const chatIn = fixedPanelEl.querySelector(".fp-chat-in");
     let isComposing = false;
@@ -29884,12 +29896,21 @@ function openFixedPanel(sessionKey) {
       fixedPanelEl.style.left = fpOrigLeft + dx + "px";
       fixedPanelEl.style.bottom = fpOrigBottom - dy + "px";
       fixedPanelEl.style.transform = "none";
+      clampPanelToViewport();
     });
     document.addEventListener("mouseup", () => {
       if (fpDragging) {
         fpDragging = false;
         fixedPanelEl.style.transition = "";
+        clampPanelToViewport();
       }
+    });
+    fpHd.addEventListener("dblclick", (e) => {
+      if (e.target.tagName === "BUTTON") return;
+      fixedPanelEl.style.transition = "all 0.3s ease";
+      fixedPanelEl.style.left = "50%";
+      fixedPanelEl.style.bottom = "12px";
+      fixedPanelEl.style.transform = "translateX(-50%)";
     });
   }
   fixedPanelEl.style.display = "";
