@@ -28901,6 +28901,9 @@ window.addEventListener("keydown", (e) => {
   else if (e.code === "KeyV") {
     thirdPerson = !thirdPerson;
     if (selfAvatar) selfAvatar.visible = thirdPerson;
+  } else if (e.code === "KeyT") {
+    e.preventDefault();
+    toggleChatPanel();
   }
 });
 window.addEventListener("keyup", (e) => {

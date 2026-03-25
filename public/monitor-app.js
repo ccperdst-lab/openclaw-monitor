@@ -535,6 +535,7 @@ window.addEventListener('keydown', e => {
   else if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') keys.shift = true;
   else if (e.code === 'KeyR') toggleRain();
   else if (e.code === 'KeyV') { thirdPerson = !thirdPerson; if (selfAvatar) selfAvatar.visible = thirdPerson; }
+  else if (e.code === 'KeyT') { e.preventDefault(); toggleChatPanel(); }
 });
 window.addEventListener('keyup', e => {
   if (isInputFocused() || interactingWithOverlay) return;
