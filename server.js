@@ -134,7 +134,7 @@ app.get('/api/chat/messages', (req, res) => {
   res.json({ messages: chatMessages });
 });
 
-// Broadcast user positions to all SSE clients every 500ms
+// Broadcast user positions to all SSE clients every 200ms
 setInterval(() => {
   if (sseClients.size === 0) return;
   const now = Date.now();

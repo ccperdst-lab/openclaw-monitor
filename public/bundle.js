@@ -30793,11 +30793,11 @@ function animate() {
       selfAvatar.position.set(walkPos.x, 0, walkPos.z);
       selfAvatar.rotation.y = yaw;
       selfAvatar.visible = true;
-      camera.position.set(
-        walkPos.x - Math.sin(yaw) * 5,
-        walkPos.y + 2,
-        walkPos.z - Math.cos(yaw) * 5
-      );
+      const dist = 5;
+      const camX = walkPos.x - Math.sin(yaw) * dist * Math.cos(pitch);
+      const camY = walkPos.y + 2 + Math.sin(-pitch) * dist * 0.5;
+      const camZ = walkPos.z - Math.cos(yaw) * dist * Math.cos(pitch);
+      camera.position.set(camX, camY, camZ);
     } else {
       if (selfAvatar) selfAvatar.visible = false;
       camera.position.copy(walkPos);
@@ -30808,9 +30808,6 @@ function animate() {
       Math.cos(yaw) * Math.cos(pitch)
     ));
     camera.lookAt(lookTarget);
-    if (thirdPerson && selfAvatar) {
-      camera.lookAt(selfAvatar.position.clone().add(new Vector3(0, 0.5, 0)));
-    }
     minions.forEach((m) => {
       const ud = m.userData;
       if (ud.isSitting) {
@@ -31107,6 +31104,11 @@ function animate() {
       updateMiniBubble(m, time);
       updateBubblePosition(m, time);
     });
+    for (const [uid, av] of Object.entries(userAvatars)) {
+      if (av.targetPos) {
+        av.mesh.position.lerp(av.targetPos, 0.2);
+      }
+    }
     reportPositions();
     if (Date.now() - lastUserPosReport > 200) {
       lastUserPosReport = Date.now();
@@ -32125,11 +32127,13 @@ function handleUsersUpdate(usersData) {
   for (const [userId, data] of Object.entries(usersData)) {
     if (userId === myUserId) continue;
     if (!userAvatars[userId]) {
-      userAvatars[userId] = { mesh: createUserAvatar(userId, data.color), lastUpdate: now };
+      userAvatars[userId] = { mesh: createUserAvatar(userId, data.color), lastUpdate: now, targetPos: null, velocity: null };
     }
     const avatar = userAvatars[userId];
     avatar.lastUpdate = now;
-    avatar.mesh.position.lerp(new Vector3(data.x || 0, data.y || 0, data.z || 0), 0.3);
+    const newPos = new Vector3(data.x || 0, data.y || 0, data.z || 0);
+    if (avatar.targetPos) avatar.velocity = newPos.clone().sub(avatar.targetPos);
+    avatar.targetPos = newPos;
     avatar.mesh.rotation.y = data.yaw || 0;
     updateAvatarLabel(avatar.mesh, data.name || userId);
   }

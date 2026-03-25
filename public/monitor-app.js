@@ -2577,27 +2577,26 @@ function animate() {
     selfAvatar.position.set(walkPos.x, 0, walkPos.z);
     selfAvatar.rotation.y = yaw;
     selfAvatar.visible = true;
-    camera.position.set(
-      walkPos.x - Math.sin(yaw) * 5,
-      walkPos.y + 2,
-      walkPos.z - Math.cos(yaw) * 5
-    );
+    // Camera orbits around avatar based on yaw/pitch
+    const dist = 5;
+    const camX = walkPos.x - Math.sin(yaw) * dist * Math.cos(pitch);
+    const camY = walkPos.y + 2 + Math.sin(-pitch) * dist * 0.5;
+    const camZ = walkPos.z - Math.cos(yaw) * dist * Math.cos(pitch);
+    camera.position.set(camX, camY, camZ);
   } else {
     // First-person: camera at walkPos
     if (selfAvatar) selfAvatar.visible = false;
     camera.position.copy(walkPos);
   }
 
-  // Camera rotation
+  // Camera rotation (always use yaw/pitch for look direction)
   const lookTarget = camera.position.clone().add(new THREE.Vector3(
     Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch)
   ));
   camera.lookAt(lookTarget);
 
-  // Third-person: look at avatar instead
-  if (thirdPerson && selfAvatar) {
-    camera.lookAt(selfAvatar.position.clone().add(new THREE.Vector3(0, 0.5, 0)));
-  }
+  // In third-person, optionally look at avatar when pitch is very low (looking down)
+  // This gives a "zoomed out overview" feel when looking straight down
 
   // Minion animations
   minions.forEach(m => {
@@ -2940,6 +2939,13 @@ function animate() {
     // Update bubble position
     updateBubblePosition(m, time);
   });
+
+  // Interpolate remote user avatars toward target positions
+  for (const [uid, av] of Object.entries(userAvatars)) {
+    if (av.targetPos) {
+      av.mesh.position.lerp(av.targetPos, 0.2); // smooth 20% per frame
+    }
+  }
 
   // Report positions to server periodically
   reportPositions();
@@ -4165,12 +4171,14 @@ function handleUsersUpdate(usersData) {
   for (const [userId, data] of Object.entries(usersData)) {
     if (userId === myUserId) continue; // skip self
     if (!userAvatars[userId]) {
-      userAvatars[userId] = { mesh: createUserAvatar(userId, data.color), lastUpdate: now };
+      userAvatars[userId] = { mesh: createUserAvatar(userId, data.color), lastUpdate: now, targetPos: null, velocity: null };
     }
     const avatar = userAvatars[userId];
     avatar.lastUpdate = now;
-    // Smooth lerp to new position
-    avatar.mesh.position.lerp(new THREE.Vector3(data.x || 0, data.y || 0, data.z || 0), 0.3);
+    // Store target for smooth interpolation in animate loop
+    const newPos = new THREE.Vector3(data.x || 0, data.y || 0, data.z || 0);
+    if (avatar.targetPos) avatar.velocity = newPos.clone().sub(avatar.targetPos);
+    avatar.targetPos = newPos;
     avatar.mesh.rotation.y = data.yaw || 0;
     updateAvatarLabel(avatar.mesh, data.name || userId);
   }
