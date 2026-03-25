@@ -1796,6 +1796,8 @@ function connectSSE() {
         handleEvent(msg.data);
       } else if (msg.type === 'control') {
         handleControl(msg.data);
+      } else if (msg.type === 'users') {
+        handleUsersUpdate(msg.data);
       }
     } catch {}
   };
@@ -2784,6 +2786,12 @@ function animate() {
 
   // Report positions to server periodically
   reportPositions();
+
+  // Report my camera position to server (for multi-user)
+  if (now - lastUserPosReport > 200) { // every 200ms
+    lastUserPosReport = now;
+    reportMyPosition();
+  }
 
   // ===== Feature: Follow Mode Camera =====
   if (followMinion) {
@@ -3908,6 +3916,101 @@ document.addEventListener('click', (e) => {
   e.stopPropagation();
   showDetailPopup(bact);
 });
+
+// ===== Multi-User Avatars =====
+const myUserId = localStorage.getItem('monitor-userId') || ('user-' + Math.random().toString(36).slice(2, 8));
+localStorage.setItem('monitor-userId', myUserId);
+const myUserName = localStorage.getItem('monitor-userName') || '访客' + myUserId.slice(-3);
+
+const userAvatars = {}; // userId -> { mesh, label, lastUpdate }
+let lastUserPosReport = 0;
+
+// Create avatar mesh for a remote user
+function createUserAvatar(userId, color) {
+  const group = new THREE.Group();
+  // Simple camera icon: cone + sphere
+  const body = new THREE.Mesh(
+    new THREE.ConeGeometry(0.3, 0.6, 8),
+    new THREE.MeshBasicMaterial({ color: color || '#53d8fb' })
+  );
+  body.rotation.x = Math.PI;
+  body.position.y = 0.3;
+  group.add(body);
+  // Direction indicator (small sphere in front)
+  const dir = new THREE.Mesh(
+    new THREE.SphereGeometry(0.08, 8, 6),
+    new THREE.MeshBasicMaterial({ color: 0xffffff })
+  );
+  dir.position.set(0, 0.3, -0.35);
+  group.add(dir);
+  // Name label
+  const canvas = document.createElement('canvas');
+  canvas.width = 128; canvas.height = 32;
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+  label.position.y = 1;
+  label.scale.set(1.5, 0.375, 1);
+  label.userData._canvas = canvas;
+  label.userData._tex = tex;
+  group.add(label);
+  group.userData._label = label;
+  scene.add(group);
+  return group;
+}
+
+function updateAvatarLabel(avatar, name) {
+  const label = avatar.userData._label;
+  if (!label) return;
+  const canvas = label.userData._canvas;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, 128, 32);
+  ctx.font = 'bold 16px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#fff';
+  ctx.strokeStyle = '#000'; ctx.lineWidth = 2;
+  ctx.strokeText(name, 64, 22);
+  ctx.fillText(name, 64, 22);
+  label.userData._tex.needsUpdate = true;
+}
+
+// Handle user position updates from SSE
+function handleUsersUpdate(usersData) {
+  const now = Date.now();
+  for (const [userId, data] of Object.entries(usersData)) {
+    if (userId === myUserId) continue; // skip self
+    if (!userAvatars[userId]) {
+      userAvatars[userId] = { mesh: createUserAvatar(userId, data.color), lastUpdate: now };
+    }
+    const avatar = userAvatars[userId];
+    avatar.lastUpdate = now;
+    // Smooth lerp to new position
+    avatar.mesh.position.lerp(new THREE.Vector3(data.x || 0, data.y || 0, data.z || 0), 0.3);
+    avatar.mesh.rotation.y = data.yaw || 0;
+    updateAvatarLabel(avatar.mesh, data.name || userId);
+  }
+  // Remove stale avatars
+  for (const [userId, avatar] of Object.entries(userAvatars)) {
+    if (now - avatar.lastUpdate > 8000) {
+      scene.remove(avatar.mesh);
+      delete userAvatars[userId];
+    }
+  }
+}
+
+// Report my camera position to server
+function reportMyPosition() {
+  fetch('/api/users/position', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      userId: myUserId,
+      x: camera.position.x, y: camera.position.y, z: camera.position.z,
+      yaw, pitch,
+      name: myUserName,
+    })
+  }).catch(() => {});
+}
 
 // ===== Start =====
 // Loading screen timeout fallback (3s)

@@ -30083,6 +30083,8 @@ function connectSSE() {
         handleEvent(msg.data);
       } else if (msg.type === "control") {
         handleControl(msg.data);
+      } else if (msg.type === "users") {
+        handleUsersUpdate(msg.data);
       }
     } catch {
     }
@@ -30964,6 +30966,10 @@ function animate() {
       updateBubblePosition(m, time);
     });
     reportPositions();
+    if (now - lastUserPosReport > 200) {
+      lastUserPosReport = now;
+      reportMyPosition();
+    }
     if (followMinion) {
       const targetPos = new Vector3(
         followMinion.position.x + FOLLOW_OFFSET.x,
@@ -31897,6 +31903,92 @@ document.addEventListener("click", (e) => {
   e.stopPropagation();
   showDetailPopup(bact);
 });
+var myUserId = localStorage.getItem("monitor-userId") || "user-" + Math.random().toString(36).slice(2, 8);
+localStorage.setItem("monitor-userId", myUserId);
+var myUserName = localStorage.getItem("monitor-userName") || "\u8BBF\u5BA2" + myUserId.slice(-3);
+var userAvatars = {};
+var lastUserPosReport = 0;
+function createUserAvatar(userId, color) {
+  const group = new Group();
+  const body = new Mesh(
+    new ConeGeometry(0.3, 0.6, 8),
+    new MeshBasicMaterial({ color: color || "#53d8fb" })
+  );
+  body.rotation.x = Math.PI;
+  body.position.y = 0.3;
+  group.add(body);
+  const dir = new Mesh(
+    new SphereGeometry(0.08, 8, 6),
+    new MeshBasicMaterial({ color: 16777215 })
+  );
+  dir.position.set(0, 0.3, -0.35);
+  group.add(dir);
+  const canvas = document.createElement("canvas");
+  canvas.width = 128;
+  canvas.height = 32;
+  const tex = new CanvasTexture(canvas);
+  tex.minFilter = LinearFilter;
+  const label = new Sprite(new SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+  label.position.y = 1;
+  label.scale.set(1.5, 0.375, 1);
+  label.userData._canvas = canvas;
+  label.userData._tex = tex;
+  group.add(label);
+  group.userData._label = label;
+  scene.add(group);
+  return group;
+}
+function updateAvatarLabel(avatar, name) {
+  const label = avatar.userData._label;
+  if (!label) return;
+  const canvas = label.userData._canvas;
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, 128, 32);
+  ctx.font = "bold 16px sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#fff";
+  ctx.strokeStyle = "#000";
+  ctx.lineWidth = 2;
+  ctx.strokeText(name, 64, 22);
+  ctx.fillText(name, 64, 22);
+  label.userData._tex.needsUpdate = true;
+}
+function handleUsersUpdate(usersData) {
+  const now = Date.now();
+  for (const [userId, data] of Object.entries(usersData)) {
+    if (userId === myUserId) continue;
+    if (!userAvatars[userId]) {
+      userAvatars[userId] = { mesh: createUserAvatar(userId, data.color), lastUpdate: now };
+    }
+    const avatar = userAvatars[userId];
+    avatar.lastUpdate = now;
+    avatar.mesh.position.lerp(new Vector3(data.x || 0, data.y || 0, data.z || 0), 0.3);
+    avatar.mesh.rotation.y = data.yaw || 0;
+    updateAvatarLabel(avatar.mesh, data.name || userId);
+  }
+  for (const [userId, avatar] of Object.entries(userAvatars)) {
+    if (now - avatar.lastUpdate > 8e3) {
+      scene.remove(avatar.mesh);
+      delete userAvatars[userId];
+    }
+  }
+}
+function reportMyPosition() {
+  fetch("/api/users/position", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      userId: myUserId,
+      x: camera.position.x,
+      y: camera.position.y,
+      z: camera.position.z,
+      yaw,
+      pitch,
+      name: myUserName
+    })
+  }).catch(() => {
+  });
+}
 setTimeout(() => {
   const lo = document.getElementById("loading-overlay");
   if (lo) {

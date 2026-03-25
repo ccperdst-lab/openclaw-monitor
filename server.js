@@ -42,7 +42,51 @@ function log(level, msg) {
   try { fs.appendFileSync(path.join(LOG_DIR, 'monitor.log'), line + '\n'); } catch {}
 }
 
-// ===== SSE Clients =====
+// ===== Multi-User: Connected Users =====
+// userId -> { x, y, z, yaw, pitch, name, color, lastSeen }
+const connectedUsers = {};
+const userColors = ['#53d8fb', '#f472b6', '#34d399', '#fbbf24', '#a78bfa', '#f87171', '#38bdf8', '#fb923c'];
+let userColorIdx = 0;
+
+// Client reports camera position
+app.post('/api/users/position', (req, res) => {
+  const { userId, x, y, z, yaw, pitch, name } = req.body;
+  if (!userId) return res.status(400).json({ error: 'Missing userId' });
+  if (!connectedUsers[userId]) {
+    connectedUsers[userId] = { color: userColors[userColorIdx++ % userColors.length] };
+  }
+  connectedUsers[userId].x = x;
+  connectedUsers[userId].y = y;
+  connectedUsers[userId].z = z;
+  connectedUsers[userId].yaw = yaw;
+  connectedUsers[userId].pitch = pitch;
+  connectedUsers[userId].name = name || '匿名';
+  connectedUsers[userId].lastSeen = Date.now();
+  res.json({ ok: true });
+});
+
+// Get all connected users
+app.get('/api/users', (req, res) => {
+  // Clean up stale users (no update for 10s)
+  const now = Date.now();
+  for (const [id, u] of Object.entries(connectedUsers)) {
+    if (now - u.lastSeen > 10000) delete connectedUsers[id];
+  }
+  res.json({ users: connectedUsers });
+});
+
+// Broadcast user positions to all SSE clients every 500ms
+setInterval(() => {
+  if (sseClients.size === 0) return;
+  const now = Date.now();
+  // Clean stale
+  for (const [id, u] of Object.entries(connectedUsers)) {
+    if (now - u.lastSeen > 10000) delete connectedUsers[id];
+  }
+  if (Object.keys(connectedUsers).length > 0) {
+    broadcast({ type: 'users', data: connectedUsers });
+  }
+}, 500);
 const sseClients = new Set();
 function broadcast(data) {
   const msg = `data: ${JSON.stringify(data)}\n\n`;
