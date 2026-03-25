@@ -1186,7 +1186,7 @@ function getOrCreateBubble(sessionKey) {
     el = document.createElement('div');
     el.className = 'bubble3d';
     const sk = sessionKey;
-    el.innerHTML = `<div class="bub-hd"><span class="bub-avatar">🟡</span><span class="bub-user"></span><button class="bub-close">✕</button></div><div class="bub-msg"></div><div class="bub-acts collapsed"><div class="bub-acts-hd"><span class="bub-acts-tri">▶</span><span class="bub-acts-lbl">思考过程</span><span class="bub-acts-cnt">0</span></div><div class="bub-acts-body"></div></div><div class="bub-chat"><input class="bub-chat-in" placeholder="直接对话..." /></div><div class="bub-foot"></div>`;
+    el.innerHTML = `<div class="bub-hd"><span class="bub-avatar">🟡</span><span class="bub-user"></span><button class="bub-pin" title="固定到底部">📌</button><button class="bub-close">✕</button></div><div class="bub-msg"></div><div class="bub-acts collapsed"><div class="bub-acts-hd"><span class="bub-acts-tri">▶</span><span class="bub-acts-lbl">思考过程</span><span class="bub-acts-cnt">0</span></div><div class="bub-acts-body"></div></div><div class="bub-chat"><input class="bub-chat-in" placeholder="直接对话..." /></div><div class="bub-foot"></div>`;
 
     // --- Focus management: prevent events from reaching canvas ---
     // Stop all mouse events from propagating out of the bubble
@@ -1199,6 +1199,13 @@ function getOrCreateBubble(sessionKey) {
     closeBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       hideBubble(sk);
+    });
+
+    // Pin to bottom button
+    const pinBtn = el.querySelector('.bub-pin');
+    pinBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleFixedPanel(sk);
     });
 
     // Collapse/expand thinking panel
@@ -1327,6 +1334,11 @@ function updateBubbleContent(m) {
     ud.state === 'thinking' ? `🧠 思考中 (${tc}步, ${oc}工具)...` :
     ud.state === 'streaming' ? `✍️ 流式输出中...` :
     `✅ 思考了${tc}步 · 🔧${oc}工具 · 📤${ud.replyCount}条`;
+
+  // Sync to fixed panel if open for this session
+  if (fixedPanelSession === m.userData.sessionKey) {
+    updateFixedPanelContent(m);
+  }
 }
 
 // Unified bubble hide: cleans up focus, state, and refresh timer
@@ -1340,6 +1352,81 @@ function hideBubble(sessionKey) {
   if (inputEl) inputEl.blur();
   interactingWithOverlay = false;
   stopBubbleRefresh(sessionKey);
+}
+
+// ===== Fixed Bottom Panel =====
+let fixedPanelSession = null;
+let fixedPanelEl = null;
+
+function toggleFixedPanel(sessionKey) {
+  if (fixedPanelSession === sessionKey) closeFixedPanel();
+  else { if (fixedPanelSession) closeFixedPanel(); openFixedPanel(sessionKey); }
+}
+
+function openFixedPanel(sessionKey) {
+  fixedPanelSession = sessionKey;
+  const bubEl = bubbles[sessionKey];
+  if (bubEl) bubEl.classList.remove('show');
+  const minion = minions.find(m => m.userData.sessionKey === sessionKey);
+  if (!minion) return;
+  if (!fixedPanelEl) {
+    fixedPanelEl = document.createElement('div');
+    fixedPanelEl.id = 'fixed-panel';
+    fixedPanelEl.innerHTML = `<div class="fp-hd"><span class="fp-avatar">📌</span><span class="fp-user"></span><button class="fp-unpin" title="取消固定回气泡">📌</button><button class="fp-close">✕</button></div><div class="fp-body"><div class="fp-msg"></div><div class="fp-acts collapsed"><div class="fp-acts-hd"><span class="fp-acts-tri">▶</span><span class="fp-acts-lbl">思考过程</span><span class="fp-acts-cnt">0</span></div><div class="fp-acts-body"></div></div><div class="fp-chat"><input class="fp-chat-in" placeholder="直接对话..." /></div><div class="fp-foot"></div></div>`;
+    document.body.appendChild(fixedPanelEl);
+    fixedPanelEl.querySelector('.fp-close').addEventListener('click', (e) => { e.stopPropagation(); closeFixedPanel(); });
+    fixedPanelEl.querySelector('.fp-unpin').addEventListener('click', (e) => { e.stopPropagation(); const sk = fixedPanelSession; closeFixedPanel(); if (sk && bubbles[sk]) { bubbles[sk]._dismissed = false; const mn = minions.find(m => m.userData.sessionKey === sk); if (mn) showBubble(mn); } });
+    fixedPanelEl.querySelector('.fp-acts-hd').addEventListener('click', (e) => { e.stopPropagation(); fixedPanelEl.querySelector('.fp-acts').classList.toggle('collapsed'); });
+    const chatIn = fixedPanelEl.querySelector('.fp-chat-in');
+    let isComposing = false;
+    chatIn.addEventListener('compositionstart', () => { isComposing = true; });
+    chatIn.addEventListener('compositionend', () => { isComposing = false; });
+    chatIn.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter' && !isComposing) { e.preventDefault(); sendDirectChat(fixedPanelSession, chatIn); } if (e.key === 'Escape') closeFixedPanel(); });
+    chatIn.addEventListener('focus', () => { interactingWithOverlay = true; });
+    chatIn.addEventListener('blur', () => { interactingWithOverlay = false; });
+    chatIn.addEventListener('mousedown', (e) => e.stopPropagation());
+    fixedPanelEl.addEventListener('mousedown', (e) => e.stopPropagation());
+    fixedPanelEl.addEventListener('mouseup', (e) => e.stopPropagation());
+  }
+  fixedPanelEl.style.display = '';
+  updateFixedPanelContent(minion);
+  startBubbleRefresh(minion);
+}
+
+function closeFixedPanel() {
+  if (fixedPanelEl) fixedPanelEl.style.display = 'none';
+  if (fixedPanelSession) stopBubbleRefresh(fixedPanelSession);
+  fixedPanelSession = null;
+  interactingWithOverlay = false;
+}
+
+function updateFixedPanelContent(minion) {
+  if (!fixedPanelEl || fixedPanelSession !== minion.userData.sessionKey) return;
+  const ud = minion.userData;
+  fixedPanelEl.querySelector('.fp-avatar').textContent = ud.state === 'thinking' ? '🧠' : ud.state === 'streaming' ? '✍️' : '✅';
+  fixedPanelEl.querySelector('.fp-user').textContent = ud.userName || ud.sessionLabel || 'Session';
+  fixedPanelEl.querySelector('.fp-msg').textContent = ud.userMsg || '';
+  const actsBody = fixedPanelEl.querySelector('.fp-acts-body');
+  const wasAtBottom = actsBody.scrollHeight - actsBody.scrollTop - actsBody.clientHeight < 30;
+  const items = []; const log = ud.eventLog || [];
+  let lastReplyIdx = -1;
+  for (let i = log.length - 1; i >= 0; i--) { if (log[i].type === 'reply_snippet') { lastReplyIdx = i; break; } }
+  const hasFinalReply = !!ud.replyText;
+  for (let i = 0; i < log.length; i++) {
+    const evt = log[i];
+    if (i === lastReplyIdx || (i === log.length - 1 && hasFinalReply && evt.type !== 'reply_snippet')) items.push('<div class="bact-divider"><span>── 回复 ──</span></div>');
+    if (evt.type === 'think') items.push(`<div class="bact bact-think"><span>💭</span><span>${esc(evt.text)}${evt.time ? ' <em style="color:#999;font-size:9px">'+esc(evt.time)+'</em>' : ''}</span></div>`);
+    else if (evt.type === 'tool_use') items.push(`<div class="bact bact-tool"><span>🔧</span><span>${esc(evt.text)} <em>${esc(evt.detail||'')}</em></span></div>`);
+    else if (evt.type === 'tool_result') items.push(`<div class="bact bact-result"><span>📋</span><span>${esc(evt.text)} <em>${esc(evt.detail||'')}</em></span></div>`);
+    else if (evt.type === 'reply_snippet') items.push(`<div class="bact bact-reply"><span>💬</span><span>${esc(evt.text)}</span></div>`);
+  }
+  if (hasFinalReply) { if (lastReplyIdx === -1) items.push('<div class="bact-divider"><span>── 回复 ──</span></div>'); items.push(`<div class="bact bact-reply bact-final"><span>💬</span><span>${esc(ud.replyText)}</span></div>`); }
+  actsBody.innerHTML = items.slice(-50).join('');
+  if (wasAtBottom) actsBody.scrollTop = actsBody.scrollHeight;
+  const tc = log.filter(e => e.type === 'think').length;
+  const oc = log.filter(e => e.type === 'tool_use' || e.type === 'tool_result').length;
+  fixedPanelEl.querySelector('.fp-acts-cnt').textContent = tc + oc;
+  fixedPanelEl.querySelector('.fp-foot').textContent = ud.state === 'thinking' ? `🧠 思考中 (${tc}步, ${oc}工具)...` : ud.state === 'streaming' ? '✍️ 流式输出中...' : `✅ 思考了${tc}步 · 🔧${oc}工具 · 📤${ud.replyCount}条`;
 }
 
 function showBubble(m) {

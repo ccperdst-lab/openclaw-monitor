@@ -29505,7 +29505,7 @@ function getOrCreateBubble(sessionKey) {
     el = document.createElement("div");
     el.className = "bubble3d";
     const sk = sessionKey;
-    el.innerHTML = `<div class="bub-hd"><span class="bub-avatar">\u{1F7E1}</span><span class="bub-user"></span><button class="bub-close">\u2715</button></div><div class="bub-msg"></div><div class="bub-acts collapsed"><div class="bub-acts-hd"><span class="bub-acts-tri">\u25B6</span><span class="bub-acts-lbl">\u601D\u8003\u8FC7\u7A0B</span><span class="bub-acts-cnt">0</span></div><div class="bub-acts-body"></div></div><div class="bub-chat"><input class="bub-chat-in" placeholder="\u76F4\u63A5\u5BF9\u8BDD..." /></div><div class="bub-foot"></div>`;
+    el.innerHTML = `<div class="bub-hd"><span class="bub-avatar">\u{1F7E1}</span><span class="bub-user"></span><button class="bub-pin" title="\u56FA\u5B9A\u5230\u5E95\u90E8">\u{1F4CC}</button><button class="bub-close">\u2715</button></div><div class="bub-msg"></div><div class="bub-acts collapsed"><div class="bub-acts-hd"><span class="bub-acts-tri">\u25B6</span><span class="bub-acts-lbl">\u601D\u8003\u8FC7\u7A0B</span><span class="bub-acts-cnt">0</span></div><div class="bub-acts-body"></div></div><div class="bub-chat"><input class="bub-chat-in" placeholder="\u76F4\u63A5\u5BF9\u8BDD..." /></div><div class="bub-foot"></div>`;
     el.addEventListener("mousedown", (e) => {
       e.stopPropagation();
     });
@@ -29519,6 +29519,11 @@ function getOrCreateBubble(sessionKey) {
     closeBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       hideBubble(sk);
+    });
+    const pinBtn = el.querySelector(".bub-pin");
+    pinBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleFixedPanel(sk);
     });
     const actsEl = el.querySelector(".bub-acts");
     const actsHd = el.querySelector(".bub-acts-hd");
@@ -29630,6 +29635,9 @@ function updateBubbleContent(m) {
   const tc = log2.filter((e) => e.type === "think").length;
   const oc = log2.filter((e) => e.type === "tool_use" || e.type === "tool_result").length;
   el.querySelector(".bub-foot").textContent = ud.state === "thinking" ? `\u{1F9E0} \u601D\u8003\u4E2D (${tc}\u6B65, ${oc}\u5DE5\u5177)...` : ud.state === "streaming" ? `\u270D\uFE0F \u6D41\u5F0F\u8F93\u51FA\u4E2D...` : `\u2705 \u601D\u8003\u4E86${tc}\u6B65 \xB7 \u{1F527}${oc}\u5DE5\u5177 \xB7 \u{1F4E4}${ud.replyCount}\u6761`;
+  if (fixedPanelSession === m.userData.sessionKey) {
+    updateFixedPanelContent(m);
+  }
 }
 function hideBubble(sessionKey) {
   const el = bubbles[sessionKey];
@@ -29640,6 +29648,117 @@ function hideBubble(sessionKey) {
   if (inputEl) inputEl.blur();
   interactingWithOverlay = false;
   stopBubbleRefresh(sessionKey);
+}
+var fixedPanelSession = null;
+var fixedPanelEl = null;
+function toggleFixedPanel(sessionKey) {
+  if (fixedPanelSession === sessionKey) closeFixedPanel();
+  else {
+    if (fixedPanelSession) closeFixedPanel();
+    openFixedPanel(sessionKey);
+  }
+}
+function openFixedPanel(sessionKey) {
+  fixedPanelSession = sessionKey;
+  const bubEl = bubbles[sessionKey];
+  if (bubEl) bubEl.classList.remove("show");
+  const minion = minions.find((m) => m.userData.sessionKey === sessionKey);
+  if (!minion) return;
+  if (!fixedPanelEl) {
+    fixedPanelEl = document.createElement("div");
+    fixedPanelEl.id = "fixed-panel";
+    fixedPanelEl.innerHTML = `<div class="fp-hd"><span class="fp-avatar">\u{1F4CC}</span><span class="fp-user"></span><button class="fp-unpin" title="\u53D6\u6D88\u56FA\u5B9A\u56DE\u6C14\u6CE1">\u{1F4CC}</button><button class="fp-close">\u2715</button></div><div class="fp-body"><div class="fp-msg"></div><div class="fp-acts collapsed"><div class="fp-acts-hd"><span class="fp-acts-tri">\u25B6</span><span class="fp-acts-lbl">\u601D\u8003\u8FC7\u7A0B</span><span class="fp-acts-cnt">0</span></div><div class="fp-acts-body"></div></div><div class="fp-chat"><input class="fp-chat-in" placeholder="\u76F4\u63A5\u5BF9\u8BDD..." /></div><div class="fp-foot"></div></div>`;
+    document.body.appendChild(fixedPanelEl);
+    fixedPanelEl.querySelector(".fp-close").addEventListener("click", (e) => {
+      e.stopPropagation();
+      closeFixedPanel();
+    });
+    fixedPanelEl.querySelector(".fp-unpin").addEventListener("click", (e) => {
+      e.stopPropagation();
+      const sk = fixedPanelSession;
+      closeFixedPanel();
+      if (sk && bubbles[sk]) {
+        bubbles[sk]._dismissed = false;
+        const mn = minions.find((m) => m.userData.sessionKey === sk);
+        if (mn) showBubble(mn);
+      }
+    });
+    fixedPanelEl.querySelector(".fp-acts-hd").addEventListener("click", (e) => {
+      e.stopPropagation();
+      fixedPanelEl.querySelector(".fp-acts").classList.toggle("collapsed");
+    });
+    const chatIn = fixedPanelEl.querySelector(".fp-chat-in");
+    let isComposing = false;
+    chatIn.addEventListener("compositionstart", () => {
+      isComposing = true;
+    });
+    chatIn.addEventListener("compositionend", () => {
+      isComposing = false;
+    });
+    chatIn.addEventListener("keydown", (e) => {
+      e.stopPropagation();
+      if (e.key === "Enter" && !isComposing) {
+        e.preventDefault();
+        sendDirectChat(fixedPanelSession, chatIn);
+      }
+      if (e.key === "Escape") closeFixedPanel();
+    });
+    chatIn.addEventListener("focus", () => {
+      interactingWithOverlay = true;
+    });
+    chatIn.addEventListener("blur", () => {
+      interactingWithOverlay = false;
+    });
+    chatIn.addEventListener("mousedown", (e) => e.stopPropagation());
+    fixedPanelEl.addEventListener("mousedown", (e) => e.stopPropagation());
+    fixedPanelEl.addEventListener("mouseup", (e) => e.stopPropagation());
+  }
+  fixedPanelEl.style.display = "";
+  updateFixedPanelContent(minion);
+  startBubbleRefresh(minion);
+}
+function closeFixedPanel() {
+  if (fixedPanelEl) fixedPanelEl.style.display = "none";
+  if (fixedPanelSession) stopBubbleRefresh(fixedPanelSession);
+  fixedPanelSession = null;
+  interactingWithOverlay = false;
+}
+function updateFixedPanelContent(minion) {
+  if (!fixedPanelEl || fixedPanelSession !== minion.userData.sessionKey) return;
+  const ud = minion.userData;
+  fixedPanelEl.querySelector(".fp-avatar").textContent = ud.state === "thinking" ? "\u{1F9E0}" : ud.state === "streaming" ? "\u270D\uFE0F" : "\u2705";
+  fixedPanelEl.querySelector(".fp-user").textContent = ud.userName || ud.sessionLabel || "Session";
+  fixedPanelEl.querySelector(".fp-msg").textContent = ud.userMsg || "";
+  const actsBody = fixedPanelEl.querySelector(".fp-acts-body");
+  const wasAtBottom = actsBody.scrollHeight - actsBody.scrollTop - actsBody.clientHeight < 30;
+  const items = [];
+  const log2 = ud.eventLog || [];
+  let lastReplyIdx = -1;
+  for (let i = log2.length - 1; i >= 0; i--) {
+    if (log2[i].type === "reply_snippet") {
+      lastReplyIdx = i;
+      break;
+    }
+  }
+  const hasFinalReply = !!ud.replyText;
+  for (let i = 0; i < log2.length; i++) {
+    const evt = log2[i];
+    if (i === lastReplyIdx || i === log2.length - 1 && hasFinalReply && evt.type !== "reply_snippet") items.push('<div class="bact-divider"><span>\u2500\u2500 \u56DE\u590D \u2500\u2500</span></div>');
+    if (evt.type === "think") items.push(`<div class="bact bact-think"><span>\u{1F4AD}</span><span>${esc(evt.text)}${evt.time ? ' <em style="color:#999;font-size:9px">' + esc(evt.time) + "</em>" : ""}</span></div>`);
+    else if (evt.type === "tool_use") items.push(`<div class="bact bact-tool"><span>\u{1F527}</span><span>${esc(evt.text)} <em>${esc(evt.detail || "")}</em></span></div>`);
+    else if (evt.type === "tool_result") items.push(`<div class="bact bact-result"><span>\u{1F4CB}</span><span>${esc(evt.text)} <em>${esc(evt.detail || "")}</em></span></div>`);
+    else if (evt.type === "reply_snippet") items.push(`<div class="bact bact-reply"><span>\u{1F4AC}</span><span>${esc(evt.text)}</span></div>`);
+  }
+  if (hasFinalReply) {
+    if (lastReplyIdx === -1) items.push('<div class="bact-divider"><span>\u2500\u2500 \u56DE\u590D \u2500\u2500</span></div>');
+    items.push(`<div class="bact bact-reply bact-final"><span>\u{1F4AC}</span><span>${esc(ud.replyText)}</span></div>`);
+  }
+  actsBody.innerHTML = items.slice(-50).join("");
+  if (wasAtBottom) actsBody.scrollTop = actsBody.scrollHeight;
+  const tc = log2.filter((e) => e.type === "think").length;
+  const oc = log2.filter((e) => e.type === "tool_use" || e.type === "tool_result").length;
+  fixedPanelEl.querySelector(".fp-acts-cnt").textContent = tc + oc;
+  fixedPanelEl.querySelector(".fp-foot").textContent = ud.state === "thinking" ? `\u{1F9E0} \u601D\u8003\u4E2D (${tc}\u6B65, ${oc}\u5DE5\u5177)...` : ud.state === "streaming" ? "\u270D\uFE0F \u6D41\u5F0F\u8F93\u51FA\u4E2D..." : `\u2705 \u601D\u8003\u4E86${tc}\u6B65 \xB7 \u{1F527}${oc}\u5DE5\u5177 \xB7 \u{1F4E4}${ud.replyCount}\u6761`;
 }
 function showBubble(m) {
   const el = getOrCreateBubble(m.userData.sessionKey);
