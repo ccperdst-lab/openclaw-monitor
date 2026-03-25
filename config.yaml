@@ -5,8 +5,8 @@ server:
   host: 0.0.0.0
 
 display:
-  showCron: false
-  showSubagent: false
+  showCron: true
+  showSubagent: true
   recentMinutes: 10  # only show thinking/tool messages from last N minutes in bubble
 
 mcp:

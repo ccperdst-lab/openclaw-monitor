@@ -706,6 +706,154 @@ function addNameLabel(minion, line1, line2) {
   minion.add(sprite);
 }
 
+// ===== Thinking Indicator ("..." above head) =====
+function createThinkingIndicator(minion) {
+  // Remove existing
+  const existing = minion.children.find(c => c.userData?.isThinkingIndicator);
+  if (existing) minion.remove(existing);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = 128; canvas.height = 64;
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false });
+  const sprite = new THREE.Sprite(mat);
+  const hs = minion.userData.heightScale || 1;
+  sprite.position.y = 2.5 * hs * 0.5 + 1.8;
+  sprite.scale.set(0.8, 0.4, 1);
+  sprite.userData.isThinkingIndicator = true;
+  sprite.userData._tex = tex;
+  sprite.userData._canvas = canvas;
+  minion.add(sprite);
+  return sprite;
+}
+
+function updateThinkingIndicator(minion, time) {
+  const ud = minion.userData;
+  let sprite = minion.children.find(c => c.userData?.isThinkingIndicator);
+
+  if (ud.state !== 'thinking') {
+    if (sprite) { minion.remove(sprite); sprite.material.dispose(); sprite.userData._tex.dispose(); }
+    return;
+  }
+
+  if (!sprite) sprite = createThinkingIndicator(minion);
+
+  // Animate dots: . → .. → ... → . every 0.6s
+  const dotPhase = Math.floor(time / 0.6) % 4;
+  const dots = '.'.repeat(dotPhase === 0 ? 3 : dotPhase);
+
+  const canvas = sprite.userData._canvas;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, 128, 64);
+
+  // Background pill
+  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  const pillW = 50, pillH = 32, pillX = (128 - pillW) / 2, pillY = 16;
+  ctx.beginPath();
+  ctx.roundRect(pillX, pillY, pillW, pillH, 16);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.1)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // Dots
+  ctx.font = 'bold 24px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#666';
+  ctx.fillText(dots, 64, 32);
+
+  sprite.userData._tex.needsUpdate = true;
+
+  // Bob slightly
+  sprite.position.y = 2.5 * (ud.heightScale || 1) * 0.5 + 1.8 + Math.sin(time * 3) * 0.05;
+}
+
+// ===== Latest Message Mini Bubble (above head) =====
+function createMiniBubble(minion) {
+  const existing = minion.children.find(c => c.userData?.isMiniBubble);
+  if (existing) { minion.remove(existing); existing.material.dispose(); existing.userData._tex.dispose(); }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = 320; canvas.height = 48;
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, opacity: 0 });
+  const sprite = new THREE.Sprite(mat);
+  const hs = minion.userData.heightScale || 1;
+  sprite.position.y = 2.5 * hs * 0.5 + 2.3;
+  sprite.scale.set(2.5, 0.375, 1);
+  sprite.userData.isMiniBubble = true;
+  sprite.userData._tex = tex;
+  sprite.userData._canvas = canvas;
+  sprite.userData._lastText = '';
+  sprite.userData._showTime = 0;
+  minion.add(sprite);
+  return sprite;
+}
+
+function updateMiniBubble(minion, time) {
+  const ud = minion.userData;
+  let sprite = minion.children.find(c => c.userData?.isMiniBubble);
+
+  // Get the latest event text
+  const log = ud.eventLog || [];
+  let latestText = '';
+  let latestType = '';
+  for (let i = log.length - 1; i >= 0; i--) {
+    if (log[i].type === 'think' || log[i].type === 'tool_use' || log[i].type === 'tool_result') {
+      latestText = log[i].text || '';
+      latestType = log[i].type;
+      break;
+    }
+  }
+
+  // Only show during thinking state and if there's content
+  if (ud.state !== 'thinking' || !latestText) {
+    if (sprite) {
+      sprite.material.opacity = Math.max(0, sprite.material.opacity - 0.05);
+      if (sprite.material.opacity <= 0) { minion.remove(sprite); sprite.material.dispose(); sprite.userData._tex.dispose(); }
+    }
+    return;
+  }
+
+  if (!sprite) sprite = createMiniBubble(minion);
+
+  // Update content if changed
+  if (sprite.userData._lastText !== latestText) {
+    sprite.userData._lastText = latestText;
+    sprite.userData._showTime = time;
+
+    const canvas = sprite.userData._canvas;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, 320, 48);
+
+    // Background
+    const colors = { think: '#7c3aed', tool_use: '#b45309', tool_result: '#059669' };
+    ctx.fillStyle = colors[latestType] || '#666';
+    ctx.globalAlpha = 0.85;
+    ctx.beginPath();
+    ctx.roundRect(4, 4, 312, 40, 12);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // Icon + text
+    const icons = { think: '💭', tool_use: '🔧', tool_result: '📋' };
+    ctx.font = '12px -apple-system, sans-serif';
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    const displayText = (icons[latestType] || '') + ' ' + latestText.slice(0, 30);
+    ctx.fillText(displayText, 12, 24);
+
+    sprite.userData._tex.needsUpdate = true;
+  }
+
+  // Fade in
+  sprite.material.opacity = Math.min(0.95, sprite.material.opacity + 0.08);
+}
+
 // ===== Continent (Agent Area) =====
 function createContinent(agentName, index) {
   const W = 22, D = 22;
@@ -2237,6 +2385,10 @@ function animate() {
     // Update MCP bubble positions
     const mcpBub = mcpBubbles[ud.sessionKey];
     if (mcpBub && mcpBub._updatePos) mcpBub._updatePos();
+
+    // Thinking indicator + mini bubble above head
+    updateThinkingIndicator(m, time);
+    updateMiniBubble(m, time);
 
     // Update bubble position
     updateBubblePosition(m, time);
