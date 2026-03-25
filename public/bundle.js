@@ -30056,7 +30056,7 @@ function showBubble(m) {
   }
   const el = getOrCreateBubble(sk);
   updateBubbleContent(m);
-  if (!el._dismissed) {
+  if (!el._dismissed && m.userData.state === "thinking") {
     el.classList.add("show");
     el.style.pointerEvents = "auto";
   }
@@ -30206,6 +30206,9 @@ function handleEvent(ev) {
     ud.lastEventTime = Date.now();
     showBubble(m);
     clearNotification(m);
+    if (fixedPanelSession !== ud.sessionKey) {
+      showNotifyBox(ud.sessionKey, ud.userName, "\u2705 \u5B8C\u6210: " + (ev.text || "").slice(0, 50), ud.chineseName || ud.sessionLabel);
+    }
     setTimeout(() => {
       fetch(`/api/messages/${m.userData.sessionId}`).then((r) => r.json()).then((data) => {
         if (data.messages) {
@@ -30550,8 +30553,17 @@ window.addEventListener("click", (e) => {
           }
           const b2 = getOrCreateBubble(target.userData.sessionKey);
           b2._dismissed = false;
-          showBubble(target);
-        }).catch(() => showBubble(target));
+          b2.classList.add("show");
+          b2.style.pointerEvents = "auto";
+          updateBubbleContent(target);
+          interactingWithOverlay = false;
+        }).catch(() => {
+          const b2 = getOrCreateBubble(target.userData.sessionKey);
+          b2._dismissed = false;
+          b2.classList.add("show");
+          b2.style.pointerEvents = "auto";
+          updateBubbleContent(target);
+        });
       }
     }
   }
@@ -30698,13 +30710,22 @@ function animate() {
           const cx2 = (ud.bounds.minX + ud.bounds.maxX) / 2;
           const cz2 = (ud.bounds.minZ + ud.bounds.maxZ) / 2;
           const targets = [
-            [cx2, cz2],
             [cx2 - 3, cz2 + 2],
+            // table area (outside)
             [cx2 + 4, cz2 + 4],
+            // pond
             [cx2 - 5, cz2 + 1],
+            // bench
             [ud.bounds.minX + 2, ud.bounds.minZ + 2],
+            // corner
             [ud.bounds.maxX - 2, ud.bounds.minZ + 2],
-            [cx2 + 2, cz2 - 3]
+            // corner
+            [cx2 + 5, cz2 - 2],
+            // house side (outside)
+            [cx2 - 2, cz2 + 5],
+            // front yard
+            [cx2 + 3, cz2 + 6]
+            // open area
           ];
           const pick = targets[Math.floor(Math.random() * targets.length)];
           ud.targetX = pick[0] + (Math.random() - 0.5) * 2;

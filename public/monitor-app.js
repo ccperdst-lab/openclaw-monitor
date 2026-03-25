@@ -1764,7 +1764,8 @@ function showBubble(m) {
   }
   const el = getOrCreateBubble(sk);
   updateBubbleContent(m);
-  if (!el._dismissed) {
+  // Only auto-show if thinking; 'done' and 'idle' stay hidden unless user clicks
+  if (!el._dismissed && m.userData.state === 'thinking') {
     el.classList.add('show');
     el.style.pointerEvents = 'auto';
   }
@@ -1932,6 +1933,10 @@ function handleEvent(ev) {
     ud.state = 'done'; ud.lastEventTime = Date.now();
     showBubble(m);
     clearNotification(m);
+    // Show completion notification
+    if (fixedPanelSession !== ud.sessionKey) {
+      showNotifyBox(ud.sessionKey, ud.userName, '✅ 完成: ' + (ev.text || '').slice(0, 50), ud.chineseName || ud.sessionLabel);
+    }
     // Do one final refresh after 2s to catch any trailing data
     setTimeout(() => {
       fetch(`/api/messages/${m.userData.sessionId}`)
@@ -2298,8 +2303,18 @@ window.addEventListener('click', (e) => {
           }
           const b2 = getOrCreateBubble(target.userData.sessionKey);
           b2._dismissed = false;
-          showBubble(target);
-        }).catch(() => showBubble(target));
+          // Force show on user click (regardless of state)
+          b2.classList.add('show');
+          b2.style.pointerEvents = 'auto';
+          updateBubbleContent(target);
+          interactingWithOverlay = false;
+        }).catch(() => {
+          const b2 = getOrCreateBubble(target.userData.sessionKey);
+          b2._dismissed = false;
+          b2.classList.add('show');
+          b2.style.pointerEvents = 'auto';
+          updateBubbleContent(target);
+        });
       }
     }
   }
@@ -2472,10 +2487,16 @@ function animate() {
       if (roll < 0.4 && ud.bounds) {
         const cx2 = (ud.bounds.minX + ud.bounds.maxX) / 2;
         const cz2 = (ud.bounds.minZ + ud.bounds.maxZ) / 2;
+        // POI targets - ALL outside house (house is at cx-2, cz-2, size 4.5x4.5)
         const targets = [
-          [cx2, cz2], [cx2 - 3, cz2 + 2], [cx2 + 4, cz2 + 4],
-          [cx2 - 5, cz2 + 1], [ud.bounds.minX + 2, ud.bounds.minZ + 2],
-          [ud.bounds.maxX - 2, ud.bounds.minZ + 2], [cx2 + 2, cz2 - 3],
+          [cx2 - 3, cz2 + 2],   // table area (outside)
+          [cx2 + 4, cz2 + 4],   // pond
+          [cx2 - 5, cz2 + 1],   // bench
+          [ud.bounds.minX + 2, ud.bounds.minZ + 2],  // corner
+          [ud.bounds.maxX - 2, ud.bounds.minZ + 2],  // corner
+          [cx2 + 5, cz2 - 2],   // house side (outside)
+          [cx2 - 2, cz2 + 5],   // front yard
+          [cx2 + 3, cz2 + 6],   // open area
         ];
         const pick = targets[Math.floor(Math.random() * targets.length)];
         ud.targetX = pick[0] + (Math.random() - 0.5) * 2;
