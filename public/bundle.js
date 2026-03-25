@@ -28976,7 +28976,14 @@ function createMinion(profile) {
     idleAction: "stand",
     idleActionTimer: 0,
     bounds: null,
-    chineseName: p.name || ""
+    chineseName: p.name || "",
+    // Physics
+    velocityY: 0,
+    isGrounded: true,
+    // Drag state
+    isDragging: false,
+    dragTargetX: 0,
+    dragTargetZ: 0
   };
   return group;
 }
@@ -29971,8 +29978,89 @@ function reportPositions() {
   }).catch(() => {
   });
 }
+var groundPlane = new Plane(new Vector3(0, 1, 0), 0);
+var dragRaycaster = new Raycaster();
+var longPressTimer = null;
+var longPressTarget = null;
+var pressStartTime = 0;
+var pressStartPos = { x: 0, y: 0 };
+var isDraggingMinion = false;
+renderer.domElement.addEventListener("mousedown", (e) => {
+  if (e.button !== 0) return;
+  if (!isCanvasEvent(e)) return;
+  if (isDragging) return;
+  pressStartTime = Date.now();
+  pressStartPos = { x: e.clientX, y: e.clientY };
+  longPressTarget = null;
+  const mouse = new Vector2(
+    e.clientX / window.innerWidth * 2 - 1,
+    -(e.clientY / window.innerHeight) * 2 + 1
+  );
+  dragRaycaster.setFromCamera(mouse, camera);
+  const hits = dragRaycaster.intersectObjects(clickables, true);
+  if (hits.length > 0) {
+    let target = hits[0].object;
+    while (target.parent && !target.userData.sessionKey) target = target.parent;
+    if (target.userData.sessionKey) {
+      longPressTarget = target;
+      longPressTimer = setTimeout(() => {
+        if (longPressTarget && !isDraggingMinion) {
+          isDraggingMinion = true;
+          longPressTarget.userData.isDragging = true;
+          longPressTarget.userData.velocityY = 2;
+          longPressTarget.userData.isGrounded = false;
+          renderer.domElement.style.cursor = "grabbing";
+        }
+      }, 400);
+    }
+  }
+});
+window.addEventListener("mousemove", (e) => {
+  if (!isDraggingMinion || !longPressTarget) return;
+  const mouse = new Vector2(
+    e.clientX / window.innerWidth * 2 - 1,
+    -(e.clientY / window.innerHeight) * 2 + 1
+  );
+  dragRaycaster.setFromCamera(mouse, camera);
+  const intersection = new Vector3();
+  dragRaycaster.ray.intersectPlane(groundPlane, intersection);
+  if (intersection) {
+    const ud = longPressTarget.userData;
+    if (ud.bounds) {
+      intersection.x = Math.max(ud.bounds.minX, Math.min(ud.bounds.maxX, intersection.x));
+      intersection.z = Math.max(ud.bounds.minZ, Math.min(ud.bounds.maxZ, intersection.z));
+    }
+    ud.dragTargetX = intersection.x;
+    ud.dragTargetZ = intersection.z;
+  }
+});
+window.addEventListener("mouseup", () => {
+  if (longPressTimer) {
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+  }
+  if (isDraggingMinion && longPressTarget) {
+    longPressTarget.userData.isDragging = false;
+    longPressTarget.userData.velocityY = 0;
+    longPressTarget.userData.isGrounded = false;
+    isDraggingMinion = false;
+    longPressTarget = null;
+    renderer.domElement.style.cursor = "";
+  }
+});
+window.addEventListener("mousemove", (e) => {
+  if (longPressTimer && !isDraggingMinion) {
+    const dx = e.clientX - pressStartPos.x;
+    const dy = e.clientY - pressStartPos.y;
+    if (dx * dx + dy * dy > 25) {
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+      longPressTarget = null;
+    }
+  }
+});
 window.addEventListener("click", (e) => {
-  if (isDragging || dragStarted) return;
+  if (isDragging || dragStarted || isDraggingMinion) return;
   if (isBubbleEvent(e)) return;
   const mouse = new Vector2(
     e.clientX / window.innerWidth * 2 - 1,
@@ -30193,7 +30281,28 @@ function animate() {
       }
       m.rotation.y += extraRotY;
       m.rotation.x = extraRotX;
-      m.position.y = yOff;
+      const GRAVITY = -15;
+      if (!ud.isGrounded || ud.velocityY !== 0) {
+        ud.velocityY += GRAVITY * dt;
+        m.position.y += ud.velocityY * dt;
+        if (m.position.y <= 0) {
+          m.position.y = 0;
+          ud.velocityY = 0;
+          ud.isGrounded = true;
+        }
+      }
+      m.position.y += yOff;
+      if (ud.isDragging) {
+        const dx = ud.dragTargetX - m.position.x;
+        const dz = ud.dragTargetZ - m.position.z;
+        const dist = Math.sqrt(dx * dx + dz * dz);
+        if (dist > 0.05) {
+          m.position.x += dx / dist * Math.min(dist, 8 * dt);
+          m.position.z += dz / dist * Math.min(dist, 8 * dt);
+        }
+        m.position.y = Math.max(m.position.y, 0.3);
+        ud.isGrounded = false;
+      }
       m.children.forEach((c) => {
         if (c.userData?.isArm) {
           if (!anim || anim.type !== "wave" && anim.type !== "clap") {

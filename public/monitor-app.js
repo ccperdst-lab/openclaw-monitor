@@ -559,6 +559,10 @@ function createMinion(profile) {
     idleTimer: 0, idleAction: 'stand', idleActionTimer: 0,
     bounds: null,
     chineseName: p.name || '',
+    // Physics
+    velocityY: 0, isGrounded: true,
+    // Drag state
+    isDragging: false, dragTargetX: 0, dragTargetZ: 0,
   };
 
   return group;
@@ -1684,10 +1688,111 @@ function reportPositions() {
   }).catch(() => {});
 }
 
+// ===== Long-Press Drag System =====
+// Ground plane for raycasting drag positions
+const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+const dragRaycaster = new THREE.Raycaster();
+let longPressTimer = null;
+let longPressTarget = null;
+let pressStartTime = 0;
+let pressStartPos = { x: 0, y: 0 };
+let isDraggingMinion = false;
+
+// Start long press detection on mousedown
+renderer.domElement.addEventListener('mousedown', (e) => {
+  if (e.button !== 0) return;
+  if (!isCanvasEvent(e)) return;
+  if (isDragging) return; // camera drag takes priority
+
+  pressStartTime = Date.now();
+  pressStartPos = { x: e.clientX, y: e.clientY };
+  longPressTarget = null;
+
+  // Raycast to find minion under cursor
+  const mouse = new THREE.Vector2(
+    (e.clientX / window.innerWidth) * 2 - 1,
+    -(e.clientY / window.innerHeight) * 2 + 1
+  );
+  dragRaycaster.setFromCamera(mouse, camera);
+  const hits = dragRaycaster.intersectObjects(clickables, true);
+  if (hits.length > 0) {
+    let target = hits[0].object;
+    while (target.parent && !target.userData.sessionKey) target = target.parent;
+    if (target.userData.sessionKey) {
+      longPressTarget = target;
+      // Start long press timer (500ms)
+      longPressTimer = setTimeout(() => {
+        if (longPressTarget && !isDraggingMinion) {
+          isDraggingMinion = true;
+          longPressTarget.userData.isDragging = true;
+          // Visual feedback: lift minion
+          longPressTarget.userData.velocityY = 2;
+          longPressTarget.userData.isGrounded = false;
+          renderer.domElement.style.cursor = 'grabbing';
+        }
+      }, 400);
+    }
+  }
+});
+
+// Update drag target position on mousemove
+window.addEventListener('mousemove', (e) => {
+  if (!isDraggingMinion || !longPressTarget) return;
+
+  // Raycast to ground plane
+  const mouse = new THREE.Vector2(
+    (e.clientX / window.innerWidth) * 2 - 1,
+    -(e.clientY / window.innerHeight) * 2 + 1
+  );
+  dragRaycaster.setFromCamera(mouse, camera);
+  const intersection = new THREE.Vector3();
+  dragRaycaster.ray.intersectPlane(groundPlane, intersection);
+  if (intersection) {
+    // Clamp to bounds
+    const ud = longPressTarget.userData;
+    if (ud.bounds) {
+      intersection.x = Math.max(ud.bounds.minX, Math.min(ud.bounds.maxX, intersection.x));
+      intersection.z = Math.max(ud.bounds.minZ, Math.min(ud.bounds.maxZ, intersection.z));
+    }
+    ud.dragTargetX = intersection.x;
+    ud.dragTargetZ = intersection.z;
+  }
+});
+
+// End drag on mouseup
+window.addEventListener('mouseup', () => {
+  if (longPressTimer) {
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+  }
+  if (isDraggingMinion && longPressTarget) {
+    longPressTarget.userData.isDragging = false;
+    // Drop: give slight upward velocity for bounce effect
+    longPressTarget.userData.velocityY = 0;
+    longPressTarget.userData.isGrounded = false;
+    isDraggingMinion = false;
+    longPressTarget = null;
+    renderer.domElement.style.cursor = '';
+  }
+});
+
+// Cancel long press if mouse moves too far
+window.addEventListener('mousemove', (e) => {
+  if (longPressTimer && !isDraggingMinion) {
+    const dx = e.clientX - pressStartPos.x;
+    const dy = e.clientY - pressStartPos.y;
+    if (dx * dx + dy * dy > 25) { // >5px movement cancels long press
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+      longPressTarget = null;
+    }
+  }
+});
+
 // ===== Click Detection =====
 window.addEventListener('click', (e) => {
   // Don't process clicks that were part of a drag, or on DOM overlays
-  if (isDragging || dragStarted) return;
+  if (isDragging || dragStarted || isDraggingMinion) return;
   if (isBubbleEvent(e)) return;
 
   const mouse = new THREE.Vector2(
@@ -1954,9 +2059,33 @@ function animate() {
     m.rotation.y += extraRotY;
     m.rotation.x = extraRotX;
 
-    // (attentionAnim replaced by activeAnimations system)
+    // Physics: gravity + ground collision
+    const GRAVITY = -15;
+    if (!ud.isGrounded || ud.velocityY !== 0) {
+      ud.velocityY += GRAVITY * dt;
+      m.position.y += ud.velocityY * dt;
+      if (m.position.y <= 0) {
+        m.position.y = 0;
+        ud.velocityY = 0;
+        ud.isGrounded = true;
+      }
+    }
+    // Bob on top of physics position
+    m.position.y += yOff;
 
-    m.position.y = yOff;
+    // Drag: move toward drag target
+    if (ud.isDragging) {
+      const dx = ud.dragTargetX - m.position.x;
+      const dz = ud.dragTargetZ - m.position.z;
+      const dist = Math.sqrt(dx*dx + dz*dz);
+      if (dist > 0.05) {
+        m.position.x += (dx / dist) * Math.min(dist, 8 * dt);
+        m.position.z += (dz / dist) * Math.min(dist, 8 * dt);
+      }
+      // Lift minion slightly while dragging
+      m.position.y = Math.max(m.position.y, 0.3);
+      ud.isGrounded = false;
+    }
 
     // Arm swing (default subtle, animations override via switch above)
     m.children.forEach(c => {
