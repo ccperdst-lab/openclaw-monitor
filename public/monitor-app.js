@@ -1860,6 +1860,10 @@ function handleEvent(ev) {
       if (acts) acts.classList.remove('collapsed');
     }
     startBubbleRefresh(m); // Start polling for updates
+    // Show notification box (unless this session is already in fixed panel)
+    if (fixedPanelSession !== ud.sessionKey) {
+      showNotifyBox(ud.sessionKey, ud.userName, ev.msg || '', ud.chineseName || ud.sessionLabel);
+    }
   } else if (ev.type === 'thinking') {
     const now = new Date();
     ud.eventLog.push({ type: 'think', text: (ev.thinking || '').slice(0, 150), time: now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) });
@@ -3656,6 +3660,116 @@ function updateSaveStateTimer(dt) {
 
 // Restore state on load
 restoreSceneState();
+
+// ===== Notification Box System =====
+const MAX_NOTIFY_BOXES = 5;
+const notifyBoxes = []; // { el, sessionKey, timer }
+
+function showNotifyBox(sessionKey, userName, message, minionName) {
+  // Remove oldest if at max
+  while (notifyBoxes.length >= MAX_NOTIFY_BOXES) {
+    const old = notifyBoxes.shift();
+    removeNotifyBox(old);
+  }
+
+  // Don't duplicate for same session
+  const existing = notifyBoxes.find(n => n.sessionKey === sessionKey);
+  if (existing) {
+    // Update existing
+    const msgEl = existing.el.querySelector('.nb-msg');
+    if (msgEl) msgEl.textContent = message.slice(0, 60);
+    resetNotifyTimer(existing);
+    return;
+  }
+
+  const el = document.createElement('div');
+  el.className = 'notify-box';
+  el.innerHTML = `
+    <div class="nb-hd">
+      <span class="nb-icon">🟡</span>
+      <span class="nb-name">${esc(minionName || '小黄人')}</span>
+      <span class="nb-user">${esc(userName || '')}</span>
+      <button class="nb-close">✕</button>
+    </div>
+    <div class="nb-msg">${esc(message.slice(0, 60))}</div>
+    <div class="nb-bar"><div class="nb-bar-fill"></div></div>
+  `;
+
+  // Click to open fixed panel
+  el.addEventListener('click', (e) => {
+    if (e.target.classList.contains('nb-close')) return;
+    e.stopPropagation();
+    // Open fixed panel for this session
+    if (fixedPanelSession) closeFixedPanel();
+    openFixedPanel(sessionKey);
+    // Remove this notify box
+    const idx = notifyBoxes.findIndex(n => n.sessionKey === sessionKey);
+    if (idx >= 0) {
+      removeNotifyBox(notifyBoxes[idx]);
+      notifyBoxes.splice(idx, 1);
+    }
+  });
+
+  // Close button
+  el.querySelector('.nb-close').addEventListener('click', (e) => {
+    e.stopPropagation();
+    const idx = notifyBoxes.findIndex(n => n.el === el);
+    if (idx >= 0) {
+      removeNotifyBox(notifyBoxes[idx]);
+      notifyBoxes.splice(idx, 1);
+    }
+  });
+
+  el.addEventListener('mousedown', (e) => e.stopPropagation());
+
+  document.body.appendChild(el);
+
+  // Animate in
+  requestAnimationFrame(() => el.classList.add('show'));
+
+  const box = { el, sessionKey, timer: null };
+  resetNotifyTimer(box);
+  notifyBoxes.push(box);
+
+  updateNotifyBoxPositions();
+}
+
+function resetNotifyTimer(box) {
+  if (box.timer) clearTimeout(box.timer);
+  const fill = box.el.querySelector('.nb-bar-fill');
+  if (fill) {
+    fill.style.transition = 'none';
+    fill.style.width = '100%';
+    requestAnimationFrame(() => {
+      fill.style.transition = 'width 15s linear';
+      fill.style.width = '0%';
+    });
+  }
+  box.timer = setTimeout(() => {
+    const idx = notifyBoxes.indexOf(box);
+    if (idx >= 0) {
+      removeNotifyBox(box);
+      notifyBoxes.splice(idx, 1);
+    }
+  }, 15000); // auto-dismiss after 15s
+}
+
+function removeNotifyBox(box) {
+  if (box.timer) clearTimeout(box.timer);
+  box.el.classList.remove('show');
+  setTimeout(() => box.el.remove(), 300);
+}
+
+function updateNotifyBoxPositions() {
+  const topStart = 60; // below HUD
+  notifyBoxes.forEach((box, i) => {
+    box.el.style.top = (topStart + i * 72) + 'px';
+  });
+}
+
+// Hook into handleEvent to show notify boxes
+const _origHandleEvent = handleEvent;
+// Actually, let's patch the user_msg handler directly by watching for state changes
 
 // ===== Start =====
 // Loading screen timeout fallback (3s)

@@ -30134,6 +30134,9 @@ function handleEvent(ev) {
       if (acts) acts.classList.remove("collapsed");
     }
     startBubbleRefresh(m);
+    if (fixedPanelSession !== ud.sessionKey) {
+      showNotifyBox(ud.sessionKey, ud.userName, ev.msg || "", ud.chineseName || ud.sessionLabel);
+    }
   } else if (ev.type === "thinking") {
     const now = /* @__PURE__ */ new Date();
     ud.eventLog.push({ type: "think", text: (ev.thinking || "").slice(0, 150), time: now.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) });
@@ -31683,6 +31686,89 @@ function updateSaveStateTimer(dt) {
   }
 }
 restoreSceneState();
+var MAX_NOTIFY_BOXES = 5;
+var notifyBoxes = [];
+function showNotifyBox(sessionKey, userName, message, minionName) {
+  while (notifyBoxes.length >= MAX_NOTIFY_BOXES) {
+    const old = notifyBoxes.shift();
+    removeNotifyBox(old);
+  }
+  const existing = notifyBoxes.find((n) => n.sessionKey === sessionKey);
+  if (existing) {
+    const msgEl = existing.el.querySelector(".nb-msg");
+    if (msgEl) msgEl.textContent = message.slice(0, 60);
+    resetNotifyTimer(existing);
+    return;
+  }
+  const el = document.createElement("div");
+  el.className = "notify-box";
+  el.innerHTML = `
+    <div class="nb-hd">
+      <span class="nb-icon">\u{1F7E1}</span>
+      <span class="nb-name">${esc(minionName || "\u5C0F\u9EC4\u4EBA")}</span>
+      <span class="nb-user">${esc(userName || "")}</span>
+      <button class="nb-close">\u2715</button>
+    </div>
+    <div class="nb-msg">${esc(message.slice(0, 60))}</div>
+    <div class="nb-bar"><div class="nb-bar-fill"></div></div>
+  `;
+  el.addEventListener("click", (e) => {
+    if (e.target.classList.contains("nb-close")) return;
+    e.stopPropagation();
+    if (fixedPanelSession) closeFixedPanel();
+    openFixedPanel(sessionKey);
+    const idx = notifyBoxes.findIndex((n) => n.sessionKey === sessionKey);
+    if (idx >= 0) {
+      removeNotifyBox(notifyBoxes[idx]);
+      notifyBoxes.splice(idx, 1);
+    }
+  });
+  el.querySelector(".nb-close").addEventListener("click", (e) => {
+    e.stopPropagation();
+    const idx = notifyBoxes.findIndex((n) => n.el === el);
+    if (idx >= 0) {
+      removeNotifyBox(notifyBoxes[idx]);
+      notifyBoxes.splice(idx, 1);
+    }
+  });
+  el.addEventListener("mousedown", (e) => e.stopPropagation());
+  document.body.appendChild(el);
+  requestAnimationFrame(() => el.classList.add("show"));
+  const box = { el, sessionKey, timer: null };
+  resetNotifyTimer(box);
+  notifyBoxes.push(box);
+  updateNotifyBoxPositions();
+}
+function resetNotifyTimer(box) {
+  if (box.timer) clearTimeout(box.timer);
+  const fill = box.el.querySelector(".nb-bar-fill");
+  if (fill) {
+    fill.style.transition = "none";
+    fill.style.width = "100%";
+    requestAnimationFrame(() => {
+      fill.style.transition = "width 15s linear";
+      fill.style.width = "0%";
+    });
+  }
+  box.timer = setTimeout(() => {
+    const idx = notifyBoxes.indexOf(box);
+    if (idx >= 0) {
+      removeNotifyBox(box);
+      notifyBoxes.splice(idx, 1);
+    }
+  }, 15e3);
+}
+function removeNotifyBox(box) {
+  if (box.timer) clearTimeout(box.timer);
+  box.el.classList.remove("show");
+  setTimeout(() => box.el.remove(), 300);
+}
+function updateNotifyBoxPositions() {
+  const topStart = 60;
+  notifyBoxes.forEach((box, i) => {
+    box.el.style.top = topStart + i * 72 + "px";
+  });
+}
 setTimeout(() => {
   const lo = document.getElementById("loading-overlay");
   if (lo) {
