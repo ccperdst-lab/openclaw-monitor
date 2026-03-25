@@ -1,1 +1,109 @@
-"# \ud83d\udfe2 OpenClaw Monitor 3D\n\n**Real-time 3D visualization dashboard for [OpenClaw](https://github.com/openclaw/openclaw) AI agents.**\n\n> Watch your AI agents come alive in a vibrant 3D world \u2014 each agent is a continent, each session is a cute minion walking around. Click to see live conversations, send messages, and monitor your agent army in real-time.\n\n[![GitHub Stars](https://img.shields.io/github/stars/ccperdst-lab/openclaw-monitor?style=social)](https://github.com/ccperdst-lab/openclaw-monitor/stargazers)\n[![Three.js](https://img.shields.io/badge/Three.js-3D-green)](https://threejs.org)\n[![Node.js](https://img.shields.io/badge/Node.js-Server-blue)](https://nodejs.org)\n[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)\n\n![Demo](https://raw.githubusercontent.com/ccperdst-lab/openclaw-monitor/main/demo.gif)\n\n## \u2728 Why OpenClaw Monitor?\n\n| Problem | Solution |\n|---------|----------|\n| \"What is my agent doing right now?\" | \ud83d\udfe1 Minions with live thinking bubbles |\n| \"Which session is active?\" | \ud83c\udf0d Each session = a minion on its continent |\n| \"I want to talk to my agent directly\" | \ud83d\udcac Click any minion to chat |\n| \"Agent dashboards are boring\" | \ud83c\udfae Pokemon-style 3D world with physics |\n\n## \ud83c\udf0d 3D World\n\n- **Agent Continents** \u2014 Each OpenClaw agent gets a vibrant village with houses, trees, flowers, ponds, fences, lamp posts, and benches\n- **Dynamic Nature** \u2014 Wind-swaying grass (600+ blades), fluffy animated trees, rippling water with lily pads, floating cherry blossom petals\n- **Clouds & Sky** \u2014 Volumetric clouds, dynamic lighting\n\n## \ud83d\udfe1 Minions (Sessions)\n\n- **Unique Characters** \u2014 Randomized height, width, color, eye count, hair style\n- **Chinese Names** \u2014 Each minion gets a random name (\u5c0f\u660e, \u963f\u82b1, \u5927\u58ee...)\n- **Physics System** \u2014 Gravity, ground collision, drag & drop with falling\n- **Smart Pathfinding** \u2014 Walk to points of interest (house, table, pond, bench)\n- **AABB Collision** \u2014 No walking through walls, furniture, or other minions\n- **Live Expressions** \u2014 Eyes change based on state (thinking, done, idle)\n- **Thinking Bubbles** \u2014 Animated \"...\" + mini speech bubble showing latest tool call\n\n## \ud83d\udcac Conversation Bubbles\n\n- **Real-time Updates** \u2014 Live thinking process, tool calls, and replies via SSE\n- **Expandable Content** \u2014 Thinking blocks are collapsible for long conversations\n- **Two View Modes** \u2014 Floating bubble (default) or fixed panel (pinned to bottom)\n- **Auto-scroll** \u2014 Smart scroll that respects user position\n\n## \ud83d\udee0\ufe0f Quick Start\n\n```bash\n# Clone the repo\ngit clone https://github.com/ccperdst-lab/openclaw-monitor.git\ncd openclaw-monitor\n\n# Install dependencies\nnpm install\n\n# Start the server\nnpm start\n\n# Open in browser\nopen http://localhost:7777\n```\n\n## \u2699\ufe0f Configuration\n\nThe monitor auto-detects your OpenClaw installation at `~/.openclaw`. You can customize via `config.yaml`:\n\n```yaml\nopenclawRoot: ~/.openclaw # Path to OpenClaw root\nport: 7777 # Server port\n```\n\n## \ud83c\udfd7\ufe0f Architecture\n\n```\n\u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510 SSE \u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510\n\u2502 OpenClaw \u2502 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u25b6 \u2502 Monitor \u2502\n\u2502 Gateway \u2502 \u2502 Server \u2502\n\u2502 (agents/) \u2502 \u25c0\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 \u2502 (Express) \u2502\n\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518 WebSocket \u2514\u2500\u2500\u2500\u2500\u2500\u2500\u252c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518\n \u2502\n \u250c\u2500\u2500\u2500\u2500\u25bc\u2500\u2500\u2500\u2500\u2510\n \u2502 Three.js \u2502\n \u2502 3D World \u2502\n \u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518\n```\n\n## \ud83d\udd25 Similar Projects\n\n| Project | Difference |\n|---------|------------|\n| [openclaw-office](https://github.com/WW-AI-Lab/openclaw-office) | Isometric view, no physics |\n| [Divan](https://github.com/talhaorak/divan) | Room-based, no minions |\n| [agent-monitor](https://github.com/ruiqili2/agent-monitor) | Pixel art style |\n\n**Our edge:** Full 3D world + physics + per-session minions + direct chat.\n\n## \ud83e\udd1d Contributing\n\nContributions welcome! Please check [Issues](https://github.com/ccperdst-lab/openclaw-monitor/issues) for what needs work.\n\n## \u2b50 Star History\n\nIf this project helps you, please give it a star! It helps others discover it.\n\n[![Star History Chart](https://api.star-history.com/svg?repos=ccperdst-lab/openclaw-monitor&type=Date)](https://star-history.com/#ccperdst-lab/openclaw-monitor&Date)\n\n## \ud83d\udcdd License\n\nMIT\n"
+# 🟢 OpenClaw Monitor 3D
+
+**Real-time 3D visualization dashboard for [OpenClaw](https://github.com/openclaw/openclaw) AI agents.**
+
+> Watch your AI agents come alive in a vibrant 3D world — each agent is a continent, each session is a cute minion walking around. Click to see live conversations, send messages, and monitor your agent army in real-time.
+
+[![GitHub Stars](https://img.shields.io/github/stars/ccperdst-lab/openclaw-monitor?style=social)](https://github.com/ccperdst-lab/openclaw-monitor/stargazers)
+[![Three.js](https://img.shields.io/badge/Three.js-3D-green)](https://threejs.org)
+[![Node.js](https://img.shields.io/badge/Node.js-Server-blue)](https://nodejs.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+![Demo](https://raw.githubusercontent.com/ccperdst-lab/openclaw-monitor/main/demo.gif)
+
+## ✨ Why OpenClaw Monitor?
+
+| Problem | Solution |
+|---------|----------|
+| "What is my agent doing right now?" | 🟡 Minions with live thinking bubbles |
+| "Which session is active?" | 🌍 Each session = a minion on its continent |
+| "I want to talk to my agent directly" | 💬 Click any minion to chat |
+| "Agent dashboards are boring" | 🎮 Pokemon-style 3D world with physics |
+
+## 🌍 3D World
+
+- **Agent Continents** — Each OpenClaw agent gets a vibrant village with houses, trees, flowers, ponds, fences, lamp posts, and benches
+- **Dynamic Nature** — Wind-swaying grass (600+ blades), fluffy animated trees, rippling water with lily pads, floating cherry blossom petals
+- **Clouds & Sky** — Volumetric clouds, dynamic lighting
+
+## 🟡 Minions (Sessions)
+
+- **Unique Characters** — Randomized height, width, color, eye count, hair style
+- **Chinese Names** — Each minion gets a random name (小明, 阿花, 大壮...)
+- **Physics System** — Gravity, ground collision, drag & drop with falling
+- **Smart Pathfinding** — Walk to points of interest (house, table, pond, bench)
+- **AABB Collision** — No walking through walls, furniture, or other minions
+- **Live Expressions** — Eyes change based on state (thinking, done, idle)
+- **Thinking Bubbles** — Animated "..." + mini speech bubble showing latest tool call
+
+## 💬 Conversation Bubbles
+
+- **Real-time Updates** — Live thinking process, tool calls, and replies via SSE
+- **Expandable Content** — Thinking blocks are collapsible for long conversations
+- **Two View Modes** — Floating bubble (default) or fixed panel (pinned to bottom)
+- **Auto-scroll** — Smart scroll that respects user position
+
+## 🛠️ Quick Start
+
+```bash
+# Clone the repo
+git clone https://github.com/ccperdst-lab/openclaw-monitor.git
+cd openclaw-monitor
+
+# Install dependencies
+npm install
+
+# Start the server
+npm start
+
+# Open in browser
+open http://localhost:7777
+```
+
+## ⚙️ Configuration
+
+The monitor auto-detects your OpenClaw installation at `~/.openclaw`. You can customize via `config.yaml`:
+
+```yaml
+openclawRoot: ~/.openclaw  # Path to OpenClaw root
+port: 7777                 # Server port
+```
+
+## 🏗️ Architecture
+
+```
+┌─────────────────┐     SSE      ┌──────────────┐
+│  OpenClaw       │ ──────────▶  │  Monitor     │
+│  Gateway        │              │  Server      │
+│  (agents/)      │ ◀──────────  │  (Express)   │
+└─────────────────┘   WebSocket  └──────┬───────┘
+                                        │
+                                   ┌────▼────┐
+                                   │ Three.js │
+                                   │ 3D World │
+                                   └─────────┘
+```
+
+## 🔥 Similar Projects
+
+| Project | Difference |
+|---------|------------|
+| [openclaw-office](https://github.com/WW-AI-Lab/openclaw-office) | Isometric view, no physics |
+| [Divan](https://github.com/talhaorak/divan) | Room-based, no minions |
+| [agent-monitor](https://github.com/ruiqili2/agent-monitor) | Pixel art style |
+
+**Our edge:** Full 3D world + physics + per-session minions + direct chat.
+
+## 🤝 Contributing
+
+Contributions welcome! Please check [Issues](https://github.com/ccperdst-lab/openclaw-monitor/issues) for what needs work.
+
+## ⭐ Star History
+
+If this project helps you, please give it a star! It helps others discover it.
+
+[![Star History Chart](https://api.star-history.com/svg?repos=ccperdst-lab/openclaw-monitor&type=Date)](https://star-history.com/#ccperdst-lab/openclaw-monitor&Date)
+
+## 📝 License
+
+MIT
