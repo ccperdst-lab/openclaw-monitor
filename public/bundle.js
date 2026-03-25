@@ -28458,6 +28458,14 @@ var pressStartTime = 0;
 var pressStartPos = { x: 0, y: 0 };
 var isDraggingMinion = false;
 var interactingWithOverlay = false;
+var hoverRaycaster = new Raycaster();
+var hoveredMinion = null;
+var lastHoverCheck = 0;
+var HOVER_THROTTLE = 100;
+var hoverTooltip = document.createElement("div");
+hoverTooltip.id = "hover-tooltip";
+hoverTooltip.className = "hidden";
+document.body.appendChild(hoverTooltip);
 var followMinion = null;
 var FOLLOW_OFFSET = new Vector3(0, 4, 5);
 var screenshotMode = false;
@@ -28758,7 +28766,7 @@ window.addEventListener("keydown", (e) => {
         startPos: camera.position.clone(),
         endPos: new Vector3(cx + 5, 20, cz + 15),
         progress: 0,
-        duration: 0.5
+        duration: 0.8
       };
       followMinion = null;
     }
@@ -29036,7 +29044,22 @@ function createMinion(profile) {
     // Drag state
     isDragging: false,
     dragTargetX: 0,
-    dragTargetZ: 0
+    dragTargetZ: 0,
+    // Continent position (for sitting/sleeping)
+    continentIdx: -1,
+    continentHx: 0,
+    continentHz: 0,
+    continentCx: 0,
+    continentCz: 0,
+    // Sitting behavior
+    isSitting: false,
+    sitTarget: null,
+    sitTimer: 0,
+    // Sleeping behavior
+    isSleeping: false,
+    // Greeting behavior
+    isGreeting: false,
+    greetingTimer: 0
   };
   return group;
 }
@@ -29593,6 +29616,11 @@ function initWorld(worldData) {
         minZ: continent.oz + 1,
         maxZ: continent.oz + continent.D - 1
       };
+      m.userData.continentIdx = ai;
+      m.userData.continentHx = continent.hx;
+      m.userData.continentHz = continent.hz;
+      m.userData.continentCx = continent.ox + continent.W / 2;
+      m.userData.continentCz = continent.oz + continent.D / 2;
       const parsed = parseSessionKey(sess.key);
       const labelLine = `${parsed.icon} ${sess.label || parsed.label}`;
       addNameLabel(m, labelLine, profile.name);
@@ -29639,6 +29667,11 @@ function initWorld(worldData) {
     });
   });
   ensureAtmosphereElements();
+  const lo = document.getElementById("loading-overlay");
+  if (lo) {
+    lo.classList.add("hidden");
+    setTimeout(() => lo.remove(), 600);
+  }
 }
 function ensureAtmosphereElements() {
   if (!scene.children.includes(sunSphere)) scene.add(sunSphere);
@@ -30406,6 +30439,35 @@ window.addEventListener("mousemove", (e) => {
     }
   }
 });
+window.addEventListener("mousemove", (e) => {
+  const now = Date.now();
+  if (now - lastHoverCheck < HOVER_THROTTLE) return;
+  lastHoverCheck = now;
+  if (isDragging || isDraggingMinion) {
+    if (hoveredMinion) {
+      clearHover();
+    }
+    return;
+  }
+  const mouse = new Vector2(
+    e.clientX / window.innerWidth * 2 - 1,
+    -(e.clientY / window.innerHeight) * 2 + 1
+  );
+  hoverRaycaster.setFromCamera(mouse, camera);
+  const hits = hoverRaycaster.intersectObjects(clickables, true);
+  let found = null;
+  if (hits.length > 0) {
+    let target = hits[0].object;
+    while (target.parent && !target.userData.sessionKey) target = target.parent;
+    if (target.userData.sessionKey) found = target;
+  }
+  if (found !== hoveredMinion) {
+    if (hoveredMinion) clearHover();
+    if (found) showHover(found, e.clientX, e.clientY);
+  } else if (found) {
+    updateHoverPosition(e.clientX, e.clientY);
+  }
+});
 window.addEventListener("click", (e) => {
   if (isDragging || dragStarted || isDraggingMinion) return;
   if (isBubbleEvent(e)) return;
@@ -30486,6 +30548,53 @@ function updateMinionExpressions() {
     });
   }
 }
+function checkMinionGreetings(dt) {
+  for (let i = 0; i < minions.length; i++) {
+    const a = minions[i];
+    if (a.userData.isSitting || a.userData.isSleeping || a.userData.isDragging || a.userData.isGreeting) continue;
+    if (a.userData.greetingTimer > 0) {
+      a.userData.greetingTimer -= dt;
+      if (a.userData.greetingTimer <= 0) a.userData.isGreeting = false;
+      continue;
+    }
+    for (let j = i + 1; j < minions.length; j++) {
+      const b = minions[j];
+      if (b.userData.isSitting || b.userData.isSleeping || b.userData.isDragging || b.userData.isGreeting) continue;
+      const dx = a.position.x - b.position.x;
+      const dz = a.position.z - b.position.z;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+      if (dist < 3 && dist > 0.3 && Math.random() < 0.15 * dt) {
+        a.userData.isGreeting = true;
+        a.userData.greetingTimer = 1 + Math.random();
+        a.rotation.y = Math.atan2(b.position.x - a.position.x, b.position.z - a.position.z);
+        break;
+      }
+    }
+  }
+}
+function showHover(minion, cx, cy) {
+  hoveredMinion = minion;
+  renderer.domElement.style.cursor = "pointer";
+  minion.scale.set(1.05, 1.05, 1.05);
+  const ud = minion.userData;
+  const parsed = parseSessionKey(ud.sessionKey);
+  const stateLabel = ud.state === "thinking" ? "\u{1F4AD} \u601D\u8003\u4E2D" : ud.state === "streaming" ? "\u270D\uFE0F \u8F93\u51FA\u4E2D" : ud.state === "done" ? "\u2705 \u5B8C\u6210" : "\u{1F4A4} \u7A7A\u95F2";
+  hoverTooltip.innerHTML = `<div class="tt-name">${ud.chineseName || "\u5C0F\u9EC4\u4EBA"}</div><div class="tt-type">${parsed.icon} ${ud.sessionLabel || parsed.label}</div><div class="tt-state">${stateLabel}</div>`;
+  hoverTooltip.classList.remove("hidden");
+  updateHoverPosition(cx, cy);
+}
+function clearHover() {
+  if (hoveredMinion) {
+    hoveredMinion.scale.set(1, 1, 1);
+    hoveredMinion = null;
+  }
+  renderer.domElement.style.cursor = "";
+  hoverTooltip.classList.add("hidden");
+}
+function updateHoverPosition(cx, cy) {
+  hoverTooltip.style.left = cx + 14 + "px";
+  hoverTooltip.style.top = cy - 10 + "px";
+}
 function animate() {
   requestAnimationFrame(animate);
   try {
@@ -30508,27 +30617,54 @@ function animate() {
     camera.lookAt(lookTarget);
     minions.forEach((m) => {
       const ud = m.userData;
+      if (ud.isSitting) {
+        ud.sitTimer -= dt;
+        if (ud.sitTimer <= 0) {
+          ud.isSitting = false;
+          ud.sitTarget = null;
+          ud.idleTimer = 0;
+        }
+      }
+      if (ud.isSleeping && sun.intensity > 0.6) {
+        ud.isSleeping = false;
+        ud.idleTimer = 0;
+      }
       ud.idleTimer -= dt;
-      if (ud.idleTimer <= 0) {
+      if (ud.idleTimer <= 0 && !ud.isSitting && !ud.isSleeping) {
+        if (Math.random() < 0.3 && ud.continentIdx >= 0) {
+          const chairTargets = [
+            [ud.continentHx - 1.5 - 1.1, ud.continentHz + 1],
+            [ud.continentHx - 1.5 + 1.1, ud.continentHz + 1],
+            [ud.continentCx - 5, ud.continentCz + 1]
+          ];
+          const pick = chairTargets[Math.floor(Math.random() * chairTargets.length)];
+          ud.targetX = pick[0];
+          ud.targetZ = pick[1];
+          ud.idleAction = "walk";
+          ud.idleTimer = 8;
+          ud.sitTarget = { x: pick[0], z: pick[1] };
+          return;
+        }
+        if (sun.intensity < 0.5 && Math.random() < 0.4 && ud.continentIdx >= 0) {
+          ud.targetX = ud.continentHx + 1.5;
+          ud.targetZ = ud.continentHz - 0.8;
+          ud.idleAction = "walk";
+          ud.idleTimer = 10;
+          ud.isSleeping = true;
+          return;
+        }
         const roll = Math.random();
         if (roll < 0.4 && ud.bounds) {
-          const cx = (ud.bounds.minX + ud.bounds.maxX) / 2;
-          const cz = (ud.bounds.minZ + ud.bounds.maxZ) / 2;
+          const cx2 = (ud.bounds.minX + ud.bounds.maxX) / 2;
+          const cz2 = (ud.bounds.minZ + ud.bounds.maxZ) / 2;
           const targets = [
-            [cx, cz],
-            // center (house area)
-            [cx - 3, cz + 2],
-            // table area
-            [cx + 4, cz + 4],
-            // pond area
-            [cx - 5, cz + 1],
-            // bench area
+            [cx2, cz2],
+            [cx2 - 3, cz2 + 2],
+            [cx2 + 4, cz2 + 4],
+            [cx2 - 5, cz2 + 1],
             [ud.bounds.minX + 2, ud.bounds.minZ + 2],
-            // corner tree
             [ud.bounds.maxX - 2, ud.bounds.minZ + 2],
-            // corner tree
-            [cx + 2, cz - 3]
-            // house side
+            [cx2 + 2, cz2 - 3]
           ];
           const pick = targets[Math.floor(Math.random() * targets.length)];
           ud.targetX = pick[0] + (Math.random() - 0.5) * 2;
@@ -30547,6 +30683,22 @@ function animate() {
         if (ud.bounds) {
           ud.targetX = Math.max(ud.bounds.minX + 1, Math.min(ud.bounds.maxX - 1, ud.targetX));
           ud.targetZ = Math.max(ud.bounds.minZ + 1, Math.min(ud.bounds.maxZ - 1, ud.targetZ));
+        }
+      }
+      if (ud.sitTarget && !ud.isSitting && ud.idleAction === "walk") {
+        const sdx = ud.sitTarget.x - m.position.x;
+        const sdz = ud.sitTarget.z - m.position.z;
+        if (Math.sqrt(sdx * sdx + sdz * sdz) < 0.5) {
+          ud.isSitting = true;
+          ud.sitTimer = 5 + Math.random() * 5;
+          ud.idleAction = "stand";
+        }
+      }
+      if (ud.isSleeping && ud.idleAction === "walk") {
+        const bdx = ud.continentHx + 1.5 - m.position.x;
+        const bdz = ud.continentHz - 0.8 - m.position.z;
+        if (Math.sqrt(bdx * bdx + bdz * bdz) < 0.5) {
+          ud.idleAction = "stand";
         }
       }
       if (ud.bounds) {
@@ -30689,14 +30841,58 @@ function animate() {
         m.position.y = Math.max(m.position.y, 0.3);
         ud.isGrounded = false;
       }
-      m.children.forEach((c) => {
-        if (c.userData?.isArm) {
-          if (!anim || anim.type !== "wave" && anim.type !== "clap") {
+      const isMoving = ud.idleAction === "walk" && !ud.isSitting && !ud.isSleeping;
+      const dxWalk = ud.targetX - m.position.x;
+      const dzWalk = ud.targetZ - m.position.z;
+      const distToTarget = Math.sqrt(dxWalk * dxWalk + dzWalk * dzWalk);
+      if (isMoving && distToTarget > 0.2 && ud.isGrounded && !ud.isDragging && !anim) {
+        const walkSpeed = Math.min(1, (ud._mcpSpeed || 0.8) * 3);
+        const legSwing = Math.sin(time * 8) * 0.26 * walkSpeed;
+        const armSwingAnim = Math.sin(time * 8) * 0.17 * walkSpeed;
+        m.children.forEach((c) => {
+          if (c.geometry?.type === "CylinderGeometry") {
+            const r = c.geometry.parameters;
+            if (r && r.radiusTop === 0.065 && r.radiusBottom === 0.055) {
+              const side = c.position.x > 0 ? 1 : -1;
+              c.rotation.x = legSwing * side;
+            }
+          }
+          if (c.userData?.isArm && (!anim || anim.type !== "wave" && anim.type !== "clap")) {
+            c.rotation.x = armSwingAnim * -c.userData.side;
+          }
+        });
+      } else if (!anim && !ud.isSitting && !ud.isSleeping) {
+        m.children.forEach((c) => {
+          if (c.userData?.isArm) {
             c.rotation.x = Math.sin(time * 2 + ud.bobPhase + (c.userData.side > 0 ? 0 : Math.PI)) * 0.15;
             c.rotation.z = 0;
           }
-        }
-      });
+          if (c.geometry?.type === "CylinderGeometry") {
+            const r = c.geometry.parameters;
+            if (r && r.radiusTop === 0.065 && r.radiusBottom === 0.055) {
+              c.rotation.x = 0;
+            }
+          }
+        });
+      }
+      if (ud.isSitting && !anim) {
+        m.rotation.x = -0.15;
+        m.children.forEach((c) => {
+          if (c.geometry?.type === "CylinderGeometry") {
+            const r = c.geometry.parameters;
+            if (r && r.radiusTop === 0.065 && r.radiusBottom === 0.055) {
+              c.rotation.x = 0.6;
+            }
+          }
+        });
+      }
+      if (ud.isSleeping && ud.idleAction !== "walk" && !anim) {
+        m.rotation.x = 0.3;
+        m.rotation.z = 0.15;
+        m.children.forEach((c) => {
+          if (c.material === mat.pupil) c.scale.set(1, 0.15, 1);
+        });
+      }
       if (ud.notificationSprite) {
         ud.notificationSprite.position.y = 2.5 * (ud.heightScale || 1) * 0.5 + 1.8 + Math.sin(time * 3 + ud.bobPhase) * 0.1;
       }
@@ -30765,6 +30961,7 @@ function animate() {
       updateAgentDashboard();
     }
     updateMinionInteraction(dt);
+    checkMinionGreetings(dt);
     updateRain(dt);
     updateSaveStateTimer(dt);
     updateGrassWithLOD(time);
@@ -30819,7 +31016,7 @@ function teleportToContinent(agentIndex) {
     startPos: camera.position.clone(),
     endPos: new Vector3(cx + 5, 20, cz + 15),
     progress: 0,
-    duration: 0.5
+    duration: 0.8
   };
   followMinion = null;
 }
@@ -31322,7 +31519,7 @@ function updateMinionInteraction(dt) {
       const dx = a.position.x - b.position.x;
       const dz = a.position.z - b.position.z;
       const dist = Math.sqrt(dx * dx + dz * dz);
-      if (dist < 1.5 && dist > 0.3 && a.userData.isGrounded && b.userData.isGrounded) {
+      if (dist < 1.5 && dist > 0.3 && a.userData.isGrounded && b.userData.isGrounded && !a.userData.isSitting && !b.userData.isSitting && !a.userData.isSleeping && !b.userData.isSleeping && !a.userData.isGreeting && !b.userData.isGreeting) {
         if (Math.random() < 0.01 * dt) {
           const target = Math.random() > 0.5 ? a : b;
           const sk = target.userData.sessionKey;
@@ -31486,6 +31683,13 @@ function updateSaveStateTimer(dt) {
   }
 }
 restoreSceneState();
+setTimeout(() => {
+  const lo = document.getElementById("loading-overlay");
+  if (lo) {
+    lo.classList.add("hidden");
+    setTimeout(() => lo.remove(), 600);
+  }
+}, 3e3);
 connectSSE();
 animate();
 /*! Bundled license information:
