@@ -28795,6 +28795,18 @@ sc.right = 60;
 sc.top = 60;
 sc.bottom = -60;
 scene.add(sun);
+var sunSphere = new Mesh(
+  new SphereGeometry(2, 16, 12),
+  new MeshBasicMaterial({ color: 16772744 })
+);
+sunSphere.position.copy(sun.position);
+scene.add(sunSphere);
+var sunGlow = new Mesh(
+  new SphereGeometry(4, 16, 12),
+  new MeshBasicMaterial({ color: 16772744, transparent: true, opacity: 0.2 })
+);
+sunGlow.position.copy(sun.position);
+scene.add(sunGlow);
 var mat = {
   // Ground
   grass: new MeshStandardMaterial({ color: 6210153, roughness: 0.95 }),
@@ -30835,7 +30847,7 @@ window.addEventListener("resize", () => {
   }
 })();
 function initClouds() {
-  const cloudMat = new MeshStandardMaterial({ color: 16777215, roughness: 1, transparent: true, opacity: 0.85 });
+  const cloudMat = new MeshBasicMaterial({ color: 16777215, transparent: true, opacity: 0.85 });
   for (let i = 0; i < 15; i++) {
     const cloud = new Group();
     const count = 4 + Math.floor(Math.random() * 4);
@@ -31057,9 +31069,9 @@ function updateDayNightCycle(dt) {
     // dusk
     { t: 0.75, sky: new Color(6970061), sun: 0.35, angle: 0.85 },
     // evening
-    { t: 0.85, sky: new Color(2767454), sun: 0.25, angle: 0.95 },
-    // night
-    { t: 0.95, sky: new Color(3820142), sun: 0.3, angle: 0.98 },
+    { t: 0.85, sky: new Color(3821680), sun: 0.4, angle: 0.95 },
+    // night (brighter)
+    { t: 0.95, sky: new Color(4874368), sun: 0.45, angle: 0.98 },
     // late night
     { t: 1, sky: new Color(6982831), sun: 0.35, angle: 1 }
     // back to pre-dawn
@@ -31088,6 +31100,15 @@ function updateDayNightCycle(dt) {
     20 + Math.sin(sunAngle * Math.PI * 2) * 30,
     Math.sin(sunAngle * Math.PI * 2) * 30
   );
+  sunSphere.position.copy(sun.position);
+  sunGlow.position.copy(sun.position);
+  const sunVis = Math.max(0, sunIntensity);
+  sunSphere.material.opacity = sunVis;
+  sunSphere.material.transparent = true;
+  sunGlow.material.opacity = sunVis * 0.25;
+  const sunColor = new Color(16772744).lerp(new Color(16775392), sunIntensity);
+  sunSphere.material.color.copy(sunColor);
+  sunGlow.material.color.copy(sunColor);
   const isNight = sunIntensity < 0.4;
   scene.traverse((obj) => {
     if (obj.isPointLight && obj.color.getHex() === 16772696) {

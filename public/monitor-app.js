@@ -409,6 +409,22 @@ sun.shadow.mapSize.set(2048, 2048);
 const sc = sun.shadow.camera; sc.left = -60; sc.right = 60; sc.top = 60; sc.bottom = -60;
 scene.add(sun);
 
+// Visible sun sphere (glowing, always visible)
+const sunSphere = new THREE.Mesh(
+  new THREE.SphereGeometry(2, 16, 12),
+  new THREE.MeshBasicMaterial({ color: 0xffee88 })
+);
+sunSphere.position.copy(sun.position);
+scene.add(sunSphere);
+
+// Sun glow (larger transparent sphere)
+const sunGlow = new THREE.Mesh(
+  new THREE.SphereGeometry(4, 16, 12),
+  new THREE.MeshBasicMaterial({ color: 0xffee88, transparent: true, opacity: 0.2 })
+);
+sunGlow.position.copy(sun.position);
+scene.add(sunGlow);
+
 // ===== Materials =====
 const mat = {
   // Ground
@@ -2663,7 +2679,7 @@ window.addEventListener('resize', () => {
 
 // ===== Clouds (sky decoration) =====
 function initClouds() {
-  const cloudMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, transparent: true, opacity: 0.85 });
+  const cloudMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 });
   for (let i = 0; i < 15; i++) {
     const cloud = new THREE.Group();
     const count = 4 + Math.floor(Math.random() * 4);
@@ -2910,8 +2926,8 @@ function updateDayNightCycle(dt) {
     { t: 0.55, sky: new THREE.Color(0x87ceeb), sun: 0.85, angle: 0.65 },         // afternoon
     { t: 0.65, sky: new THREE.Color(0xe8835a), sun: 0.55, angle: 0.75 },         // dusk
     { t: 0.75, sky: new THREE.Color(0x6a5acd), sun: 0.35, angle: 0.85 },         // evening
-    { t: 0.85, sky: new THREE.Color(0x2a3a5e), sun: 0.25, angle: 0.95 },         // night
-    { t: 0.95, sky: new THREE.Color(0x3a4a6e), sun: 0.3,  angle: 0.98 },         // late night
+    { t: 0.85, sky: new THREE.Color(0x3a5070), sun: 0.4,  angle: 0.95 },         // night (brighter)
+    { t: 0.95, sky: new THREE.Color(0x4a6080), sun: 0.45, angle: 0.98 },         // late night
     { t: 1.00, sky: new THREE.Color(0x6a8caf), sun: 0.35, angle: 1.0 },          // back to pre-dawn
   ];
 
@@ -2941,6 +2957,17 @@ function updateDayNightCycle(dt) {
     20 + Math.sin(sunAngle * Math.PI * 2) * 30,
     Math.sin(sunAngle * Math.PI * 2) * 30
   );
+  // Update visible sun sphere position + opacity
+  sunSphere.position.copy(sun.position);
+  sunGlow.position.copy(sun.position);
+  const sunVis = Math.max(0, sunIntensity);
+  sunSphere.material.opacity = sunVis;
+  sunSphere.material.transparent = true;
+  sunGlow.material.opacity = sunVis * 0.25;
+  // Sun color: warm at dawn/dusk, bright at noon
+  const sunColor = new THREE.Color(0xffee88).lerp(new THREE.Color(0xfff8e0), sunIntensity);
+  sunSphere.material.color.copy(sunColor);
+  sunGlow.material.color.copy(sunColor);
 
   // Lamp posts: on at night, off during day
   const isNight = sunIntensity < 0.4;
