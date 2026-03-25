@@ -2602,6 +2602,15 @@ function animate() {
     const camY = walkPos.y + 2 + Math.sin(-pitch) * dist * 0.5;
     const camZ = walkPos.z - Math.cos(yaw) * dist * Math.cos(pitch);
     camera.position.set(camX, camY, camZ);
+    // Eye tracking: pupils follow camera direction
+    selfAvatar.children.forEach(c => {
+      if (c.userData?._isPupil) {
+        const baseZ = 0.2;
+        const lookDir = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
+        c.position.z = baseZ + lookDir.z * 0.02;
+        c.position.x = (c.position.x > 0 ? 1 : -1) * 0.08 + lookDir.x * 0.015;
+      }
+    });
   } else {
     // First-person: camera at walkPos
     if (selfAvatar) selfAvatar.visible = false;
@@ -2652,8 +2661,9 @@ function animate() {
         ud.sitTarget = { x: pick[0], z: pick[1] };
         return;
       }
-      // Sleeping: at night, 40% chance to walk to bed
-      if (sun.intensity < 0.5 && rng() < 0.4 && ud.continentIdx >= 0) {
+      // Sleeping: at night (deterministic check based on gameTime)
+      const isNight = gameTime > 80/120 * 120 || gameTime < 10/120 * 120; // 80-120s or 0-10s of 120s cycle
+      if (isNight && rng() < 0.4 && ud.continentIdx >= 0) {
         ud.targetX = ud.continentHx + 1.5;
         ud.targetZ = ud.continentHz - 0.8;
         ud.idleAction = 'walk'; ud.idleTimer = 10;
@@ -2967,7 +2977,7 @@ function animate() {
   reportPositions();
 
   // Report my camera position to server (for multi-user)
-  if (Date.now() - lastUserPosReport > 200) { // every 200ms
+  if (Date.now() - lastUserPosReport > 50) { // every 50ms (20Hz)
     lastUserPosReport = Date.now();
     reportMyPosition();
   }
@@ -4097,36 +4107,99 @@ let thirdPerson = false;
 let selfAvatar = null;
 const walkPos = new THREE.Vector3(25, 30, 35); // avatar/walking position (separate from camera in 3rd person)
 
+// Build a cute robot avatar (shared by self and remote users)
+function buildRobotAvatar(color) {
+  const group = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.5 });
+  const eyeWhite = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 });
+  const eyePupil = new THREE.MeshStandardMaterial({ color: 0x111111 });
+  const darkMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
+
+  // Body (cylinder)
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.25, 0.6, 12), mat);
+  body.position.y = 0.3; body.castShadow = true;
+  group.add(body);
+
+  // Head (sphere)
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.2, 12, 10), mat);
+  head.position.y = 0.75; head.castShadow = true;
+  group.add(head);
+
+  // Eyes (white spheres with black pupils) — pupils are separate for tracking
+  [-1, 1].forEach(side => {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), eyeWhite);
+    eye.position.set(side * 0.08, 0.78, 0.16);
+    group.add(eye);
+    const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 6), eyePupil);
+    pupil.position.set(side * 0.08, 0.78, 0.2);
+    pupil.userData._isPupil = true;
+    group.add(pupil);
+  });
+
+  // Antenna
+  const antenna = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.15, 6), darkMat);
+  antenna.position.y = 0.95;
+  group.add(antenna);
+  const antennaBall = new THREE.Mesh(new THREE.SphereGeometry(0.04, 8, 6), new THREE.MeshBasicMaterial({ color }));
+  antennaBall.position.y = 1.05;
+  group.add(antennaBall);
+
+  // Arms
+  [-1, 1].forEach(side => {
+    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.035, 0.35, 6), mat);
+    arm.position.set(side * 0.28, 0.35, 0);
+    arm.userData._isArm = true;
+    arm.userData.side = side;
+    group.add(arm);
+  });
+
+  // Legs
+  [-1, 1].forEach(side => {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.045, 0.2, 6), darkMat);
+    leg.position.set(side * 0.1, 0.1, 0);
+    group.add(leg);
+  });
+
+  return group;
+}
+
+function createUserAvatar(userId, color) {
+  const group = buildRobotAvatar(color || '#53d8fb');
+
+  // Name label
+  const canvas = document.createElement('canvas');
+  canvas.width = 128; canvas.height = 32;
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+  label.position.y = 1.3;
+  label.scale.set(1.5, 0.375, 1);
+  label.userData._canvas = canvas;
+  label.userData._tex = tex;
+  group.add(label);
+  group.userData._label = label;
+  scene.add(group);
+  return group;
+}
+
 function createSelfAvatar() {
   if (selfAvatar) return;
-  const group = new THREE.Group();
-  // Golden avatar body
-  const body = new THREE.Mesh(
-    new THREE.ConeGeometry(0.35, 0.7, 8),
-    new THREE.MeshBasicMaterial({ color: 0xffd700 })
-  );
-  body.rotation.x = Math.PI;
-  body.position.y = 0.35;
-  group.add(body);
-  // Direction indicator
-  const dir = new THREE.Mesh(
-    new THREE.SphereGeometry(0.1, 8, 6),
-    new THREE.MeshBasicMaterial({ color: 0xffffff })
-  );
-  dir.position.set(0, 0.35, -0.4);
-  group.add(dir);
+  const group = buildRobotAvatar(0xffd700); // golden for self
+
   // Glow ring under avatar
   const ring = new THREE.Mesh(
-    new THREE.RingGeometry(0.4, 0.55, 24),
+    new THREE.RingGeometry(0.35, 0.5, 24),
     new THREE.MeshBasicMaterial({ color: 0xffd700, transparent: true, opacity: 0.4, side: THREE.DoubleSide })
   );
   ring.rotation.x = -Math.PI / 2;
   ring.position.y = 0.02;
   group.add(ring);
+
   group.visible = false;
   scene.add(group);
   selfAvatar = group;
 }
+
 createSelfAvatar();
 
 const userAvatars = {}; // userId -> { mesh, posBuffer: [{x,y,z,time}], velocity, lastUpdate }
@@ -4149,42 +4222,10 @@ setInterval(calibrateTime, 30000); // recalibrate every 30s
 
 function serverNow() { return Date.now() + serverTimeOffset; }
 
-// Interpolation delay: render 100ms in the past for smooth interpolation
-const INTERP_DELAY = 100;
+// Interpolation delay: render 50ms in the past for smooth interpolation (reduced from 100ms)
+const INTERP_DELAY = 50;
 
 // Create avatar mesh for a remote user
-function createUserAvatar(userId, color) {
-  const group = new THREE.Group();
-  // Simple camera icon: cone + sphere
-  const body = new THREE.Mesh(
-    new THREE.ConeGeometry(0.3, 0.6, 8),
-    new THREE.MeshBasicMaterial({ color: color || '#53d8fb' })
-  );
-  body.rotation.x = Math.PI;
-  body.position.y = 0.3;
-  group.add(body);
-  // Direction indicator (small sphere in front)
-  const dir = new THREE.Mesh(
-    new THREE.SphereGeometry(0.08, 8, 6),
-    new THREE.MeshBasicMaterial({ color: 0xffffff })
-  );
-  dir.position.set(0, 0.3, -0.35);
-  group.add(dir);
-  // Name label
-  const canvas = document.createElement('canvas');
-  canvas.width = 128; canvas.height = 32;
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.minFilter = THREE.LinearFilter;
-  const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
-  label.position.y = 1;
-  label.scale.set(1.5, 0.375, 1);
-  label.userData._canvas = canvas;
-  label.userData._tex = tex;
-  group.add(label);
-  group.userData._label = label;
-  scene.add(group);
-  return group;
-}
 
 function updateAvatarLabel(avatar, name) {
   const label = avatar.userData._label;

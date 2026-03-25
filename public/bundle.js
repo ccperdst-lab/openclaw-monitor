@@ -30814,6 +30814,14 @@ function animate() {
       const camY = walkPos.y + 2 + Math.sin(-pitch) * dist * 0.5;
       const camZ = walkPos.z - Math.cos(yaw) * dist * Math.cos(pitch);
       camera.position.set(camX, camY, camZ);
+      selfAvatar.children.forEach((c) => {
+        if (c.userData?._isPupil) {
+          const baseZ = 0.2;
+          const lookDir = new Vector3(Math.sin(yaw), 0, Math.cos(yaw));
+          c.position.z = baseZ + lookDir.z * 0.02;
+          c.position.x = (c.position.x > 0 ? 1 : -1) * 0.08 + lookDir.x * 0.015;
+        }
+      });
     } else {
       if (selfAvatar) selfAvatar.visible = false;
       camera.position.copy(walkPos);
@@ -30855,7 +30863,8 @@ function animate() {
           ud.sitTarget = { x: pick[0], z: pick[1] };
           return;
         }
-        if (sun.intensity < 0.5 && rng() < 0.4 && ud.continentIdx >= 0) {
+        const isNight = gameTime > 80 / 120 * 120 || gameTime < 10 / 120 * 120;
+        if (isNight && rng() < 0.4 && ud.continentIdx >= 0) {
           ud.targetX = ud.continentHx + 1.5;
           ud.targetZ = ud.continentHz - 0.8;
           ud.idleAction = "walk";
@@ -31123,7 +31132,7 @@ function animate() {
     });
     interpolateAvatars();
     reportPositions();
-    if (Date.now() - lastUserPosReport > 200) {
+    if (Date.now() - lastUserPosReport > 50) {
       lastUserPosReport = Date.now();
       reportMyPosition();
     }
@@ -32060,24 +32069,71 @@ var myUserName = localStorage.getItem("monitor-userName") || "\u8BBF\u5BA2" + my
 var thirdPerson = false;
 var selfAvatar = null;
 var walkPos = new Vector3(25, 30, 35);
+function buildRobotAvatar(color) {
+  const group = new Group();
+  const mat2 = new MeshStandardMaterial({ color, roughness: 0.5 });
+  const eyeWhite = new MeshStandardMaterial({ color: 16777215, roughness: 0.3 });
+  const eyePupil = new MeshStandardMaterial({ color: 1118481 });
+  const darkMat = new MeshStandardMaterial({ color: 3355443 });
+  const body = new Mesh(new CylinderGeometry(0.22, 0.25, 0.6, 12), mat2);
+  body.position.y = 0.3;
+  body.castShadow = true;
+  group.add(body);
+  const head = new Mesh(new SphereGeometry(0.2, 12, 10), mat2);
+  head.position.y = 0.75;
+  head.castShadow = true;
+  group.add(head);
+  [-1, 1].forEach((side) => {
+    const eye = new Mesh(new SphereGeometry(0.06, 8, 6), eyeWhite);
+    eye.position.set(side * 0.08, 0.78, 0.16);
+    group.add(eye);
+    const pupil = new Mesh(new SphereGeometry(0.03, 8, 6), eyePupil);
+    pupil.position.set(side * 0.08, 0.78, 0.2);
+    pupil.userData._isPupil = true;
+    group.add(pupil);
+  });
+  const antenna = new Mesh(new CylinderGeometry(0.015, 0.015, 0.15, 6), darkMat);
+  antenna.position.y = 0.95;
+  group.add(antenna);
+  const antennaBall = new Mesh(new SphereGeometry(0.04, 8, 6), new MeshBasicMaterial({ color }));
+  antennaBall.position.y = 1.05;
+  group.add(antennaBall);
+  [-1, 1].forEach((side) => {
+    const arm = new Mesh(new CylinderGeometry(0.04, 0.035, 0.35, 6), mat2);
+    arm.position.set(side * 0.28, 0.35, 0);
+    arm.userData._isArm = true;
+    arm.userData.side = side;
+    group.add(arm);
+  });
+  [-1, 1].forEach((side) => {
+    const leg = new Mesh(new CylinderGeometry(0.05, 0.045, 0.2, 6), darkMat);
+    leg.position.set(side * 0.1, 0.1, 0);
+    group.add(leg);
+  });
+  return group;
+}
+function createUserAvatar(userId, color) {
+  const group = buildRobotAvatar(color || "#53d8fb");
+  const canvas = document.createElement("canvas");
+  canvas.width = 128;
+  canvas.height = 32;
+  const tex = new CanvasTexture(canvas);
+  tex.minFilter = LinearFilter;
+  const label = new Sprite(new SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+  label.position.y = 1.3;
+  label.scale.set(1.5, 0.375, 1);
+  label.userData._canvas = canvas;
+  label.userData._tex = tex;
+  group.add(label);
+  group.userData._label = label;
+  scene.add(group);
+  return group;
+}
 function createSelfAvatar() {
   if (selfAvatar) return;
-  const group = new Group();
-  const body = new Mesh(
-    new ConeGeometry(0.35, 0.7, 8),
-    new MeshBasicMaterial({ color: 16766720 })
-  );
-  body.rotation.x = Math.PI;
-  body.position.y = 0.35;
-  group.add(body);
-  const dir = new Mesh(
-    new SphereGeometry(0.1, 8, 6),
-    new MeshBasicMaterial({ color: 16777215 })
-  );
-  dir.position.set(0, 0.35, -0.4);
-  group.add(dir);
+  const group = buildRobotAvatar(16766720);
   const ring = new Mesh(
-    new RingGeometry(0.4, 0.55, 24),
+    new RingGeometry(0.35, 0.5, 24),
     new MeshBasicMaterial({ color: 16766720, transparent: true, opacity: 0.4, side: DoubleSide })
   );
   ring.rotation.x = -Math.PI / 2;
@@ -32107,37 +32163,7 @@ setInterval(calibrateTime, 3e4);
 function serverNow() {
   return Date.now() + serverTimeOffset;
 }
-var INTERP_DELAY = 100;
-function createUserAvatar(userId, color) {
-  const group = new Group();
-  const body = new Mesh(
-    new ConeGeometry(0.3, 0.6, 8),
-    new MeshBasicMaterial({ color: color || "#53d8fb" })
-  );
-  body.rotation.x = Math.PI;
-  body.position.y = 0.3;
-  group.add(body);
-  const dir = new Mesh(
-    new SphereGeometry(0.08, 8, 6),
-    new MeshBasicMaterial({ color: 16777215 })
-  );
-  dir.position.set(0, 0.3, -0.35);
-  group.add(dir);
-  const canvas = document.createElement("canvas");
-  canvas.width = 128;
-  canvas.height = 32;
-  const tex = new CanvasTexture(canvas);
-  tex.minFilter = LinearFilter;
-  const label = new Sprite(new SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
-  label.position.y = 1;
-  label.scale.set(1.5, 0.375, 1);
-  label.userData._canvas = canvas;
-  label.userData._tex = tex;
-  group.add(label);
-  group.userData._label = label;
-  scene.add(group);
-  return group;
-}
+var INTERP_DELAY = 50;
 function updateAvatarLabel(avatar, name) {
   const label = avatar.userData._label;
   if (!label) return;
