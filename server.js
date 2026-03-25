@@ -107,12 +107,16 @@ app.post('/api/users/position', (req, res) => {
 
 // Get all connected users
 app.get('/api/users', (req, res) => {
-  // Clean up stale users (no update for 10s)
   const now = Date.now();
   for (const [id, u] of Object.entries(connectedUsers)) {
     if (now - u.lastSeen > 10000) delete connectedUsers[id];
   }
-  res.json({ users: connectedUsers });
+  res.json({ users: connectedUsers, serverTime: now });
+});
+
+// Time sync endpoint (for NTP-like clock calibration)
+app.get('/api/time', (req, res) => {
+  res.json({ serverTime: Date.now() });
 });
 
 // ===== Feature 2: World Chat =====
@@ -134,34 +138,36 @@ app.get('/api/chat/messages', (req, res) => {
   res.json({ messages: chatMessages });
 });
 
-// Broadcast user positions to all SSE clients every 200ms
+// Broadcast user positions to all SSE clients every 100ms (game-quality rate)
 setInterval(() => {
   if (sseClients.size === 0) return;
   const now = Date.now();
-  // Clean stale
+  // Clean stale users
   for (const [id, u] of Object.entries(connectedUsers)) {
     if (now - u.lastSeen > 10000) delete connectedUsers[id];
   }
-  if (Object.keys(connectedUsers).length > 0) {
-    broadcast({ type: 'users', data: connectedUsers });
+  const users = Object.keys(connectedUsers);
+  if (users.length > 0) {
+    // Include server timestamp for client-side time sync
+    broadcast({ type: 'users', data: connectedUsers, serverTime: now });
   }
   // Auto-generate join/leave chat messages
-  const currentCount = Object.keys(connectedUsers).length;
+  const currentCount = users.length;
   if (currentCount !== lastUserCount) {
     if (currentCount > lastUserCount && lastUserCount > 0) {
-      const msg = { userId: 'system', name: '系统', text: `🟢 有用户加入了世界 (当前${currentCount}人)`, time: Date.now(), system: true };
+      const msg = { userId: 'system', name: '系统', text: `🟢 有用户加入了世界 (当前${currentCount}人)`, time: now, system: true };
       chatMessages.push(msg);
       if (chatMessages.length > MAX_CHAT_MESSAGES) chatMessages.shift();
       broadcast({ type: 'chat', data: { chat: msg } });
     } else if (currentCount < lastUserCount) {
-      const msg = { userId: 'system', name: '系统', text: `🔴 有用户离开了世界 (当前${currentCount}人)`, time: Date.now(), system: true };
+      const msg = { userId: 'system', name: '系统', text: `🔴 有用户离开了世界 (当前${currentCount}人)`, time: now, system: true };
       chatMessages.push(msg);
       if (chatMessages.length > MAX_CHAT_MESSAGES) chatMessages.shift();
       broadcast({ type: 'chat', data: { chat: msg } });
     }
     lastUserCount = currentCount;
   }
-}, 500);
+}, 100);
 const sseClients = new Set();
 function broadcast(data) {
   const msg = `data: ${JSON.stringify(data)}\n\n`;

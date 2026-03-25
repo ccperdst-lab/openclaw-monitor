@@ -164,6 +164,25 @@ let isDraggingMinion = false;
 // Focus management: track if user is interacting with a DOM overlay
 let interactingWithOverlay = false;
 
+// Seeded random for deterministic minion behavior across clients
+function seededRandom(seed) {
+  let s = seed;
+  return function() {
+    s = (s * 1103515245 + 12345) & 0x7fffffff;
+    return s / 0x7fffffff;
+  };
+}
+function hashStr(str) {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = ((h << 5) - h + str.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
+// Get deterministic RNG for a session at the current time quantum (5s intervals)
+function getMinionRng(sessionKey) {
+  const quantum = Math.floor(Date.now() / 5000); // changes every 5 seconds
+  return seededRandom(hashStr(sessionKey) + quantum);
+}
+
 // ===== Server State Persistence =====
 let serverState = null; // loaded from /api/state on startup
 
@@ -2619,21 +2638,22 @@ function animate() {
     }
     ud.idleTimer -= dt;
     if (ud.idleTimer <= 0 && !ud.isSitting && !ud.isSleeping) {
+      const rng = getMinionRng(ud.sessionKey);
       // Sitting: 30% chance when picking 'stand'
-      if (Math.random() < 0.3 && ud.continentIdx >= 0) {
+      if (rng() < 0.3 && ud.continentIdx >= 0) {
         const chairTargets = [
           [ud.continentHx - 1.5 - 1.1, ud.continentHz + 1],
           [ud.continentHx - 1.5 + 1.1, ud.continentHz + 1],
           [ud.continentCx - 5, ud.continentCz + 1],
         ];
-        const pick = chairTargets[Math.floor(Math.random() * chairTargets.length)];
+        const pick = chairTargets[Math.floor(rng() * chairTargets.length)];
         ud.targetX = pick[0]; ud.targetZ = pick[1];
         ud.idleAction = 'walk'; ud.idleTimer = 8;
         ud.sitTarget = { x: pick[0], z: pick[1] };
         return;
       }
       // Sleeping: at night, 40% chance to walk to bed
-      if (sun.intensity < 0.5 && Math.random() < 0.4 && ud.continentIdx >= 0) {
+      if (sun.intensity < 0.5 && rng() < 0.4 && ud.continentIdx >= 0) {
         ud.targetX = ud.continentHx + 1.5;
         ud.targetZ = ud.continentHz - 0.8;
         ud.idleAction = 'walk'; ud.idleTimer = 10;
@@ -2641,7 +2661,7 @@ function animate() {
         return;
       }
       // Normal behavior
-      const roll = Math.random();
+      const roll = rng();
       if (roll < 0.4 && ud.bounds) {
         const cx2 = (ud.bounds.minX + ud.bounds.maxX) / 2;
         const cz2 = (ud.bounds.minZ + ud.bounds.maxZ) / 2;
@@ -2656,16 +2676,16 @@ function animate() {
           [cx2 - 2, cz2 + 5],   // front yard
           [cx2 + 3, cz2 + 6],   // open area
         ];
-        const pick = targets[Math.floor(Math.random() * targets.length)];
-        ud.targetX = pick[0] + (Math.random() - 0.5) * 2;
-        ud.targetZ = pick[1] + (Math.random() - 0.5) * 2;
-        ud.idleAction = 'walk'; ud.idleTimer = 4 + Math.random() * 6;
+        const pick = targets[Math.floor(rng() * targets.length)];
+        ud.targetX = pick[0] + (rng() - 0.5) * 2;
+        ud.targetZ = pick[1] + (rng() - 0.5) * 2;
+        ud.idleAction = 'walk'; ud.idleTimer = 4 + rng() * 6;
       } else if (roll < 0.7 && ud.bounds) {
-        ud.targetX = m.position.x + (Math.random() - 0.5) * 4;
-        ud.targetZ = m.position.z + (Math.random() - 0.5) * 4;
-        ud.idleAction = 'walk'; ud.idleTimer = 2 + Math.random() * 4;
+        ud.targetX = m.position.x + (rng() - 0.5) * 4;
+        ud.targetZ = m.position.z + (rng() - 0.5) * 4;
+        ud.idleAction = 'walk'; ud.idleTimer = 2 + rng() * 4;
       } else {
-        ud.idleAction = 'stand'; ud.idleTimer = 3 + Math.random() * 5;
+        ud.idleAction = 'stand'; ud.idleTimer = 3 + rng() * 5;
       }
       if (ud.bounds) {
         ud.targetX = Math.max(ud.bounds.minX + 1, Math.min(ud.bounds.maxX - 1, ud.targetX));
@@ -2940,12 +2960,8 @@ function animate() {
     updateBubblePosition(m, time);
   });
 
-  // Interpolate remote user avatars toward target positions
-  for (const [uid, av] of Object.entries(userAvatars)) {
-    if (av.targetPos) {
-      av.mesh.position.lerp(av.targetPos, 0.2); // smooth 20% per frame
-    }
-  }
+  // Interpolate remote user avatars (game-quality buffer interpolation)
+  interpolateAvatars();
 
   // Report positions to server periodically
   reportPositions();
@@ -4113,8 +4129,28 @@ function createSelfAvatar() {
 }
 createSelfAvatar();
 
-const userAvatars = {}; // userId -> { mesh, label, lastUpdate }
+const userAvatars = {}; // userId -> { mesh, posBuffer: [{x,y,z,time}], velocity, lastUpdate }
 let lastUserPosReport = 0;
+
+// Time sync: calibrate client-server clock offset
+let serverTimeOffset = 0;
+async function calibrateTime() {
+  try {
+    const t1 = Date.now();
+    const resp = await fetch('/api/time');
+    const data = await resp.json();
+    const t2 = Date.now();
+    const rtt = t2 - t1;
+    serverTimeOffset = data.serverTime - (t1 + rtt / 2);
+  } catch {}
+}
+calibrateTime();
+setInterval(calibrateTime, 30000); // recalibrate every 30s
+
+function serverNow() { return Date.now() + serverTimeOffset; }
+
+// Interpolation delay: render 100ms in the past for smooth interpolation
+const INTERP_DELAY = 100;
 
 // Create avatar mesh for a remote user
 function createUserAvatar(userId, color) {
@@ -4167,19 +4203,17 @@ function updateAvatarLabel(avatar, name) {
 
 // Handle user position updates from SSE
 function handleUsersUpdate(usersData) {
-  const now = Date.now();
+  const now = serverNow();
   for (const [userId, data] of Object.entries(usersData)) {
-    if (userId === myUserId) continue; // skip self
+    if (userId === myUserId) continue;
     if (!userAvatars[userId]) {
-      userAvatars[userId] = { mesh: createUserAvatar(userId, data.color), lastUpdate: now, targetPos: null, velocity: null };
+      userAvatars[userId] = { mesh: createUserAvatar(userId, data.color), posBuffer: [], lastUpdate: now };
     }
     const avatar = userAvatars[userId];
     avatar.lastUpdate = now;
-    // Store target for smooth interpolation in animate loop
-    const newPos = new THREE.Vector3(data.x || 0, data.y || 0, data.z || 0);
-    if (avatar.targetPos) avatar.velocity = newPos.clone().sub(avatar.targetPos);
-    avatar.targetPos = newPos;
-    avatar.mesh.rotation.y = data.yaw || 0;
+    // Push new position to buffer (max 10)
+    avatar.posBuffer.push({ x: data.x || 0, y: data.y || 0, z: data.z || 0, yaw: data.yaw || 0, time: now });
+    if (avatar.posBuffer.length > 10) avatar.posBuffer.shift();
     updateAvatarLabel(avatar.mesh, data.name || userId);
   }
   // Remove stale avatars
@@ -4190,6 +4224,38 @@ function handleUsersUpdate(usersData) {
     }
   }
 }
+
+// Game-quality position interpolation (called every frame)
+function interpolateAvatars() {
+  const renderTime = serverNow() - INTERP_DELAY;
+  for (const [uid, av] of Object.entries(userAvatars)) {
+    const buf = av.posBuffer;
+    if (buf.length === 0) continue;
+    if (buf.length === 1) {
+      av.mesh.position.set(buf[0].x, buf[0].y, buf[0].z);
+      av.mesh.rotation.y = buf[0].yaw;
+      continue;
+    }
+    // Find bracketing samples
+    let before = buf[0], after = buf[buf.length - 1];
+    for (let i = 0; i < buf.length - 1; i++) {
+      if (buf[i].time <= renderTime && buf[i + 1].time >= renderTime) {
+        before = buf[i]; after = buf[i + 1]; break;
+      }
+    }
+    if (renderTime > after.time) before = after;
+    if (renderTime < before.time) after = before;
+    const range = after.time - before.time;
+    const t = range > 0 ? Math.max(0, Math.min(1, (renderTime - before.time) / range)) : 0;
+    av.mesh.position.set(
+      before.x + (after.x - before.x) * t,
+      before.y + (after.y - before.y) * t,
+      before.z + (after.z - before.z) * t
+    );
+    av.mesh.rotation.y = before.yaw + (after.yaw - before.yaw) * t;
+  }
+}
+
 
 // Report my camera position to server
 function reportMyPosition() {
