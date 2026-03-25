@@ -28916,7 +28916,11 @@ window.addEventListener("keydown", (e) => {
   else if (e.code === "KeyR") toggleRain();
   else if (e.code === "KeyV") {
     thirdPerson = !thirdPerson;
+    if (!selfAvatar) createSelfAvatar();
     if (selfAvatar) selfAvatar.visible = thirdPerson;
+    if (thirdPerson) {
+      walkPos.y = 1.5;
+    }
   } else if (e.code === "KeyT") {
     e.preventDefault();
     toggleChatPanel();
@@ -29734,6 +29738,15 @@ function initWorld(worldData) {
     const c = scene.children[i];
     if (c.isLight) continue;
     if (c.userData?._atmosphere) continue;
+    if (c === selfAvatar) continue;
+    let isUserAvatar = false;
+    for (const av of Object.values(userAvatars)) {
+      if (av.mesh === c) {
+        isUserAvatar = true;
+        break;
+      }
+    }
+    if (isUserAvatar) continue;
     scene.remove(c);
   }
   Object.values(bubbles).forEach((el) => el.remove());
@@ -30761,7 +30774,7 @@ function checkMinionGreetings(dt) {
       const dist = Math.sqrt(dx * dx + dz * dz);
       if (dist < 3 && dist > 0.3 && Math.random() < 0.15 * dt) {
         a.userData.isGreeting = true;
-        a.userData.greetingTimer = 1 + Math.random();
+        a.userData.greetingTimer = 1 + getMinionRng(a.userData.sessionKey)();
         a.rotation.y = Math.atan2(b.position.x - a.position.x, b.position.z - a.position.z);
         break;
       }
@@ -30809,17 +30822,19 @@ function animate() {
       selfAvatar.position.set(walkPos.x, 0, walkPos.z);
       selfAvatar.rotation.y = yaw;
       selfAvatar.visible = true;
-      const dist = 5;
+      const dist = 4;
       const camX = walkPos.x - Math.sin(yaw) * dist * Math.cos(pitch);
-      const camY = walkPos.y + 2 + Math.sin(-pitch) * dist * 0.5;
+      const camY = 1.5 + Math.sin(-pitch) * dist * 0.8;
       const camZ = walkPos.z - Math.cos(yaw) * dist * Math.cos(pitch);
       camera.position.set(camX, camY, camZ);
+      const lookDirX = Math.sin(yaw);
+      const lookDirY = Math.sin(pitch);
       selfAvatar.children.forEach((c) => {
         if (c.userData?._isPupil) {
-          const baseZ = 0.2;
-          const lookDir = new Vector3(Math.sin(yaw), 0, Math.cos(yaw));
-          c.position.z = baseZ + lookDir.z * 0.02;
-          c.position.x = (c.position.x > 0 ? 1 : -1) * 0.08 + lookDir.x * 0.015;
+          const side = c.position.x > 0 ? 1 : -1;
+          c.position.x = side * 0.08 + lookDirX * 0.015;
+          c.position.y = 0.78 + lookDirY * 0.015;
+          c.position.z = 0.2 + Math.cos(yaw) * 0.015;
         }
       });
     } else {
@@ -30918,7 +30933,7 @@ function animate() {
         const sdz = ud.sitTarget.z - m.position.z;
         if (Math.sqrt(sdx * sdx + sdz * sdz) < 0.5) {
           ud.isSitting = true;
-          ud.sitTimer = 5 + Math.random() * 5;
+          ud.sitTimer = 5 + getMinionRng(ud.sessionKey)() * 5;
           ud.idleAction = "stand";
         }
       }

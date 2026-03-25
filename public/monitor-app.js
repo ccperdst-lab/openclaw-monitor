@@ -553,7 +553,12 @@ window.addEventListener('keydown', e => {
   else if (e.code === 'Space') { keys.space = true; e.preventDefault(); }
   else if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') keys.shift = true;
   else if (e.code === 'KeyR') toggleRain();
-  else if (e.code === 'KeyV') { thirdPerson = !thirdPerson; if (selfAvatar) selfAvatar.visible = thirdPerson; }
+  else if (e.code === 'KeyV') {
+    thirdPerson = !thirdPerson;
+    if (!selfAvatar) createSelfAvatar();
+    if (selfAvatar) selfAvatar.visible = thirdPerson;
+    if (thirdPerson) { walkPos.y = 1.5; } // reset to reasonable height
+  }
   else if (e.code === 'KeyT') { e.preventDefault(); toggleChatPanel(); }
 });
 window.addEventListener('keyup', e => {
@@ -1424,11 +1429,16 @@ function initWorld(worldData) {
     }
   }
 
-  // Clear old scene objects (keep lights, camera, and atmosphere elements)
+  // Clear old scene objects (keep lights, camera, atmosphere, and user avatars)
   for (let i = scene.children.length - 1; i >= 0; i--) {
     const c = scene.children[i];
     if (c.isLight) continue;
-    if (c.userData?._atmosphere) continue; // protect atmosphere elements
+    if (c.userData?._atmosphere) continue;
+    if (c === selfAvatar) continue; // protect self avatar
+    // Check if it's a user avatar
+    let isUserAvatar = false;
+    for (const av of Object.values(userAvatars)) { if (av.mesh === c) { isUserAvatar = true; break; } }
+    if (isUserAvatar) continue;
     scene.remove(c);
   }
   // Clear old bubbles
@@ -2535,7 +2545,7 @@ function checkMinionGreetings(dt) {
       if (dist < 3 && dist > 0.3 && Math.random() < 0.15 * dt) {
         // A looks at B briefly
         a.userData.isGreeting = true;
-        a.userData.greetingTimer = 1 + Math.random();
+        a.userData.greetingTimer = 1 + getMinionRng(a.userData.sessionKey)();
         a.rotation.y = Math.atan2(b.position.x - a.position.x, b.position.z - a.position.z);
         break;
       }
@@ -2592,23 +2602,25 @@ function animate() {
 
   // Set camera based on mode
   if (thirdPerson && selfAvatar) {
-    // Third-person: avatar at walkPos, camera behind
+    // Third-person: avatar at walkPos, camera behind and above
     selfAvatar.position.set(walkPos.x, 0, walkPos.z);
     selfAvatar.rotation.y = yaw;
     selfAvatar.visible = true;
-    // Camera orbits around avatar based on yaw/pitch
-    const dist = 5;
+    // Camera orbits around avatar
+    const dist = 4;
     const camX = walkPos.x - Math.sin(yaw) * dist * Math.cos(pitch);
-    const camY = walkPos.y + 2 + Math.sin(-pitch) * dist * 0.5;
+    const camY = 1.5 + Math.sin(-pitch) * dist * 0.8; // 1.5 above ground, pitch controls height
     const camZ = walkPos.z - Math.cos(yaw) * dist * Math.cos(pitch);
     camera.position.set(camX, camY, camZ);
-    // Eye tracking: pupils follow camera direction
+    // Eye tracking: pupils follow camera (both X and Y)
+    const lookDirX = Math.sin(yaw);
+    const lookDirY = Math.sin(pitch);
     selfAvatar.children.forEach(c => {
       if (c.userData?._isPupil) {
-        const baseZ = 0.2;
-        const lookDir = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
-        c.position.z = baseZ + lookDir.z * 0.02;
-        c.position.x = (c.position.x > 0 ? 1 : -1) * 0.08 + lookDir.x * 0.015;
+        const side = c.position.x > 0 ? 1 : -1;
+        c.position.x = side * 0.08 + lookDirX * 0.015;
+        c.position.y = 0.78 + lookDirY * 0.015;
+        c.position.z = 0.2 + Math.cos(yaw) * 0.015;
       }
     });
   } else {
@@ -2708,7 +2720,7 @@ function animate() {
       const sdz = ud.sitTarget.z - m.position.z;
       if (Math.sqrt(sdx * sdx + sdz * sdz) < 0.5) {
         ud.isSitting = true;
-        ud.sitTimer = 5 + Math.random() * 5;
+        ud.sitTimer = 5 + getMinionRng(ud.sessionKey)() * 5;
         ud.idleAction = 'stand';
       }
     }
