@@ -12,3 +12,6 @@ display:
 mcp:
   enabled: true
   port: 7777  # MCP server uses the same monitor server for API calls
+
+auth:
+  enabled: false  # set true to require token auth

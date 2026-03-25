@@ -2,6 +2,137 @@ import * as THREE from 'three';
 
 // ===== Globals =====
 const container = document.getElementById('scene3d');
+
+// ===== Feature 3: Auth Token Helper =====
+let authToken = localStorage.getItem('monitor-authToken') || '';
+function authFetch(url, options = {}) {
+  const sep = url.includes('?') ? '&' : '?';
+  const fullUrl = authToken ? `${url}${sep}token=${encodeURIComponent(authToken)}` : url;
+  return fetch(fullUrl, options);
+}
+
+// Check auth on load
+async function checkAuth() {
+  try {
+    const res = await fetch('/api/world');
+    if (res.status === 401) {
+      // Show login overlay
+      document.getElementById('login-overlay').classList.add('show');
+      return false;
+    }
+    return true;
+  } catch {
+    return true; // if server unreachable, let it proceed
+  }
+}
+
+// Login handler
+document.getElementById('login-btn').addEventListener('click', async () => {
+  const token = document.getElementById('login-token').value.trim();
+  if (!token) return;
+  try {
+    const res = await fetch(`/api/auth/verify?token=${encodeURIComponent(token)}`);
+    const data = await res.json();
+    if (data.valid || !data.authRequired) {
+      localStorage.setItem('monitor-authToken', token);
+      authToken = token;
+      document.getElementById('login-overlay').classList.remove('show');
+      location.reload();
+    } else {
+      document.getElementById('login-err').textContent = '令牌无效，请重试';
+    }
+  } catch {
+    document.getElementById('login-err').textContent = '连接失败';
+  }
+});
+document.getElementById('login-token').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') document.getElementById('login-btn').click();
+});
+
+// ===== Feature 2: World Chat Panel =====
+let chatPanelOpen = false;
+let chatMessagesData = [];
+
+// Chat panel toggle
+document.getElementById('chat-close').addEventListener('click', (e) => {
+  e.stopPropagation();
+  toggleChatPanel();
+});
+document.getElementById('chat-panel').addEventListener('mousedown', (e) => e.stopPropagation());
+
+function toggleChatPanel() {
+  chatPanelOpen = !chatPanelOpen;
+  const panel = document.getElementById('chat-panel');
+  if (chatPanelOpen) {
+    panel.classList.add('show');
+    // Fetch existing messages
+    authFetch('/api/chat/messages').then(r => r.json()).then(data => {
+      if (data.messages) {
+        chatMessagesData = data.messages;
+        renderChatMessages();
+      }
+    }).catch(() => {});
+  } else {
+    panel.classList.remove('show');
+  }
+}
+
+function handleChatMessage(msg) {
+  chatMessagesData.push(msg);
+  if (chatMessagesData.length > 100) chatMessagesData.shift();
+  if (chatPanelOpen) renderChatMessages();
+}
+
+function renderChatMessages() {
+  const container = document.getElementById('chat-msgs');
+  const wasAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 40;
+  container.innerHTML = chatMessagesData.map(msg => {
+    if (msg.system || msg.userId === 'system') {
+      return `<div class="cp-msg system">${esc(msg.text)}</div>`;
+    }
+    const nameColor = msg.userId === myUserId ? '#53d8fb' : (getNameColor(msg.userId) || '#a78bfa');
+    return `<div class="cp-msg"><span class="cp-name" style="color:${nameColor}">${esc(msg.name)}</span><span class="cp-text">${esc(msg.text)}</span></div>`;
+  }).join('');
+  if (wasAtBottom) container.scrollTop = container.scrollHeight;
+}
+
+function getNameColor(userId) {
+  // Simple hash to assign color
+  const colors = ['#53d8fb','#f472b6','#34d399','#fbbf24','#a78bfa','#f87171','#38bdf8','#fb923c'];
+  let hash = 0;
+  for (let i = 0; i < userId.length; i++) hash = ((hash << 5) - hash + userId.charCodeAt(i)) | 0;
+  return colors[Math.abs(hash) % colors.length];
+}
+
+// Send chat message
+function sendChatMessage() {
+  const input = document.getElementById('chat-input');
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  authFetch('/api/chat/send', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId: myUserId, name: myUserName, text })
+  }).catch(() => {});
+}
+
+document.getElementById('chat-send').addEventListener('click', (e) => {
+  e.stopPropagation();
+  sendChatMessage();
+});
+
+const chatInput = document.getElementById('chat-input');
+chatInput.addEventListener('keydown', (e) => {
+  e.stopPropagation();
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    sendChatMessage();
+  }
+});
+chatInput.addEventListener('focus', () => { interactingWithOverlay = true; });
+chatInput.addEventListener('blur', () => { interactingWithOverlay = false; });
+chatInput.addEventListener('mousedown', (e) => e.stopPropagation());
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x7ec8e3);
 scene.fog = new THREE.FogExp2(0x7ec8e3, 0.008);
@@ -403,6 +534,7 @@ window.addEventListener('keydown', e => {
   else if (e.code === 'Space') { keys.space = true; e.preventDefault(); }
   else if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') keys.shift = true;
   else if (e.code === 'KeyR') toggleRain();
+  else if (e.code === 'KeyV') { thirdPerson = !thirdPerson; if (selfAvatar) selfAvatar.visible = thirdPerson; }
 });
 window.addEventListener('keyup', e => {
   if (isInputFocused() || interactingWithOverlay) return;
@@ -1310,7 +1442,7 @@ function initWorld(worldData) {
         if (!profile.heightScale) profile.heightScale = 0.8 + Math.random() * 0.4;
         if (!profile.widthScale) profile.widthScale = 0.9 + Math.random() * 0.2;
         // Save
-        fetch('/api/minion-profiles', {
+        authFetch('/api/minion-profiles', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ [sess.key]: profile })
         }).catch(() => {});
@@ -1786,7 +1918,8 @@ function showBubble(m) {
 let eventSource = null;
 function connectSSE() {
   if (eventSource) eventSource.close();
-  eventSource = new EventSource('/api/events');
+  const sseUrl = authToken ? `/api/events?token=${encodeURIComponent(authToken)}` : '/api/events';
+  eventSource = new EventSource(sseUrl);
   eventSource.onmessage = (e) => {
     try {
       const msg = JSON.parse(e.data);
@@ -1798,6 +1931,8 @@ function connectSSE() {
         handleControl(msg.data);
       } else if (msg.type === 'users') {
         handleUsersUpdate(msg.data);
+      } else if (msg.type === 'chat') {
+        handleChatMessage(msg.data.chat);
       }
     } catch {}
   };
@@ -1813,7 +1948,7 @@ function startBubbleRefresh(minion) {
   if (bubbleRefreshTimers[sk]) return; // already running
 
   // Immediate first refresh
-  fetch(`/api/messages/${minion.userData.sessionId}`)
+  authFetch(`/api/messages/${minion.userData.sessionId}`)
     .then(r => r.json())
     .then(data => {
       if (!data.messages || data.messages.length === 0) return;
@@ -1832,7 +1967,7 @@ function startBubbleRefresh(minion) {
       return;
     }
     // Fetch latest messages and update bubble
-    fetch(`/api/messages/${minion.userData.sessionId}`)
+    authFetch(`/api/messages/${minion.userData.sessionId}`)
       .then(r => r.json())
       .then(data => {
         if (!data.messages || data.messages.length === 0) return;
@@ -1941,7 +2076,7 @@ function handleEvent(ev) {
     }
     // Do one final refresh after 2s to catch any trailing data
     setTimeout(() => {
-      fetch(`/api/messages/${m.userData.sessionId}`)
+      authFetch(`/api/messages/${m.userData.sessionId}`)
         .then(r => r.json())
         .then(data => { if (data.messages) { applyMessagesToMinion(m, data.messages); updateBubbleContent(m); } })
         .catch(() => {});
@@ -2166,7 +2301,7 @@ function reportPositions() {
       bounds: ud.bounds,
     };
   }
-  fetch('/api/minions/positions', {
+  authFetch('/api/minions/positions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ positions })
@@ -2279,7 +2414,7 @@ window.addEventListener('click', (e) => {
         hideBubble(target.userData.sessionKey);
       } else {
         // Load messages from API
-        fetch(`/api/messages/${target.userData.sessionId}`).then(r => r.json()).then(data => {
+        authFetch(`/api/messages/${target.userData.sessionId}`).then(r => r.json()).then(data => {
           if (data.messages) {
             const last = data.messages.filter(m => m.role === 'user').pop();
             if (last) target.userData.userMsg = last.text || '';
@@ -2441,6 +2576,18 @@ function animate() {
     Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch)
   ));
   camera.lookAt(lookTarget);
+
+  // Third-person camera
+  if (thirdPerson && selfAvatar) {
+    // Avatar stands at the "first-person" position
+    selfAvatar.position.set(camera.position.x, 0, camera.position.z);
+    selfAvatar.rotation.y = yaw;
+    // Camera pulls back and up
+    const behind = new THREE.Vector3(-Math.sin(yaw) * 5, 2, -Math.cos(yaw) * 5);
+    const targetCamPos = camera.position.clone().add(behind);
+    camera.position.lerp(targetCamPos, 0.15);
+    camera.lookAt(selfAvatar.position.clone().add(new THREE.Vector3(0, 0.5, 0)));
+  }
 
   // Minion animations
   minions.forEach(m => {
@@ -2961,7 +3108,7 @@ window.runCmd = function() {
   const cmd = inp.value.trim();
   if (!cmd) return;
   out.style.display = 'block'; out.textContent = 'Running...';
-  fetch('/api/cli', {
+  authFetch('/api/cli', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ cmd })
   }).then(r => r.json()).then(d => { out.textContent = d.output || d.error || 'No output'; })
@@ -2987,7 +3134,7 @@ window.sendDirectChat = function(sessionKey, inputEl) {
   showBubble(minion);
 
   // Send to server
-  fetch(`/api/chat/${sessionId}`, {
+  authFetch(`/api/chat/${sessionId}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ text })
@@ -3922,6 +4069,42 @@ const myUserId = localStorage.getItem('monitor-userId') || ('user-' + Math.rando
 localStorage.setItem('monitor-userId', myUserId);
 const myUserName = localStorage.getItem('monitor-userName') || '访客' + myUserId.slice(-3);
 
+// ===== Third-Person Camera =====
+let thirdPerson = false;
+let selfAvatar = null;
+
+function createSelfAvatar() {
+  if (selfAvatar) return;
+  const group = new THREE.Group();
+  // Golden avatar body
+  const body = new THREE.Mesh(
+    new THREE.ConeGeometry(0.35, 0.7, 8),
+    new THREE.MeshBasicMaterial({ color: 0xffd700 })
+  );
+  body.rotation.x = Math.PI;
+  body.position.y = 0.35;
+  group.add(body);
+  // Direction indicator
+  const dir = new THREE.Mesh(
+    new THREE.SphereGeometry(0.1, 8, 6),
+    new THREE.MeshBasicMaterial({ color: 0xffffff })
+  );
+  dir.position.set(0, 0.35, -0.4);
+  group.add(dir);
+  // Glow ring under avatar
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(0.4, 0.55, 24),
+    new THREE.MeshBasicMaterial({ color: 0xffd700, transparent: true, opacity: 0.4, side: THREE.DoubleSide })
+  );
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.y = 0.02;
+  group.add(ring);
+  group.visible = false;
+  scene.add(group);
+  selfAvatar = group;
+}
+createSelfAvatar();
+
 const userAvatars = {}; // userId -> { mesh, label, lastUpdate }
 let lastUserPosReport = 0;
 
@@ -4000,7 +4183,7 @@ function handleUsersUpdate(usersData) {
 
 // Report my camera position to server
 function reportMyPosition() {
-  fetch('/api/users/position', {
+  authFetch('/api/users/position', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -4019,9 +4202,18 @@ setTimeout(() => {
   if (lo) { lo.classList.add('hidden'); setTimeout(() => lo.remove(), 600); }
 }, 3000);
 
-// Fetch server state before connecting SSE
-fetch('/api/state').then(r => r.json()).then(s => { serverState = s; }).catch(() => {}).finally(() => {
-  connectSSE();
+// Check auth, then fetch state and connect
+checkAuth().then(authOk => {
+  if (!authOk) return; // login overlay shown
+  authFetch('/api/state').then(r => {
+    if (r.status === 401) {
+      document.getElementById('login-overlay').classList.add('show');
+      return null;
+    }
+    return r.json();
+  }).then(s => { if (s) serverState = s; }).catch(() => {}).finally(() => {
+    connectSSE();
+  });
 });
 
 // Periodic server state save (every 5s)
@@ -4050,7 +4242,7 @@ function maybeSaveServerState(dt) {
     const el = bubbles[sk];
     if (el && el.classList.contains('show') && !el._dismissed) openBubbles.push(sk);
   }
-  fetch('/api/state', {
+  authFetch('/api/state', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ positions, states, openBubbles, fixedPanelSession }),
   }).catch(() => {});
@@ -4079,7 +4271,8 @@ window.addEventListener('beforeunload', () => {
     if (el && el.classList.contains('show') && !el._dismissed) openBubbles.push(sk);
   }
   const data = JSON.stringify({ positions, states, openBubbles, fixedPanelSession });
-  navigator.sendBeacon('/api/state', new Blob([data], { type: 'application/json' }));
+  const beaconUrl = authToken ? `/api/state?token=${encodeURIComponent(authToken)}` : '/api/state';
+  navigator.sendBeacon(beaconUrl, new Blob([data], { type: 'application/json' }));
 });
 
 animate();

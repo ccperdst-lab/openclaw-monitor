@@ -28,10 +28,50 @@ function loadConfig() {
 let config = loadConfig();
 const AGENTS_DIR = path.join(config.openclawRoot, 'agents');
 
+// ===== Feature 3: Simple Token Auth =====
+let authToken = null;
+function initAuth() {
+  if (!config.auth?.enabled) {
+    authToken = null;
+    return;
+  }
+  // Generate random 6-char alphanumeric token
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+  let token = '';
+  for (let i = 0; i < 6; i++) token += chars[Math.floor(Math.random() * chars.length)];
+  authToken = token;
+  console.log(`\n🔐 Auth Token: ${token}\n`);
+  // Save to file
+  try {
+    fs.writeFileSync(path.join(LOG_DIR, 'auth-token.txt'), token);
+  } catch {}
+}
+initAuth();
+
 // ===== Express App =====
 const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
+
+// Auth middleware (after static files)
+app.use((req, res, next) => {
+  if (!authToken) return next(); // auth disabled
+  // Skip auth for static files and auth verify endpoint
+  if (req.path === '/api/auth/verify') return next();
+  if (!req.path.startsWith('/api/')) return next(); // static files already served above
+
+  const token = req.query.token || req.cookies?.token;
+  if (token === authToken) return next();
+  res.status(401).json({ error: 'Unauthorized', authRequired: true });
+});
+
+// Auth verify endpoint
+app.get('/api/auth/verify', (req, res) => {
+  if (!authToken) return res.json({ authRequired: false });
+  const token = req.query.token;
+  if (token === authToken) return res.json({ authRequired: false, valid: true });
+  res.json({ authRequired: true, valid: false });
+});
 
 // ===== Logging =====
 try { fs.mkdirSync(LOG_DIR, { recursive: true }); } catch {}
@@ -75,6 +115,25 @@ app.get('/api/users', (req, res) => {
   res.json({ users: connectedUsers });
 });
 
+// ===== Feature 2: World Chat =====
+const chatMessages = []; // max 100
+const MAX_CHAT_MESSAGES = 100;
+let lastUserCount = 0;
+
+app.post('/api/chat/send', (req, res) => {
+  const { userId, name, text } = req.body;
+  if (!userId || !text) return res.status(400).json({ error: 'Missing userId or text' });
+  const msg = { userId, name: name || '匿名', text: text.slice(0, 500), time: Date.now() };
+  chatMessages.push(msg);
+  if (chatMessages.length > MAX_CHAT_MESSAGES) chatMessages.shift();
+  broadcast({ type: 'chat', data: { chat: msg } });
+  res.json({ ok: true });
+});
+
+app.get('/api/chat/messages', (req, res) => {
+  res.json({ messages: chatMessages });
+});
+
 // Broadcast user positions to all SSE clients every 500ms
 setInterval(() => {
   if (sseClients.size === 0) return;
@@ -85,6 +144,22 @@ setInterval(() => {
   }
   if (Object.keys(connectedUsers).length > 0) {
     broadcast({ type: 'users', data: connectedUsers });
+  }
+  // Auto-generate join/leave chat messages
+  const currentCount = Object.keys(connectedUsers).length;
+  if (currentCount !== lastUserCount) {
+    if (currentCount > lastUserCount && lastUserCount > 0) {
+      const msg = { userId: 'system', name: '系统', text: `🟢 有用户加入了世界 (当前${currentCount}人)`, time: Date.now(), system: true };
+      chatMessages.push(msg);
+      if (chatMessages.length > MAX_CHAT_MESSAGES) chatMessages.shift();
+      broadcast({ type: 'chat', data: { chat: msg } });
+    } else if (currentCount < lastUserCount) {
+      const msg = { userId: 'system', name: '系统', text: `🔴 有用户离开了世界 (当前${currentCount}人)`, time: Date.now(), system: true };
+      chatMessages.push(msg);
+      if (chatMessages.length > MAX_CHAT_MESSAGES) chatMessages.shift();
+      broadcast({ type: 'chat', data: { chat: msg } });
+    }
+    lastUserCount = currentCount;
   }
 }, 500);
 const sseClients = new Set();

@@ -257,6 +257,68 @@
     transition:background .15s,color .15s;z-index:1;
   }
   .dp-close:hover{background:rgba(0,0,0,0.12);color:#333}
+
+  /* Feature 2: World Chat Panel */
+  #chat-panel{
+    position:fixed;bottom:14px;left:14px;z-index:93;
+    width:300px;max-height:40vh;
+    background:rgba(8,8,24,0.92);backdrop-filter:blur(12px);
+    border:1px solid rgba(83,216,251,0.2);
+    border-radius:12px;
+    box-shadow:0 4px 24px rgba(0,0,0,0.4);
+    display:none;flex-direction:column;
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    overflow:hidden;
+  }
+  #chat-panel.show{display:flex}
+  #chat-panel .cp-hd{display:flex;align-items:center;padding:8px 12px;border-bottom:1px solid rgba(83,216,251,0.12)}
+  #chat-panel .cp-hd span{font-size:11px;font-weight:700;color:#53d8fb;flex:1}
+  #chat-panel .cp-hd button{background:none;border:none;color:#555;cursor:pointer;font-size:14px;padding:2px 6px;border-radius:4px}
+  #chat-panel .cp-hd button:hover{color:#fff;background:rgba(255,255,255,0.1)}
+  #chat-panel .cp-msgs{flex:1;overflow-y:auto;padding:6px 0;min-height:80px;max-height:30vh}
+  #chat-panel .cp-msgs::-webkit-scrollbar{width:4px}
+  #chat-panel .cp-msgs::-webkit-scrollbar-thumb{background:rgba(83,216,251,0.2);border-radius:2px}
+  .cp-msg{padding:4px 12px;font-size:11px;line-height:1.5}
+  .cp-msg .cp-name{font-weight:700;margin-right:4px}
+  .cp-msg .cp-text{color:#ccc}
+  .cp-msg.system{font-style:italic;color:#666;font-size:10px}
+  #chat-panel .cp-input{display:flex;padding:6px 8px;border-top:1px solid rgba(83,216,251,0.12);gap:4px}
+  #chat-panel .cp-input input{flex:1;padding:5px 8px;font-size:11px;background:rgba(255,255,255,0.06);border:1px solid rgba(83,216,251,0.15);border-radius:6px;color:#e0e0e0;outline:none;font-family:inherit}
+  #chat-panel .cp-input input:focus{border-color:rgba(83,216,251,0.4)}
+  #chat-panel .cp-input button{padding:5px 10px;font-size:10px;background:rgba(83,216,251,0.15);border:1px solid rgba(83,216,251,0.3);border-radius:6px;color:#53d8fb;cursor:pointer;font-family:inherit}
+  #chat-panel .cp-input button:hover{background:rgba(83,216,251,0.25)}
+
+  /* Feature 3: Login Overlay */
+  #login-overlay{
+    position:fixed;top:0;left:0;width:100%;height:100%;z-index:9999;
+    background:rgba(10,10,26,0.97);backdrop-filter:blur(8px);
+    display:none;align-items:center;justify-content:center;
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  }
+  #login-overlay.show{display:flex}
+  .login-card{
+    text-align:center;padding:36px 40px;
+    background:rgba(15,15,35,0.95);
+    border:1px solid rgba(83,216,251,0.2);
+    border-radius:16px;
+    box-shadow:0 8px 40px rgba(0,0,0,0.5);
+    min-width:300px;
+  }
+  .login-card h2{font-size:16px;color:#53d8fb;margin-bottom:8px;font-family:'Press Start 2P',monospace}
+  .login-card p{font-size:12px;color:#888;margin-bottom:20px}
+  .login-card input{
+    width:100%;padding:10px 14px;font-size:16px;text-align:center;letter-spacing:6px;
+    background:rgba(255,255,255,0.06);border:2px solid rgba(83,216,251,0.3);
+    border-radius:8px;color:#53d8fb;outline:none;font-family:monospace;margin-bottom:12px;box-sizing:border-box;
+  }
+  .login-card input:focus{border-color:#53d8fb;box-shadow:0 0 0 3px rgba(83,216,251,0.15)}
+  .login-card button{
+    width:100%;padding:10px;font-size:12px;font-weight:700;
+    background:rgba(83,216,251,0.2);border:1px solid rgba(83,216,251,0.4);
+    border-radius:8px;color:#53d8fb;cursor:pointer;font-family:'Press Start 2P',monospace;letter-spacing:1px;
+  }
+  .login-card button:hover{background:rgba(83,216,251,0.3)}
+  .login-card .login-err{color:#ef4444;font-size:10px;margin-top:8px;min-height:16px}
 </style>
 </head>
 <body>
@@ -281,7 +343,21 @@
 <button id="toggle">☰</button>
 <canvas id="minimap" width="200" height="200" style="position:fixed;bottom:14px;right:14px;z-index:90;background:rgba(8,8,24,0.75);border:2px solid rgba(83,216,251,0.3);border-radius:6px;cursor:pointer"></canvas>
 <div id="fps-badge" style="position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:90;font-size:7px;padding:3px 10px;border-radius:10px;background:rgba(8,8,24,0.7);border:1px solid rgba(83,216,251,0.15);color:#889;font-family:monospace;pointer-events:none">-- FPS</div>
-<div id="help">WASD 移动 · 鼠标拖拽转向 · 滚轮缩放 · 点击小黄人查看详情 · 双击跟踪 · R 下雨 · F1 截图 · 1-9 跳转大洲</div>
+<div id="help">WASD 移动 · 鼠标拖拽转向 · 滚轮缩放 · 点击小黄人查看详情 · 双击跟踪 · R 下雨 · V 第三人称 · T 聊天 · F1 截图 · 1-9 跳转大洲</div>
+<div id="chat-panel">
+  <div class="cp-hd"><span>💬 世界聊天</span><button id="chat-close">✕</button></div>
+  <div class="cp-msgs" id="chat-msgs"></div>
+  <div class="cp-input"><input id="chat-input" placeholder="输入消息..." /><button id="chat-send">发送</button></div>
+</div>
+<div id="login-overlay">
+  <div class="login-card">
+    <h2>🔐 AUTH</h2>
+    <p>请输入访问令牌</p>
+    <input id="login-token" type="text" maxlength="6" autocomplete="off" />
+    <button id="login-btn">验证</button>
+    <div class="login-err" id="login-err"></div>
+  </div>
+</div>
 <div id="loading-overlay">
   <div class="loading-content">
     <div class="loading-spinner"></div>

@@ -28432,6 +28432,122 @@ var WebGLRenderer = class {
 
 // app.js
 var container = document.getElementById("scene3d");
+var authToken = localStorage.getItem("monitor-authToken") || "";
+function authFetch(url, options = {}) {
+  const sep = url.includes("?") ? "&" : "?";
+  const fullUrl = authToken ? `${url}${sep}token=${encodeURIComponent(authToken)}` : url;
+  return fetch(fullUrl, options);
+}
+async function checkAuth() {
+  try {
+    const res = await fetch("/api/world");
+    if (res.status === 401) {
+      document.getElementById("login-overlay").classList.add("show");
+      return false;
+    }
+    return true;
+  } catch {
+    return true;
+  }
+}
+document.getElementById("login-btn").addEventListener("click", async () => {
+  const token = document.getElementById("login-token").value.trim();
+  if (!token) return;
+  try {
+    const res = await fetch(`/api/auth/verify?token=${encodeURIComponent(token)}`);
+    const data = await res.json();
+    if (data.valid || !data.authRequired) {
+      localStorage.setItem("monitor-authToken", token);
+      authToken = token;
+      document.getElementById("login-overlay").classList.remove("show");
+      location.reload();
+    } else {
+      document.getElementById("login-err").textContent = "\u4EE4\u724C\u65E0\u6548\uFF0C\u8BF7\u91CD\u8BD5";
+    }
+  } catch {
+    document.getElementById("login-err").textContent = "\u8FDE\u63A5\u5931\u8D25";
+  }
+});
+document.getElementById("login-token").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") document.getElementById("login-btn").click();
+});
+var chatPanelOpen = false;
+var chatMessagesData = [];
+document.getElementById("chat-close").addEventListener("click", (e) => {
+  e.stopPropagation();
+  toggleChatPanel();
+});
+document.getElementById("chat-panel").addEventListener("mousedown", (e) => e.stopPropagation());
+function toggleChatPanel() {
+  chatPanelOpen = !chatPanelOpen;
+  const panel = document.getElementById("chat-panel");
+  if (chatPanelOpen) {
+    panel.classList.add("show");
+    authFetch("/api/chat/messages").then((r) => r.json()).then((data) => {
+      if (data.messages) {
+        chatMessagesData = data.messages;
+        renderChatMessages();
+      }
+    }).catch(() => {
+    });
+  } else {
+    panel.classList.remove("show");
+  }
+}
+function handleChatMessage(msg) {
+  chatMessagesData.push(msg);
+  if (chatMessagesData.length > 100) chatMessagesData.shift();
+  if (chatPanelOpen) renderChatMessages();
+}
+function renderChatMessages() {
+  const container2 = document.getElementById("chat-msgs");
+  const wasAtBottom = container2.scrollHeight - container2.scrollTop - container2.clientHeight < 40;
+  container2.innerHTML = chatMessagesData.map((msg) => {
+    if (msg.system || msg.userId === "system") {
+      return `<div class="cp-msg system">${esc(msg.text)}</div>`;
+    }
+    const nameColor = msg.userId === myUserId ? "#53d8fb" : getNameColor(msg.userId) || "#a78bfa";
+    return `<div class="cp-msg"><span class="cp-name" style="color:${nameColor}">${esc(msg.name)}</span><span class="cp-text">${esc(msg.text)}</span></div>`;
+  }).join("");
+  if (wasAtBottom) container2.scrollTop = container2.scrollHeight;
+}
+function getNameColor(userId) {
+  const colors = ["#53d8fb", "#f472b6", "#34d399", "#fbbf24", "#a78bfa", "#f87171", "#38bdf8", "#fb923c"];
+  let hash = 0;
+  for (let i = 0; i < userId.length; i++) hash = (hash << 5) - hash + userId.charCodeAt(i) | 0;
+  return colors[Math.abs(hash) % colors.length];
+}
+function sendChatMessage() {
+  const input = document.getElementById("chat-input");
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = "";
+  authFetch("/api/chat/send", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ userId: myUserId, name: myUserName, text })
+  }).catch(() => {
+  });
+}
+document.getElementById("chat-send").addEventListener("click", (e) => {
+  e.stopPropagation();
+  sendChatMessage();
+});
+var chatInput = document.getElementById("chat-input");
+chatInput.addEventListener("keydown", (e) => {
+  e.stopPropagation();
+  if (e.key === "Enter") {
+    e.preventDefault();
+    sendChatMessage();
+  }
+});
+chatInput.addEventListener("focus", () => {
+  interactingWithOverlay = true;
+});
+chatInput.addEventListener("blur", () => {
+  interactingWithOverlay = false;
+});
+chatInput.addEventListener("mousedown", (e) => e.stopPropagation());
 var scene = new Scene();
 scene.background = new Color(8308963);
 scene.fog = new FogExp2(8308963, 8e-3);
@@ -28782,6 +28898,10 @@ window.addEventListener("keydown", (e) => {
     e.preventDefault();
   } else if (e.code === "ShiftLeft" || e.code === "ShiftRight") keys.shift = true;
   else if (e.code === "KeyR") toggleRain();
+  else if (e.code === "KeyV") {
+    thirdPerson = !thirdPerson;
+    if (selfAvatar) selfAvatar.visible = thirdPerson;
+  }
 });
 window.addEventListener("keyup", (e) => {
   if (isInputFocused() || interactingWithOverlay) return;
@@ -29618,7 +29738,7 @@ function initWorld(worldData) {
         if (!profile.color) profile.color = [16109619, 16739179, 5164484, 16770669, 11069135][Math.floor(Math.random() * 5)];
         if (!profile.heightScale) profile.heightScale = 0.8 + Math.random() * 0.4;
         if (!profile.widthScale) profile.widthScale = 0.9 + Math.random() * 0.2;
-        fetch("/api/minion-profiles", {
+        authFetch("/api/minion-profiles", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ [sess.key]: profile })
@@ -30073,7 +30193,8 @@ function showBubble(m) {
 var eventSource = null;
 function connectSSE() {
   if (eventSource) eventSource.close();
-  eventSource = new EventSource("/api/events");
+  const sseUrl = authToken ? `/api/events?token=${encodeURIComponent(authToken)}` : "/api/events";
+  eventSource = new EventSource(sseUrl);
   eventSource.onmessage = (e) => {
     try {
       const msg = JSON.parse(e.data);
@@ -30085,6 +30206,8 @@ function connectSSE() {
         handleControl(msg.data);
       } else if (msg.type === "users") {
         handleUsersUpdate(msg.data);
+      } else if (msg.type === "chat") {
+        handleChatMessage(msg.data.chat);
       }
     } catch {
     }
@@ -30098,7 +30221,7 @@ var REFRESH_INTERVAL_MS = 1500;
 function startBubbleRefresh(minion) {
   const sk = minion.userData.sessionKey;
   if (bubbleRefreshTimers[sk]) return;
-  fetch(`/api/messages/${minion.userData.sessionId}`).then((r) => r.json()).then((data) => {
+  authFetch(`/api/messages/${minion.userData.sessionId}`).then((r) => r.json()).then((data) => {
     if (!data.messages || data.messages.length === 0) return;
     applyMessagesToMinion(minion, data.messages);
     updateBubbleContent(minion);
@@ -30111,7 +30234,7 @@ function startBubbleRefresh(minion) {
       stopBubbleRefresh(sk);
       return;
     }
-    fetch(`/api/messages/${minion.userData.sessionId}`).then((r) => r.json()).then((data) => {
+    authFetch(`/api/messages/${minion.userData.sessionId}`).then((r) => r.json()).then((data) => {
       if (!data.messages || data.messages.length === 0) return;
       applyMessagesToMinion(minion, data.messages);
       updateBubbleContent(minion);
@@ -30212,7 +30335,7 @@ function handleEvent(ev) {
       showNotifyBox(ud.sessionKey, ud.userName, "\u2705 \u5B8C\u6210: " + (ev.text || "").slice(0, 50), ud.chineseName || ud.sessionLabel);
     }
     setTimeout(() => {
-      fetch(`/api/messages/${m.userData.sessionId}`).then((r) => r.json()).then((data) => {
+      authFetch(`/api/messages/${m.userData.sessionId}`).then((r) => r.json()).then((data) => {
         if (data.messages) {
           applyMessagesToMinion(m, data.messages);
           updateBubbleContent(m);
@@ -30432,7 +30555,7 @@ function reportPositions() {
       bounds: ud.bounds
     };
   }
-  fetch("/api/minions/positions", {
+  authFetch("/api/minions/positions", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ positions })
@@ -30530,7 +30653,7 @@ window.addEventListener("click", (e) => {
       if (b && b.classList.contains("show")) {
         hideBubble(target.userData.sessionKey);
       } else {
-        fetch(`/api/messages/${target.userData.sessionId}`).then((r) => r.json()).then((data) => {
+        authFetch(`/api/messages/${target.userData.sessionId}`).then((r) => r.json()).then((data) => {
           if (data.messages) {
             const last = data.messages.filter((m) => m.role === "user").pop();
             if (last) target.userData.userMsg = last.text || "";
@@ -30669,6 +30792,14 @@ function animate() {
       Math.cos(yaw) * Math.cos(pitch)
     ));
     camera.lookAt(lookTarget);
+    if (thirdPerson && selfAvatar) {
+      selfAvatar.position.set(camera.position.x, 0, camera.position.z);
+      selfAvatar.rotation.y = yaw;
+      const behind = new Vector3(-Math.sin(yaw) * 5, 2, -Math.cos(yaw) * 5);
+      const targetCamPos = camera.position.clone().add(behind);
+      camera.position.lerp(targetCamPos, 0.15);
+      camera.lookAt(selfAvatar.position.clone().add(new Vector3(0, 0.5, 0)));
+    }
     minions.forEach((m) => {
       const ud = m.userData;
       if (ud.isSitting) {
@@ -31095,7 +31226,7 @@ window.runCmd = function() {
   if (!cmd) return;
   out.style.display = "block";
   out.textContent = "Running...";
-  fetch("/api/cli", {
+  authFetch("/api/cli", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ cmd })
@@ -31120,7 +31251,7 @@ window.sendDirectChat = function(sessionKey, inputEl) {
   ud.state = "thinking";
   ud.lastEventTime = Date.now();
   showBubble(minion);
-  fetch(`/api/chat/${sessionId}`, {
+  authFetch(`/api/chat/${sessionId}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ text })
@@ -31906,6 +32037,36 @@ document.addEventListener("click", (e) => {
 var myUserId = localStorage.getItem("monitor-userId") || "user-" + Math.random().toString(36).slice(2, 8);
 localStorage.setItem("monitor-userId", myUserId);
 var myUserName = localStorage.getItem("monitor-userName") || "\u8BBF\u5BA2" + myUserId.slice(-3);
+var thirdPerson = false;
+var selfAvatar = null;
+function createSelfAvatar() {
+  if (selfAvatar) return;
+  const group = new Group();
+  const body = new Mesh(
+    new ConeGeometry(0.35, 0.7, 8),
+    new MeshBasicMaterial({ color: 16766720 })
+  );
+  body.rotation.x = Math.PI;
+  body.position.y = 0.35;
+  group.add(body);
+  const dir = new Mesh(
+    new SphereGeometry(0.1, 8, 6),
+    new MeshBasicMaterial({ color: 16777215 })
+  );
+  dir.position.set(0, 0.35, -0.4);
+  group.add(dir);
+  const ring = new Mesh(
+    new RingGeometry(0.4, 0.55, 24),
+    new MeshBasicMaterial({ color: 16766720, transparent: true, opacity: 0.4, side: DoubleSide })
+  );
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.y = 0.02;
+  group.add(ring);
+  group.visible = false;
+  scene.add(group);
+  selfAvatar = group;
+}
+createSelfAvatar();
 var userAvatars = {};
 var lastUserPosReport = 0;
 function createUserAvatar(userId, color) {
@@ -31974,7 +32135,7 @@ function handleUsersUpdate(usersData) {
   }
 }
 function reportMyPosition() {
-  fetch("/api/users/position", {
+  authFetch("/api/users/position", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -31996,11 +32157,20 @@ setTimeout(() => {
     setTimeout(() => lo.remove(), 600);
   }
 }, 3e3);
-fetch("/api/state").then((r) => r.json()).then((s) => {
-  serverState = s;
-}).catch(() => {
-}).finally(() => {
-  connectSSE();
+checkAuth().then((authOk) => {
+  if (!authOk) return;
+  authFetch("/api/state").then((r) => {
+    if (r.status === 401) {
+      document.getElementById("login-overlay").classList.add("show");
+      return null;
+    }
+    return r.json();
+  }).then((s) => {
+    if (s) serverState = s;
+  }).catch(() => {
+  }).finally(() => {
+    connectSSE();
+  });
 });
 var lastServerSave = 0;
 function maybeSaveServerState(dt) {
@@ -32027,7 +32197,7 @@ function maybeSaveServerState(dt) {
     const el = bubbles[sk];
     if (el && el.classList.contains("show") && !el._dismissed) openBubbles.push(sk);
   }
-  fetch("/api/state", {
+  authFetch("/api/state", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ positions, states, openBubbles, fixedPanelSession })
@@ -32056,7 +32226,8 @@ window.addEventListener("beforeunload", () => {
     if (el && el.classList.contains("show") && !el._dismissed) openBubbles.push(sk);
   }
   const data = JSON.stringify({ positions, states, openBubbles, fixedPanelSession });
-  navigator.sendBeacon("/api/state", new Blob([data], { type: "application/json" }));
+  const beaconUrl = authToken ? `/api/state?token=${encodeURIComponent(authToken)}` : "/api/state";
+  navigator.sendBeacon(beaconUrl, new Blob([data], { type: "application/json" }));
 });
 animate();
 /*! Bundled license information:
