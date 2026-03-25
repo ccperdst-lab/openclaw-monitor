@@ -1610,6 +1610,43 @@ function hideBubble(sessionKey) {
 // ===== Fixed Bottom Panel =====
 let fixedPanelSession = null;
 let fixedPanelEl = null;
+// Drag state (global, handlers registered once)
+let fpDragging = false, fpStartX = 0, fpStartY = 0, fpOrigLeft = 0, fpOrigBottom = 0;
+
+function clampPanelToViewport() {
+  if (!fixedPanelEl) return;
+  const rect = fixedPanelEl.getBoundingClientRect();
+  const vw = window.innerWidth, vh = window.innerHeight;
+  let left = rect.left, bottom = vh - rect.bottom;
+  left = Math.max(-rect.width + 60, Math.min(vw - 60, left));
+  bottom = Math.max(4, Math.min(vh - 60, bottom));
+  fixedPanelEl.style.left = left + 'px';
+  fixedPanelEl.style.bottom = bottom + 'px';
+  fixedPanelEl.style.transform = 'none';
+}
+
+// Global mouse handlers for fixed panel drag (registered ONCE)
+document.addEventListener('mousemove', (e) => {
+  if (!fpDragging || !fixedPanelEl) return;
+  const dx = e.clientX - fpStartX;
+  const dy = e.clientY - fpStartY;
+  fixedPanelEl.style.left = (fpOrigLeft + dx) + 'px';
+  fixedPanelEl.style.bottom = (fpOrigBottom - dy) + 'px';
+  fixedPanelEl.style.transform = 'none';
+  clampPanelToViewport();
+});
+document.addEventListener('mouseup', () => {
+  if (fpDragging) {
+    fpDragging = false;
+    if (fixedPanelEl) fixedPanelEl.style.transition = '';
+  }
+});
+window.addEventListener('blur', () => {
+  if (fpDragging) {
+    fpDragging = false;
+    if (fixedPanelEl) fixedPanelEl.style.transition = '';
+  }
+});
 
 function toggleFixedPanel(sessionKey) {
   if (fixedPanelSession === sessionKey) closeFixedPanel();
@@ -1641,24 +1678,9 @@ function openFixedPanel(sessionKey) {
     fixedPanelEl.addEventListener('mousedown', (e) => e.stopPropagation());
     fixedPanelEl.addEventListener('mouseup', (e) => e.stopPropagation());
 
-    // Drag to move the fixed panel (by header), with viewport clamping
+    // Drag to move the fixed panel (mousedown sets global state, handlers are global)
     const fpHd = fixedPanelEl.querySelector('.fp-hd');
-    let fpDragging = false, fpStartX = 0, fpStartY = 0, fpOrigLeft = 0, fpOrigBottom = 0;
     fpHd.style.cursor = 'move';
-
-    function clampPanelToViewport() {
-      if (!fixedPanelEl) return;
-      const rect = fixedPanelEl.getBoundingClientRect();
-      const vw = window.innerWidth, vh = window.innerHeight;
-      let left = rect.left, bottom = vh - rect.bottom;
-      // Clamp: at least 40px visible on each side
-      left = Math.max(-rect.width + 60, Math.min(vw - 60, left));
-      bottom = Math.max(4, Math.min(vh - 60, bottom));
-      fixedPanelEl.style.left = left + 'px';
-      fixedPanelEl.style.bottom = bottom + 'px';
-      fixedPanelEl.style.transform = 'none';
-    }
-
     fpHd.addEventListener('mousedown', (e) => {
       if (e.target.tagName === 'BUTTON') return;
       fpDragging = true;
@@ -1670,30 +1692,6 @@ function openFixedPanel(sessionKey) {
       fixedPanelEl.style.transition = 'none';
       e.preventDefault();
       e.stopPropagation();
-    });
-    document.addEventListener('mousemove', (e) => {
-      if (!fpDragging) return;
-      const dx = e.clientX - fpStartX;
-      const dy = e.clientY - fpStartY;
-      fixedPanelEl.style.left = (fpOrigLeft + dx) + 'px';
-      fixedPanelEl.style.bottom = (fpOrigBottom - dy) + 'px';
-      fixedPanelEl.style.transform = 'none';
-      clampPanelToViewport();
-    });
-    window.addEventListener('mouseup', () => {
-      if (fpDragging) {
-        fpDragging = false;
-        fixedPanelEl.style.transition = '';
-        clampPanelToViewport();
-      }
-    });
-    // Also stop drag on window blur (user switches tabs/apps)
-    window.addEventListener('blur', () => {
-      if (fpDragging) {
-        fpDragging = false;
-        fixedPanelEl.style.transition = '';
-        clampPanelToViewport();
-      }
     });
     // Double-click header to reset position
     fpHd.addEventListener('dblclick', (e) => {

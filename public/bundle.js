@@ -29872,6 +29872,43 @@ function hideBubble(sessionKey) {
 }
 var fixedPanelSession = null;
 var fixedPanelEl = null;
+var fpDragging = false;
+var fpStartX = 0;
+var fpStartY = 0;
+var fpOrigLeft = 0;
+var fpOrigBottom = 0;
+function clampPanelToViewport() {
+  if (!fixedPanelEl) return;
+  const rect = fixedPanelEl.getBoundingClientRect();
+  const vw = window.innerWidth, vh = window.innerHeight;
+  let left = rect.left, bottom = vh - rect.bottom;
+  left = Math.max(-rect.width + 60, Math.min(vw - 60, left));
+  bottom = Math.max(4, Math.min(vh - 60, bottom));
+  fixedPanelEl.style.left = left + "px";
+  fixedPanelEl.style.bottom = bottom + "px";
+  fixedPanelEl.style.transform = "none";
+}
+document.addEventListener("mousemove", (e) => {
+  if (!fpDragging || !fixedPanelEl) return;
+  const dx = e.clientX - fpStartX;
+  const dy = e.clientY - fpStartY;
+  fixedPanelEl.style.left = fpOrigLeft + dx + "px";
+  fixedPanelEl.style.bottom = fpOrigBottom - dy + "px";
+  fixedPanelEl.style.transform = "none";
+  clampPanelToViewport();
+});
+document.addEventListener("mouseup", () => {
+  if (fpDragging) {
+    fpDragging = false;
+    if (fixedPanelEl) fixedPanelEl.style.transition = "";
+  }
+});
+window.addEventListener("blur", () => {
+  if (fpDragging) {
+    fpDragging = false;
+    if (fixedPanelEl) fixedPanelEl.style.transition = "";
+  }
+});
 function toggleFixedPanel(sessionKey) {
   if (fixedPanelSession === sessionKey) closeFixedPanel();
   else {
@@ -29886,17 +29923,6 @@ function openFixedPanel(sessionKey) {
   const minion = minions.find((m) => m.userData.sessionKey === sessionKey);
   if (!minion) return;
   if (!fixedPanelEl) {
-    let clampPanelToViewport = function() {
-      if (!fixedPanelEl) return;
-      const rect = fixedPanelEl.getBoundingClientRect();
-      const vw = window.innerWidth, vh = window.innerHeight;
-      let left = rect.left, bottom = vh - rect.bottom;
-      left = Math.max(-rect.width + 60, Math.min(vw - 60, left));
-      bottom = Math.max(4, Math.min(vh - 60, bottom));
-      fixedPanelEl.style.left = left + "px";
-      fixedPanelEl.style.bottom = bottom + "px";
-      fixedPanelEl.style.transform = "none";
-    };
     fixedPanelEl = document.createElement("div");
     fixedPanelEl.id = "fixed-panel";
     fixedPanelEl.innerHTML = `<div class="fp-hd"><span class="fp-avatar">\u{1F4CC}</span><span class="fp-user"></span><button class="fp-unpin" title="\u53D6\u6D88\u56FA\u5B9A\u56DE\u6C14\u6CE1">\u{1F4CC}</button><button class="fp-close">\u2715</button></div><div class="fp-body"><div class="fp-msg"></div><div class="fp-acts collapsed"><div class="fp-acts-hd"><span class="fp-acts-tri">\u25B6</span><span class="fp-acts-lbl">\u601D\u8003\u8FC7\u7A0B</span><span class="fp-acts-cnt">0</span></div><div class="fp-acts-body"></div></div><div class="fp-chat"><input class="fp-chat-in" placeholder="\u76F4\u63A5\u5BF9\u8BDD..." /></div><div class="fp-foot"></div></div>`;
@@ -29946,7 +29972,6 @@ function openFixedPanel(sessionKey) {
     fixedPanelEl.addEventListener("mousedown", (e) => e.stopPropagation());
     fixedPanelEl.addEventListener("mouseup", (e) => e.stopPropagation());
     const fpHd = fixedPanelEl.querySelector(".fp-hd");
-    let fpDragging = false, fpStartX = 0, fpStartY = 0, fpOrigLeft = 0, fpOrigBottom = 0;
     fpHd.style.cursor = "move";
     fpHd.addEventListener("mousedown", (e) => {
       if (e.target.tagName === "BUTTON") return;
@@ -29959,29 +29984,6 @@ function openFixedPanel(sessionKey) {
       fixedPanelEl.style.transition = "none";
       e.preventDefault();
       e.stopPropagation();
-    });
-    document.addEventListener("mousemove", (e) => {
-      if (!fpDragging) return;
-      const dx = e.clientX - fpStartX;
-      const dy = e.clientY - fpStartY;
-      fixedPanelEl.style.left = fpOrigLeft + dx + "px";
-      fixedPanelEl.style.bottom = fpOrigBottom - dy + "px";
-      fixedPanelEl.style.transform = "none";
-      clampPanelToViewport();
-    });
-    window.addEventListener("mouseup", () => {
-      if (fpDragging) {
-        fpDragging = false;
-        fixedPanelEl.style.transition = "";
-        clampPanelToViewport();
-      }
-    });
-    window.addEventListener("blur", () => {
-      if (fpDragging) {
-        fpDragging = false;
-        fixedPanelEl.style.transition = "";
-        clampPanelToViewport();
-      }
     });
     fpHd.addEventListener("dblclick", (e) => {
       if (e.target.tagName === "BUTTON") return;
