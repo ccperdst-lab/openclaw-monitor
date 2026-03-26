@@ -4,6 +4,7 @@ const path = require('path');
 const chokidar = require('chokidar');
 const YAML = require('yaml');
 const { execSync, exec } = require('child_process');
+const { WebSocketServer } = require('ws');
 
 // ===== Config =====
 const CONFIG_FILE = path.join(__dirname, 'config.yaml');
@@ -140,16 +141,17 @@ app.get('/api/chat/messages', (req, res) => {
 
 // Broadcast user positions to all SSE clients every 100ms (game-quality rate)
 setInterval(() => {
-  if (sseClients.size === 0) return;
   const now = Date.now();
   // Clean stale users
   for (const [id, u] of Object.entries(connectedUsers)) {
     if (now - u.lastSeen > 10000) delete connectedUsers[id];
   }
   const users = Object.keys(connectedUsers);
-  if (users.length > 0) {
+  if (users.length > 0 && (sseClients.size > 0 || wsClients.size > 0)) {
     // Include server timestamp for client-side time sync
-    broadcast({ type: 'users', data: connectedUsers, serverTime: now });
+    const msg = { type: 'users', data: connectedUsers, serverTime: now };
+    broadcast(msg);
+    broadcastWS(msg);
   }
   // Auto-generate join/leave chat messages
   const currentCount = users.length;
@@ -158,12 +160,16 @@ setInterval(() => {
       const msg = { userId: 'system', name: '系统', text: `🟢 有用户加入了世界 (当前${currentCount}人)`, time: now, system: true };
       chatMessages.push(msg);
       if (chatMessages.length > MAX_CHAT_MESSAGES) chatMessages.shift();
-      broadcast({ type: 'chat', data: { chat: msg } });
+      const chatMsg = { type: 'chat', data: { chat: msg } };
+      broadcast(chatMsg);
+      broadcastWS(chatMsg);
     } else if (currentCount < lastUserCount) {
       const msg = { userId: 'system', name: '系统', text: `🔴 有用户离开了世界 (当前${currentCount}人)`, time: now, system: true };
       chatMessages.push(msg);
       if (chatMessages.length > MAX_CHAT_MESSAGES) chatMessages.shift();
-      broadcast({ type: 'chat', data: { chat: msg } });
+      const chatMsg = { type: 'chat', data: { chat: msg } };
+      broadcast(chatMsg);
+      broadcastWS(chatMsg);
     }
     lastUserCount = currentCount;
   }
@@ -719,9 +725,69 @@ watchSessionMaps();
 
 const PORT = config.server?.port || 7777;
 const HOST = config.server?.host || '0.0.0.0';
-app.listen(PORT, HOST, () => {
+const server = app.listen(PORT, HOST, () => {
   log('info', `🟢 OpenClaw Monitor v7 on http://${HOST}:${PORT}`);
 });
+
+// ===== WebSocket Server =====
+const wss = new WebSocketServer({ server });
+const wsClients = new Map(); // ws -> { userId, name }
+
+wss.on('connection', (ws, req) => {
+  log('info', 'WebSocket connected');
+  
+  ws.on('message', (data) => {
+    try {
+      const msg = JSON.parse(data);
+      
+      if (msg.type === 'position') {
+        // User position update via WebSocket
+        const { userId, x, y, z, yaw, pitch, name } = msg;
+        if (!userId) return;
+        
+        if (!connectedUsers[userId]) {
+          connectedUsers[userId] = { color: userColors[userColorIdx++ % userColors.length] };
+        }
+        connectedUsers[userId].x = x;
+        connectedUsers[userId].y = y;
+        connectedUsers[userId].z = z;
+        connectedUsers[userId].yaw = yaw;
+        connectedUsers[userId].pitch = pitch;
+        connectedUsers[userId].name = name || '匿名';
+        connectedUsers[userId].lastSeen = Date.now();
+        
+        // Store client info
+        wsClients.set(ws, { userId, name: name || '匿名' });
+      }
+    } catch (e) {
+      log('error', 'WebSocket message error: ' + e.message);
+    }
+  });
+  
+  ws.on('close', () => {
+    const client = wsClients.get(ws);
+    if (client) {
+      log('info', `WebSocket disconnected: ${client.name}`);
+      wsClients.delete(ws);
+    }
+  });
+  
+  ws.on('error', (err) => {
+    log('error', 'WebSocket error: ' + err.message);
+  });
+});
+
+// Broadcast to WebSocket clients
+function broadcastWS(data) {
+  const msg = JSON.stringify(data);
+  for (const [ws] of wsClients) {
+    try {
+      if (ws.readyState === 1) { // OPEN
+        ws.send(msg);
+      }
+    } catch {}
+  }
+}
 
 // CLI endpoint
 app.post('/api/cli', (req, res) => {
