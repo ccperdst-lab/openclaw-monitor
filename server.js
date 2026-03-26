@@ -254,7 +254,7 @@ function parseUserMessage(text) {
   // Clean at mentions
   msg = msg.replace(/<at[^>]*>([^<]*)<\/at>/g, '@$1');
   if (msg.startsWith('[media attached:') || msg.includes('[media attached')) return '📎 图片/附件';
-  return msg.slice(0, 500);
+  return msg.slice(0, 2000);
 }
 
 function parseAssistantContent(content) {
@@ -262,18 +262,18 @@ function parseAssistantContent(content) {
   if (!Array.isArray(content)) return result;
   for (const item of content) {
     if (typeof item === 'string') {
-      result.texts.push(item.slice(0, 300));
+      result.texts.push(item.slice(0, 5000));
       continue;
     }
     if (item.type === 'thinking') {
-      result.thinking = (item.thinking || '').slice(0, 300);
+      result.thinking = (item.thinking || '').slice(0, 5000);
     } else if (item.type === 'toolCall') {
       result.toolCalls.push({
         name: item.name || '?',
-        args: JSON.stringify(item.arguments || {}).slice(0, 200),
+        args: JSON.stringify(item.arguments || {}).slice(0, 2000),
       });
     } else if (item.type === 'text') {
-      result.texts.push((item.text || '').slice(0, 300));
+      result.texts.push((item.text || '').slice(0, 5000));
     }
   }
   return result;
@@ -282,8 +282,8 @@ function parseAssistantContent(content) {
 function parseToolResult(content) {
   if (!Array.isArray(content)) return '';
   for (const item of content) {
-    if (typeof item === 'string') return item.slice(0, 200);
-    if (item.type === 'text') return (item.text || '').slice(0, 200);
+    if (typeof item === 'string') return item.slice(0, 5000);
+    if (item.type === 'text') return (item.text || '').slice(0, 5000);
   }
   return '';
 }

@@ -1721,13 +1721,13 @@ function updateBubbleContent(m) {
       items.push('<div class="bact-divider"><span>── 回复 ──</span></div>');
     }
     if (evt.type === 'think') {
-      items.push(`<div class="bact bact-think" data-full-text="${escAttr(evt.text)}"><span>💭</span><span>${escFull(evt.text)}${evt.time ? ` <em style="color:#999;font-size:9px">${esc(evt.time)}</em>` : ''}</span></div>`);
+      items.push(`<div class="bact bact-think" data-full-text="${escAttr(evt.fullText || evt.text)}"><span>💭</span><span>${escFull(evt.text)}${evt.time ? ` <em style="color:#999;font-size:9px">${esc(evt.time)}</em>` : ''}</span></div>`);
     } else if (evt.type === 'tool_use') {
-      items.push(`<div class="bact bact-tool" data-full-text="${escAttr(evt.text + ' ' + (evt.detail || ''))}"><span>🔧</span><span>${escFull(evt.text)} <em>${escFull(evt.detail || '')}</em>${evt.time ? ` <em style="color:#999;font-size:9px">${esc(evt.time)}</em>` : ''}</span></div>`);
+      items.push(`<div class="bact bact-tool" data-full-text="${escAttr((evt.fullText || evt.text) + '\n' + (evt.fullDetail || evt.detail || ''))}"><span>🔧</span><span>${escFull(evt.text)} <em>${escFull(evt.detail || '')}</em>${evt.time ? ` <em style="color:#999;font-size:9px">${esc(evt.time)}</em>` : ''}</span></div>`);
     } else if (evt.type === 'tool_result') {
-      items.push(`<div class="bact bact-result" data-full-text="${escAttr(evt.text + ' ' + (evt.detail || ''))}"><span>📋</span><span>${escFull(evt.text)} <em>${escFull(evt.detail || '')}</em>${evt.time ? ` <em style="color:#999;font-size:9px">${esc(evt.time)}</em>` : ''}</span></div>`);
+      items.push(`<div class="bact bact-result" data-full-text="${escAttr((evt.fullText || evt.text) + '\n' + (evt.fullDetail || evt.detail || ''))}"><span>📋</span><span>${escFull(evt.text)} <em>${escFull(evt.detail || '')}</em>${evt.time ? ` <em style="color:#999;font-size:9px">${esc(evt.time)}</em>` : ''}</span></div>`);
     } else if (evt.type === 'reply_snippet') {
-      items.push(`<div class="bact bact-reply" data-full-text="${escAttr(evt.text)}"><span>💬</span><span>${esc(evt.text)}${evt.time ? ` <em style="color:#999;font-size:9px">${esc(evt.time)}</em>` : ''}</span></div>`);
+      items.push(`<div class="bact bact-reply" data-full-text="${escAttr(evt.fullText || evt.text)}"><span>💬</span><span>${esc(evt.text)}${evt.time ? ` <em style="color:#999;font-size:9px">${esc(evt.time)}</em>` : ''}</span></div>`);
     }
   }
   // Final reply text — divider only if no snippets already placed one
@@ -1916,10 +1916,10 @@ function updateFixedPanelContent(minion) {
   for (let i = 0; i < log.length; i++) {
     const evt = log[i];
     if (hasSnippets && i === lastSnippetIdx) items.push('<div class="bact-divider"><span>── 回复 ──</span></div>');
-    if (evt.type === 'think') items.push(`<div class="bact bact-think" data-full-text="${escAttr(evt.text)}"><span>💭</span><span>${esc(evt.text)}${evt.time ? ' <em style="color:#999;font-size:9px">'+esc(evt.time)+'</em>' : ''}</span></div>`);
-    else if (evt.type === 'tool_use') items.push(`<div class="bact bact-tool" data-full-text="${escAttr(evt.text + ' ' + (evt.detail||''))}"><span>🔧</span><span>${esc(evt.text)} <em>${esc(evt.detail||'')}</em></span></div>`);
-    else if (evt.type === 'tool_result') items.push(`<div class="bact bact-result" data-full-text="${escAttr(evt.text + ' ' + (evt.detail||''))}"><span>📋</span><span>${esc(evt.text)} <em>${esc(evt.detail||'')}</em></span></div>`);
-    else if (evt.type === 'reply_snippet') items.push(`<div class="bact bact-reply" data-full-text="${escAttr(evt.text)}"><span>💬</span><span>${esc(evt.text)}</span></div>`);
+    if (evt.type === 'think') items.push(`<div class="bact bact-think" data-full-text="${escAttr(evt.fullText || evt.text)}"><span>💭</span><span>${esc(evt.text)}${evt.time ? ' <em style="color:#999;font-size:9px">'+esc(evt.time)+'</em>' : ''}</span></div>`);
+    else if (evt.type === 'tool_use') items.push(`<div class="bact bact-tool" data-full-text="${escAttr((evt.fullText || evt.text) + '\n' + (evt.fullDetail || evt.detail || ''))}"><span>🔧</span><span>${esc(evt.text)} <em>${esc(evt.detail||'')}</em>${evt.time ? ' <em style="color:#999;font-size:9px">'+esc(evt.time)+'</em>' : ''}</span></div>`);
+    else if (evt.type === 'tool_result') items.push(`<div class="bact bact-result" data-full-text="${escAttr((evt.fullText || evt.text) + '\n' + (evt.fullDetail || evt.detail || ''))}"><span>📋</span><span>${esc(evt.text)} <em>${esc(evt.detail||'')}</em>${evt.time ? ' <em style="color:#999;font-size:9px">'+esc(evt.time)+'</em>' : ''}</span></div>`);
+    else if (evt.type === 'reply_snippet') items.push(`<div class="bact bact-reply" data-full-text="${escAttr(evt.fullText || evt.text)}"><span>💬</span><span>${esc(evt.text)}${evt.time ? ' <em style="color:#999;font-size:9px">'+esc(evt.time)+'</em>' : ''}</span></div>`);
   }
   if (hasFinalReply) { if (!hasSnippets) items.push('<div class="bact-divider"><span>── 回复 ──</span></div>'); items.push(`<div class="bact bact-reply bact-final" data-full-text="${escAttr(ud.replyText)}"><span>💬</span><span>${esc(ud.replyText)}</span></div>`); }
   actsBody.innerHTML = items.slice(-50).join('');
@@ -2033,33 +2033,57 @@ function stopBubbleRefresh(sk) {
   }
 }
 
+// Format timestamp to HH:MM:SS
+function fmtTime(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return '';
+  return d.toTimeString().slice(0, 8);
+}
+
+// Build a single eventLog item with truncated display text + full text for preview
+function mkEvt(type, text, detail, ts) {
+  const maxText = 150;
+  const maxDetail = 100;
+  const item = { type };
+  item.fullText = text || '';
+  item.text = (text || '').slice(0, maxText);
+  if (detail) {
+    item.fullDetail = detail;
+    item.detail = detail.slice(0, maxDetail);
+  }
+  if (ts) item.time = fmtTime(ts);
+  return item;
+}
+
 // Apply parsed messages from API to minion userData (rebuild eventLog)
 function applyMessagesToMinion(minion, messages) {
   const ud = minion.userData;
   const last = messages.filter(m => m.role === 'user').pop();
   if (last) ud.userMsg = last.text || '';
 
-  // Build eventLog from recent messages
+  // Build eventLog from recent messages — with timestamps + full text
   const histLog = [];
   const recent = messages.slice(-30);
   for (const msg of recent) {
+    const ts = msg.timestamp;
     if (msg.role === 'assistant') {
-      if (msg.thinking) histLog.push({ type: 'think', text: msg.thinking.slice(0, 150) });
+      if (msg.thinking) histLog.push(mkEvt('think', msg.thinking, null, ts));
       if (msg.toolCalls) {
         for (const tc of msg.toolCalls) {
-          histLog.push({ type: 'tool_use', text: tc.name, detail: (tc.args || '').slice(0, 100) });
+          histLog.push(mkEvt('tool_use', tc.name, tc.args || '', ts));
         }
       }
-      if (msg.texts?.length) histLog.push({ type: 'reply_snippet', text: msg.texts.join(' ').slice(0, 150) });
+      if (msg.texts?.length) histLog.push(mkEvt('reply_snippet', msg.texts.join(' '), null, ts));
     } else if (msg.role === 'toolResult') {
-      histLog.push({ type: 'tool_result', text: (msg.toolName || '?') + ' ✓', detail: (msg.result || '').slice(0, 100) });
+      histLog.push(mkEvt('tool_result', (msg.toolName || '?') + ' ✓', msg.result || '', ts));
     }
   }
   // Only update if we got new data
   if (histLog.length > 0) {
     ud.eventLog = histLog;
     const lastReply = recent.filter(m => m.role === 'assistant' && m.texts?.length).pop();
-    if (lastReply) ud.replyText = lastReply.texts.join(' ').slice(0, 200);
+    if (lastReply) ud.replyText = lastReply.texts.join(' ');
     // Determine state from last message
     const lastMsg = recent[recent.length - 1];
     if (lastMsg?.role === 'assistant') {
@@ -2098,14 +2122,20 @@ function handleEvent(ev) {
     }
   } else if (ev.type === 'thinking') {
     ud.state = 'thinking'; ud.lastEventTime = Date.now();
+    if (!ud.eventLog) ud.eventLog = [];
+    ud.eventLog.push(mkEvt('think', ev.thinking || '', null, ev.ts));
     const b = bubbles[ud.sessionKey]; if (b) b._dismissed = false;
     showBubble(m);
     startBubbleRefresh(m); // ensure polling is active
   } else if (ev.type === 'tool_use') {
     ud.state = 'thinking'; ud.lastEventTime = Date.now();
+    if (!ud.eventLog) ud.eventLog = [];
+    ud.eventLog.push(mkEvt('tool_use', ev.tool || '?', ev.args || '', ev.ts));
     showBubble(m);
   } else if (ev.type === 'tool_result') {
     ud.lastEventTime = Date.now();
+    if (!ud.eventLog) ud.eventLog = [];
+    ud.eventLog.push(mkEvt('tool_result', (ev.tool || '?') + ' ✓', ev.result || '', ev.ts));
     showBubble(m);
   } else if (ev.type === 'reply_intermediate') {
     ud.replyText = ev.text || '';
@@ -2466,21 +2496,22 @@ window.addEventListener('click', (e) => {
             const last = data.messages.filter(m => m.role === 'user').pop();
             if (last) target.userData.userMsg = last.text || '';
             const lastReply = data.messages.filter(m => m.role === 'assistant' && m.texts?.length).pop();
-            if (lastReply) target.userData.replyText = lastReply.texts.join(' ').slice(0, 200);
-            // Build eventLog from historical messages — interleaved in chronological order
+            if (lastReply) target.userData.replyText = lastReply.texts.join(' ');
+            // Build eventLog from historical messages — with timestamps + full text
             const histLog = [];
             const recent = data.messages.slice(-20);
             for (const msg of recent) {
+              const ts = msg.timestamp;
               if (msg.role === 'assistant') {
-                if (msg.thinking) histLog.push({ type: 'think', text: msg.thinking.slice(0, 100) });
+                if (msg.thinking) histLog.push(mkEvt('think', msg.thinking, null, ts));
                 if (msg.toolCalls) {
                   for (const tc of msg.toolCalls) {
-                    histLog.push({ type: 'tool_use', text: tc.name, detail: (tc.args || '').slice(0, 80) });
+                    histLog.push(mkEvt('tool_use', tc.name, tc.args || '', ts));
                   }
                 }
-                if (msg.texts?.length) histLog.push({ type: 'reply_snippet', text: msg.texts.join(' ').slice(0, 100) });
+                if (msg.texts?.length) histLog.push(mkEvt('reply_snippet', msg.texts.join(' '), null, ts));
               } else if (msg.role === 'toolResult') {
-                histLog.push({ type: 'tool_result', text: (msg.toolName || '?') + ' ✓', detail: (msg.result || '').slice(0, 60) });
+                histLog.push(mkEvt('tool_result', (msg.toolName || '?') + ' ✓', msg.result || '', ts));
               }
             }
             target.userData.eventLog = histLog;
@@ -2655,6 +2686,20 @@ function animate() {
 
   // In third-person, optionally look at avatar when pitch is very low (looking down)
   // This gives a "zoomed out overview" feel when looking straight down
+
+  // Stale thinking detection: reset minions stuck in 'thinking' for > 3 minutes
+  const STALE_THRESHOLD = 3 * 60 * 1000;
+  const staleNow = Date.now();
+  for (const m of minions) {
+    const ud = m.userData;
+    if (ud.state === 'thinking' && ud.lastEventTime && (staleNow - ud.lastEventTime > STALE_THRESHOLD)) {
+      ud.state = 'done';
+      if (!ud.eventLog) ud.eventLog = [];
+      ud.eventLog.push(mkEvt('think', '⏳ 会话可能已中断（无新活动超过3分钟）', null, new Date().toISOString()));
+      updateBubbleContent(m);
+      if (fixedPanelSession === ud.sessionKey) updateFixedPanelContent(m);
+    }
+  }
 
   // Minion animations
   minions.forEach(m => {
