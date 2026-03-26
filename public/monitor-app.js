@@ -2534,7 +2534,7 @@ function showBubble(m) {
 let eventSource = null;
 function connectSSE() {
   if (eventSource) eventSource.close();
-  const sseUrl = '/api/events';
+  const sseUrl = authToken ? `/api/events?token=${encodeURIComponent(authToken)}` : '/api/events';
   eventSource = new EventSource(sseUrl);
   eventSource.onmessage = (e) => {
     try {
