@@ -13839,6 +13839,133 @@ var DodecahedronGeometry = class _DodecahedronGeometry extends PolyhedronGeometr
     return new _DodecahedronGeometry(data.radius, data.detail);
   }
 };
+var IcosahedronGeometry = class _IcosahedronGeometry extends PolyhedronGeometry {
+  /**
+   * Constructs a new icosahedron geometry.
+   *
+   * @param {number} [radius=1] - Radius of the icosahedron.
+   * @param {number} [detail=0] - Setting this to a value greater than `0` adds vertices making it no longer a icosahedron.
+   */
+  constructor(radius = 1, detail = 0) {
+    const t = (1 + Math.sqrt(5)) / 2;
+    const vertices = [
+      -1,
+      t,
+      0,
+      1,
+      t,
+      0,
+      -1,
+      -t,
+      0,
+      1,
+      -t,
+      0,
+      0,
+      -1,
+      t,
+      0,
+      1,
+      t,
+      0,
+      -1,
+      -t,
+      0,
+      1,
+      -t,
+      t,
+      0,
+      -1,
+      t,
+      0,
+      1,
+      -t,
+      0,
+      -1,
+      -t,
+      0,
+      1
+    ];
+    const indices = [
+      0,
+      11,
+      5,
+      0,
+      5,
+      1,
+      0,
+      1,
+      7,
+      0,
+      7,
+      10,
+      0,
+      10,
+      11,
+      1,
+      5,
+      9,
+      5,
+      11,
+      4,
+      11,
+      10,
+      2,
+      10,
+      7,
+      6,
+      7,
+      1,
+      8,
+      3,
+      9,
+      4,
+      3,
+      4,
+      2,
+      3,
+      2,
+      6,
+      3,
+      6,
+      8,
+      3,
+      8,
+      9,
+      4,
+      9,
+      5,
+      2,
+      4,
+      11,
+      6,
+      2,
+      10,
+      8,
+      6,
+      7,
+      9,
+      8,
+      1
+    ];
+    super(vertices, indices, radius, detail);
+    this.type = "IcosahedronGeometry";
+    this.parameters = {
+      radius,
+      detail
+    };
+  }
+  /**
+   * Factory method for creating an instance of this class from the given
+   * JSON object.
+   *
+   * @param {Object} data - A JSON object representing the serialized geometry.
+   * @return {IcosahedronGeometry} A new instance.
+   */
+  static fromJSON(data) {
+    return new _IcosahedronGeometry(data.radius, data.detail);
+  }
+};
 var PlaneGeometry = class _PlaneGeometry extends BufferGeometry {
   /**
    * Constructs a new plane geometry.
@@ -28550,8 +28677,8 @@ chatInput.addEventListener("blur", () => {
 });
 chatInput.addEventListener("mousedown", (e) => e.stopPropagation());
 var scene = new Scene();
-scene.background = new Color(8308963);
-scene.fog = new FogExp2(8308963, 8e-3);
+scene.background = new Color(8900331);
+scene.fog = new FogExp2(8900331, 6e-3);
 var camera = new PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 300);
 camera.position.set(25, 30, 35);
 var renderer = new WebGLRenderer({ antialias: true });
@@ -28937,32 +29064,50 @@ window.addEventListener("keyup", (e) => {
 window.addEventListener("wheel", (e) => {
   moveSpeed = Math.max(4, Math.min(30, moveSpeed - e.deltaY * 0.01));
 }, { passive: true });
-scene.add(new AmbientLight(16770244, 0.4));
-scene.add(new HemisphereLight(8900331, 4906624, 0.5));
-var sun = new DirectionalLight(16772829, 1);
+scene.add(new AmbientLight(16770244, 0.3));
+var hemiLight = new HemisphereLight(8900331, 4881497, 0.6);
+scene.add(hemiLight);
+var sun = new DirectionalLight(16772829, 1.2);
 sun.position.set(30, 50, 20);
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.near = 0.5;
+sun.shadow.camera.far = 200;
 var sc = sun.shadow.camera;
 sc.left = -60;
 sc.right = 60;
 sc.top = 60;
 sc.bottom = -60;
+sun.shadow.bias = -5e-4;
+sun.shadow.normalBias = 0.02;
 scene.add(sun);
+var fillLight = new DirectionalLight(10407935, 0.3);
+fillLight.position.set(-20, 30, -10);
+scene.add(fillLight);
+var rimLight = new DirectionalLight(16764074, 0.2);
+rimLight.position.set(-30, 20, 30);
+scene.add(rimLight);
 var sunSphere = new Mesh(
-  new SphereGeometry(2, 16, 12),
+  new SphereGeometry(2, 32, 24),
   new MeshBasicMaterial({ color: 16772744 })
 );
 sunSphere.position.copy(sun.position);
 sunSphere.userData._atmosphere = true;
 scene.add(sunSphere);
 var sunGlow = new Mesh(
-  new SphereGeometry(4, 16, 12),
-  new MeshBasicMaterial({ color: 16772744, transparent: true, opacity: 0.2 })
+  new SphereGeometry(4, 32, 24),
+  new MeshBasicMaterial({ color: 16772744, transparent: true, opacity: 0.15 })
 );
 sunGlow.position.copy(sun.position);
 sunGlow.userData._atmosphere = true;
 scene.add(sunGlow);
+var sunOuterGlow = new Mesh(
+  new SphereGeometry(8, 32, 24),
+  new MeshBasicMaterial({ color: 16768392, transparent: true, opacity: 0.05 })
+);
+sunOuterGlow.position.copy(sun.position);
+sunOuterGlow.userData._atmosphere = true;
+scene.add(sunOuterGlow);
 var mat = {
   // Ground
   grass: new MeshStandardMaterial({ color: 6210153, roughness: 0.95 }),
@@ -29093,8 +29238,8 @@ function createMinion(profile) {
   const group = new Group();
   const bodyMat = new MeshStandardMaterial({ color: p.color || 16109619, roughness: 0.5 });
   const hs = p.heightScale || 0.8 + Math.random() * 0.4;
-  const ws = p.widthScale || 0.9 + Math.random() * 0.2;
-  const br = 0.35 * ws, bh = 1.2 * hs;
+  const ws2 = p.widthScale || 0.9 + Math.random() * 0.2;
+  const br = 0.35 * ws2, bh = 1.2 * hs;
   const body = new Mesh(new CylinderGeometry(br, br * 1.08, bh, 16), bodyMat);
   body.position.y = 0.5 + bh / 2;
   body.castShadow = true;
@@ -29155,7 +29300,7 @@ function createMinion(profile) {
     speed: 0,
     bobPhase: Math.random() * Math.PI * 2,
     heightScale: hs,
-    widthScale: ws,
+    widthScale: ws2,
     // Session info
     sessionKey: "",
     sessionId: "",
@@ -29386,10 +29531,28 @@ function createContinent(agentName, index) {
   const ox = col * (W + 6) - (cols - 1) * (W + 6) / 2;
   const oz = row * (D + 6) - (Math.ceil(agents.length / cols) - 1) * (D + 6) / 2;
   const cx = ox + W / 2, cz = oz + D / 2;
-  const ground = new Mesh(new BoxGeometry(W, 0.3, D), mat.grass);
-  ground.position.set(cx, -0.15, cz);
+  const groundGeo = new PlaneGeometry(W, D, 32, 32);
+  groundGeo.rotateX(-Math.PI / 2);
+  const posAttr = groundGeo.getAttribute("position");
+  for (let i = 0; i < posAttr.count; i++) {
+    const x = posAttr.getX(i);
+    const z = posAttr.getZ(i);
+    const height = Math.sin(x * 0.3) * Math.cos(z * 0.3) * 0.15 + Math.sin(x * 0.7 + 1) * Math.cos(z * 0.5) * 0.08 + Math.sin(x * 0.2 + z * 0.4) * 0.05;
+    posAttr.setY(i, height);
+  }
+  groundGeo.computeVertexNormals();
+  const ground = new Mesh(groundGeo, mat.grass);
+  ground.position.set(cx, -0.05, cz);
   ground.receiveShadow = true;
   scene.add(ground);
+  const darkPatches = new Mesh(
+    new PlaneGeometry(W * 0.95, D * 0.95, 16, 16),
+    mat.grassDark
+  );
+  darkPatches.rotation.x = -Math.PI / 2;
+  darkPatches.position.set(cx, -0.02, cz);
+  darkPatches.receiveShadow = true;
+  scene.add(darkPatches);
   for (let i = 0; i < 6; i++) {
     const px = ox + 2 + Math.random() * (W - 4), pz = oz + 2 + Math.random() * (D - 4);
     const sz = 1.5 + Math.random() * 2.5;
@@ -29408,37 +29571,169 @@ function createContinent(agentName, index) {
     stone.rotation.y = Math.random() * Math.PI;
     scene.add(stone);
   }
-  const houseW = 4.5, houseD = 4.5, houseH = 2.8;
+  const houseW = 4.5, houseD = 4.5, houseH = 3;
   const roofColor = mat.roofColors[index % mat.roofColors.length];
   const wallMat = mat.wallColors[index % mat.wallColors.length];
   const hx = cx - 2, hz = cz - 2;
+  const foundation = new Mesh(
+    new BoxGeometry(houseW + 0.3, 0.4, houseD + 0.3),
+    mat.stone
+  );
+  foundation.position.set(hx, 0.2, hz);
+  foundation.castShadow = true;
+  foundation.receiveShadow = true;
+  scene.add(foundation);
   const walls = new Mesh(new BoxGeometry(houseW, houseH, houseD), wallMat);
-  walls.position.set(hx, houseH / 2, hz);
+  walls.position.set(hx, houseH / 2 + 0.4, hz);
   walls.castShadow = true;
+  walls.receiveShadow = true;
   scene.add(walls);
-  const roofGeo = new ConeGeometry(houseW * 0.9, 2.2, 4);
-  const roof = new Mesh(roofGeo, new MeshStandardMaterial({ color: roofColor, roughness: 0.7 }));
-  roof.position.set(hx, houseH + 1.1, hz);
+  const wallTrim = new Mesh(
+    new BoxGeometry(houseW + 0.1, 0.15, houseD + 0.1),
+    mat.doorWood
+  );
+  wallTrim.position.set(hx, 0.5, hz);
+  scene.add(wallTrim);
+  const roofGeo = new ConeGeometry(houseW * 0.85, 2.5, 4);
+  const roof = new Mesh(roofGeo, new MeshStandardMaterial({
+    color: roofColor,
+    roughness: 0.6,
+    flatShading: true
+  }));
+  roof.position.set(hx, houseH + 1.65, hz);
   roof.rotation.y = Math.PI / 4;
   roof.castShadow = true;
   scene.add(roof);
-  const door = new Mesh(new BoxGeometry(0.8, 1.5, 0.1), mat.doorWood);
-  door.position.set(hx, 0.75, hz + houseD / 2 + 0.05);
+  const overhang = new Mesh(
+    new ConeGeometry(houseW * 0.92, 0.3, 4),
+    new MeshStandardMaterial({ color: roofColor, roughness: 0.7 })
+  );
+  overhang.position.set(hx, houseH + 0.5, hz);
+  overhang.rotation.y = Math.PI / 4;
+  scene.add(overhang);
+  const ridge = new Mesh(
+    new BoxGeometry(0.15, 0.15, houseW * 1.2),
+    mat.doorWood
+  );
+  ridge.position.set(hx, houseH + 2.9, hz);
+  ridge.rotation.y = Math.PI / 4;
+  scene.add(ridge);
+  const doorFrame = new Mesh(
+    new BoxGeometry(1, 1.8, 0.12),
+    mat.doorWood
+  );
+  doorFrame.position.set(hx, 1.3, hz + houseD / 2 + 0.06);
+  scene.add(doorFrame);
+  const door = new Mesh(
+    new BoxGeometry(0.8, 1.6, 0.08),
+    new MeshStandardMaterial({ color: 9127187, roughness: 0.7 })
+  );
+  door.position.set(hx, 1.2, hz + houseD / 2 + 0.1);
   scene.add(door);
-  const knob = new Mesh(new SphereGeometry(0.06, 8, 8), new MeshStandardMaterial({ color: 16766720, metalness: 0.8 }));
-  knob.position.set(hx + 0.25, 0.85, hz + houseD / 2 + 0.12);
+  const knob = new Mesh(
+    new SphereGeometry(0.06, 12, 8),
+    new MeshStandardMaterial({ color: 16766720, metalness: 0.9, roughness: 0.2 })
+  );
+  knob.position.set(hx + 0.25, 1, hz + houseD / 2 + 0.18);
   scene.add(knob);
+  const step = new Mesh(
+    new BoxGeometry(1.2, 0.15, 0.5),
+    mat.stone
+  );
+  step.position.set(hx, 0.1, hz + houseD / 2 + 0.5);
+  scene.add(step);
   [-1, 1].forEach((side) => {
-    const win = new Mesh(new BoxGeometry(0.7, 0.7, 0.1), mat.windowGlass);
-    win.position.set(hx + side * 1.5, houseH * 0.6, hz + houseD / 2 + 0.05);
+    const recess = new Mesh(
+      new BoxGeometry(0.9, 0.9, 0.05),
+      mat.doorWood
+    );
+    recess.position.set(hx + side * 1.5, houseH * 0.55 + 0.4, hz + houseD / 2 + 0.02);
+    scene.add(recess);
+    const winFrame = new Mesh(
+      new BoxGeometry(0.85, 0.85, 0.06),
+      new MeshStandardMaterial({ color: 9139029, roughness: 0.8 })
+    );
+    winFrame.position.set(hx + side * 1.5, houseH * 0.55 + 0.4, hz + houseD / 2 + 0.05);
+    scene.add(winFrame);
+    const win = new Mesh(
+      new BoxGeometry(0.7, 0.7, 0.08),
+      mat.windowGlass
+    );
+    win.position.set(hx + side * 1.5, houseH * 0.55 + 0.4, hz + houseD / 2 + 0.08);
     scene.add(win);
-    const frame = new Mesh(new BoxGeometry(0.8, 0.8, 0.05), mat.doorWood);
-    frame.position.set(hx + side * 1.5, houseH * 0.6, hz + houseD / 2 + 0.02);
-    scene.add(frame);
+    const crossH = new Mesh(
+      new BoxGeometry(0.7, 0.04, 0.02),
+      new MeshStandardMaterial({ color: 16777215 })
+    );
+    crossH.position.set(hx + side * 1.5, houseH * 0.55 + 0.4, hz + houseD / 2 + 0.12);
+    scene.add(crossH);
+    const crossV = new Mesh(
+      new BoxGeometry(0.04, 0.7, 0.02),
+      new MeshStandardMaterial({ color: 16777215 })
+    );
+    crossV.position.set(hx + side * 1.5, houseH * 0.55 + 0.4, hz + houseD / 2 + 0.12);
+    scene.add(crossV);
+    const shutterMat = new MeshStandardMaterial({ color: 6114871, roughness: 0.8 });
+    const leftShutter = new Mesh(new BoxGeometry(0.2, 0.8, 0.03), shutterMat);
+    leftShutter.position.set(hx + side * 1.5 - 0.55, houseH * 0.55 + 0.4, hz + houseD / 2 + 0.08);
+    scene.add(leftShutter);
+    const rightShutter = new Mesh(new BoxGeometry(0.2, 0.8, 0.03), shutterMat);
+    rightShutter.position.set(hx + side * 1.5 + 0.55, houseH * 0.55 + 0.4, hz + houseD / 2 + 0.08);
+    scene.add(rightShutter);
   });
-  const chimney = new Mesh(new BoxGeometry(0.5, 1.5, 0.5), mat.chimney);
-  chimney.position.set(hx + 1.2, houseH + 1.8, hz - 0.8);
+  const chimney = new Mesh(
+    new BoxGeometry(0.6, 2, 0.6),
+    mat.chimney
+  );
+  chimney.position.set(hx + 1.2, houseH + 2, hz - 0.8);
+  chimney.castShadow = true;
   scene.add(chimney);
+  const chimneyCap = new Mesh(
+    new BoxGeometry(0.8, 0.15, 0.8),
+    mat.stone
+  );
+  chimneyCap.position.set(hx + 1.2, houseH + 3.05, hz - 0.8);
+  scene.add(chimneyCap);
+  for (let i = 0; i < 5; i++) {
+    const brickLine = new Mesh(
+      new BoxGeometry(0.62, 0.02, 0.62),
+      new MeshStandardMaterial({ color: 4007959 })
+    );
+    brickLine.position.set(hx + 1.2, houseH + 1.2 + i * 0.4, hz - 0.8);
+    scene.add(brickLine);
+  }
+  [[-1, -1], [-1, 1], [1, -1], [1, 1]].forEach(([dx, dz]) => {
+    const corner = new Mesh(
+      new BoxGeometry(0.12, houseH + 0.2, 0.12),
+      mat.doorWood
+    );
+    corner.position.set(
+      hx + dx * (houseW / 2 + 0.05),
+      houseH / 2 + 0.3,
+      hz + dz * (houseD / 2 + 0.05)
+    );
+    scene.add(corner);
+  });
+  [-1, 1].forEach((side) => {
+    const flowerBox = new Mesh(
+      new BoxGeometry(0.9, 0.15, 0.2),
+      mat.doorWood
+    );
+    flowerBox.position.set(hx + side * 1.5, houseH * 0.25 + 0.4, hz + houseD / 2 + 0.15);
+    scene.add(flowerBox);
+    for (let f = 0; f < 4; f++) {
+      const flower = new Mesh(
+        new SphereGeometry(0.08, 8, 6),
+        mat.flowerColors[f % mat.flowerColors.length]
+      );
+      flower.position.set(
+        hx + side * 1.5 - 0.3 + f * 0.2,
+        houseH * 0.25 + 0.55,
+        hz + houseD / 2 + 0.15
+      );
+      scene.add(flower);
+    }
+  });
   const signCanvas = document.createElement("canvas");
   signCanvas.width = 256;
   signCanvas.height = 64;
@@ -29477,10 +29772,10 @@ function createContinent(agentName, index) {
   pillow.position.set(hx + 1.5, 0.3, hz - 1.7);
   scene.add(pillow);
   const canopyColors = [
-    new Color(5025616),
-    new Color(3706428),
-    new Color(6732650),
-    new Color(3046706)
+    new Color(2972199),
+    new Color(4028983),
+    new Color(4885567),
+    new Color(3504686)
   ];
   const treePositions = [
     [ox + 2, oz + 2],
@@ -29492,103 +29787,358 @@ function createContinent(agentName, index) {
     [cx + 3, cz - 6]
   ];
   treePositions.forEach(([tx, tz], ti) => {
-    const treeH = 1.5 + Math.random() * 1;
-    const trunk = new Mesh(new CylinderGeometry(0.1, 0.16, treeH, 8), mat.trunkBrown);
+    const treeH = 2 + Math.random() * 1.5;
+    const trunkR = 0.12 + Math.random() * 0.08;
+    const trunkGeo = new CylinderGeometry(trunkR * 0.6, trunkR, treeH, 12);
+    const trunk = new Mesh(trunkGeo, mat.trunkBrown);
     trunk.position.set(tx, treeH / 2, tz);
-    trunk.rotation.z = (Math.random() - 0.5) * 0.1;
+    trunk.rotation.z = (Math.random() - 0.5) * 0.05;
     trunk.castShadow = true;
+    trunk.receiveShadow = true;
     scene.add(trunk);
-    for (let b = 0; b < 2; b++) {
-      const bAngle = Math.random() * Math.PI * 2;
-      const bH = treeH * (0.4 + Math.random() * 0.3);
-      const branch = new Mesh(new CylinderGeometry(0.03, 0.05, 0.5, 5), mat.trunkBrown);
-      branch.position.set(tx + Math.cos(bAngle) * 0.15, bH, tz + Math.sin(bAngle) * 0.15);
-      branch.rotation.z = Math.cos(bAngle) * 0.6;
-      branch.rotation.x = Math.sin(bAngle) * 0.6;
-      scene.add(branch);
+    for (let r = 0; r < 4; r++) {
+      const ring = new Mesh(
+        new TorusGeometry(trunkR * (0.9 - r * 0.1), 0.01, 8, 12),
+        new MeshStandardMaterial({ color: 6114871 })
+      );
+      ring.position.set(tx, 0.5 + r * (treeH / 5), tz);
+      ring.rotation.x = Math.PI / 2;
+      scene.add(ring);
     }
-    const canopyR = 0.9 + Math.random() * 0.4;
+    const branchCount = 3 + Math.floor(Math.random() * 3);
+    for (let b = 0; b < branchCount; b++) {
+      const bAngle = b / branchCount * Math.PI * 2 + Math.random() * 0.5;
+      const bH = treeH * (0.3 + Math.random() * 0.4);
+      const bLen = 0.6 + Math.random() * 0.4;
+      const branch = new Mesh(
+        new CylinderGeometry(0.02, 0.05, bLen, 6),
+        mat.trunkBrown
+      );
+      branch.position.set(
+        tx + Math.cos(bAngle) * 0.2,
+        bH,
+        tz + Math.sin(bAngle) * 0.2
+      );
+      branch.rotation.z = Math.cos(bAngle) * 0.8;
+      branch.rotation.x = Math.sin(bAngle) * 0.8;
+      branch.castShadow = true;
+      scene.add(branch);
+      if (Math.random() > 0.5) {
+        const subBranch = new Mesh(
+          new CylinderGeometry(0.01, 0.02, 0.3, 4),
+          mat.trunkBrown
+        );
+        subBranch.position.set(
+          tx + Math.cos(bAngle) * 0.4,
+          bH + 0.1,
+          tz + Math.sin(bAngle) * 0.4
+        );
+        subBranch.rotation.z = Math.cos(bAngle) * 1;
+        subBranch.rotation.x = Math.sin(bAngle) * 1;
+        scene.add(subBranch);
+      }
+    }
+    const canopyR = 1.2 + Math.random() * 0.6;
     const canopyColor = canopyColors[ti % canopyColors.length];
     const canopyShaderMat = new ShaderMaterial({
       vertexShader: canopyVertexShader,
       fragmentShader: canopyFragmentShader,
       uniforms: {
         uTime: { value: 0 },
-        uWindStrength: { value: 0.08 + Math.random() * 0.04 },
+        uWindStrength: { value: 0.06 + Math.random() * 0.03 },
         uWindDir: { value: new Vector3(1, 0.2, 0.5).normalize() },
         uColor: { value: canopyColor },
         uLightDir: { value: new Vector3(0.5, 0.8, 0.3).normalize() }
       }
     });
-    [[0, 0, 0, 1], [0.3, 0.1, 0.2, 0.85], [-0.2, 0.15, -0.15, 0.9], [0.1, -0.1, 0.25, 0.75]].forEach(([dx, dy, dz, scaleMod]) => {
-      const canopyGeo = new SphereGeometry(canopyR * scaleMod, 14, 10);
+    const canopyShapes = [
+      [0, 0, 0, 1],
+      [0.35, 0.15, 0.25, 0.8],
+      [-0.3, 0.2, -0.2, 0.85],
+      [0.15, -0.15, 0.35, 0.7],
+      [-0.25, 0.1, 0.3, 0.75],
+      [0.2, 0.25, -0.15, 0.65]
+    ];
+    canopyShapes.forEach(([dx, dy, dz, scaleMod]) => {
+      const canopyGeo = new IcosahedronGeometry(canopyR * scaleMod, 1);
       const canopy = new Mesh(canopyGeo, canopyShaderMat);
-      canopy.position.set(tx + dx, treeH + canopyR * 0.5 + dy, tz + dz);
+      canopy.position.set(
+        tx + dx,
+        treeH + canopyR * 0.3 + dy,
+        tz + dz
+      );
+      canopy.rotation.set(
+        Math.random() * 0.3,
+        Math.random() * Math.PI * 2,
+        Math.random() * 0.3
+      );
       canopy.castShadow = true;
+      canopy.receiveShadow = true;
       scene.add(canopy);
     });
-    addObstacle(tx - 0.4, tx + 0.4, tz - 0.4, tz + 0.4, "tree");
+    for (let l = 0; l < 3; l++) {
+      const la = Math.random() * Math.PI * 2;
+      const lr = canopyR * (0.6 + Math.random() * 0.4);
+      const leaf = new Mesh(
+        new SphereGeometry(0.3 + Math.random() * 0.2, 8, 6),
+        canopyShaderMat
+      );
+      leaf.position.set(
+        tx + Math.cos(la) * lr,
+        treeH - 0.2 - Math.random() * 0.5,
+        tz + Math.sin(la) * lr
+      );
+      leaf.scale.y = 0.6;
+      scene.add(leaf);
+    }
+    for (let r = 0; r < 4; r++) {
+      const ra = r / 4 * Math.PI * 2 + Math.random() * 0.3;
+      const root = new Mesh(
+        new CylinderGeometry(0.02, 0.04, 0.4, 5),
+        mat.trunkBrown
+      );
+      root.position.set(
+        tx + Math.cos(ra) * trunkR * 1.5,
+        0.05,
+        tz + Math.sin(ra) * trunkR * 1.5
+      );
+      root.rotation.z = Math.cos(ra) * 0.8;
+      root.rotation.x = Math.sin(ra) * 0.8;
+      scene.add(root);
+    }
+    addObstacle(tx - 0.5, tx + 0.5, tz - 0.5, tz + 0.5, "tree");
   });
   createGrassForContinent(ox, oz, W, D);
   const flowerColors = [mat.flowerRed, mat.flowerPink, mat.flowerYellow, mat.flowerPurple, mat.flowerWhite];
-  for (let i = 0; i < 15; i++) {
+  const flowerCount = 20 + Math.floor(Math.random() * 10);
+  for (let i = 0; i < flowerCount; i++) {
     const fx = ox + 1 + Math.random() * (W - 2);
     const fz = oz + 1 + Math.random() * (D - 2);
     if (Math.abs(fx - hx) < 3.5 && Math.abs(fz - hz) < 3.5) continue;
-    const stem = new Mesh(new CylinderGeometry(0.02, 0.02, 0.25, 4), mat.leafGreen);
-    stem.position.set(fx, 0.12, fz);
-    scene.add(stem);
+    let tooCloseToTree = false;
+    for (const [tx, tz] of treePositions) {
+      if (Math.abs(fx - tx) < 1.5 && Math.abs(fz - tz) < 1.5) {
+        tooCloseToTree = true;
+        break;
+      }
+    }
+    if (tooCloseToTree) continue;
+    const flowerType = Math.floor(Math.random() * 3);
     const fColor = flowerColors[Math.floor(Math.random() * flowerColors.length)];
-    const head = new Mesh(new SphereGeometry(0.1, 8, 6), fColor);
-    head.position.set(fx, 0.28, fz);
-    scene.add(head);
+    const stemH = 0.2 + Math.random() * 0.15;
+    const stemGeo = new CylinderGeometry(0.015, 0.02, stemH, 6);
+    const stem = new Mesh(stemGeo, mat.leafGreen);
+    stem.position.set(fx, stemH / 2, fz);
+    stem.rotation.z = (Math.random() - 0.5) * 0.2;
+    scene.add(stem);
+    if (Math.random() > 0.5) {
+      const leaf = new Mesh(
+        new SphereGeometry(0.04, 6, 4),
+        mat.leafGreen
+      );
+      leaf.position.set(fx + 0.03, stemH * 0.4, fz);
+      leaf.scale.set(1, 0.5, 0.3);
+      scene.add(leaf);
+    }
+    if (flowerType === 0) {
+      const head = new Mesh(
+        new SphereGeometry(0.08 + Math.random() * 0.04, 10, 8),
+        fColor
+      );
+      head.position.set(fx, stemH + 0.05, fz);
+      scene.add(head);
+      const center = new Mesh(
+        new SphereGeometry(0.03, 8, 6),
+        new MeshStandardMaterial({ color: 16771899 })
+      );
+      center.position.set(fx, stemH + 0.08, fz + 0.05);
+      scene.add(center);
+    } else if (flowerType === 1) {
+      const petalCount = 5 + Math.floor(Math.random() * 3);
+      for (let p = 0; p < petalCount; p++) {
+        const pa = p / petalCount * Math.PI * 2;
+        const petal = new Mesh(
+          new SphereGeometry(0.05, 8, 6),
+          fColor
+        );
+        petal.position.set(
+          fx + Math.cos(pa) * 0.06,
+          stemH + 0.04,
+          fz + Math.sin(pa) * 0.06
+        );
+        petal.scale.set(1, 0.6, 0.8);
+        scene.add(petal);
+      }
+      const center = new Mesh(
+        new SphereGeometry(0.025, 8, 6),
+        new MeshStandardMaterial({ color: 16771899 })
+      );
+      center.position.set(fx, stemH + 0.06, fz);
+      scene.add(center);
+    } else {
+      const tulip = new Mesh(
+        new ConeGeometry(0.06, 0.12, 8),
+        fColor
+      );
+      tulip.position.set(fx, stemH + 0.06, fz);
+      tulip.rotation.x = Math.PI;
+      scene.add(tulip);
+    }
   }
-  for (let i = 0; i < 5; i++) {
+  const bushCount = 6 + Math.floor(Math.random() * 4);
+  for (let i = 0; i < bushCount; i++) {
     const bx = ox + 1.5 + Math.random() * (W - 3);
     const bz = oz + 1.5 + Math.random() * (D - 3);
     if (Math.abs(bx - hx) < 3 && Math.abs(bz - hz) < 3) continue;
-    const bush = new Mesh(new SphereGeometry(0.4 + Math.random() * 0.2, 10, 8), mat.bushGreen);
-    bush.position.set(bx, 0.25, bz);
-    bush.scale.y = 0.7;
-    bush.castShadow = true;
-    scene.add(bush);
+    let tooClose = false;
+    for (const [tx, tz] of treePositions) {
+      if (Math.abs(bx - tx) < 1.5 && Math.abs(bz - tz) < 1.5) {
+        tooClose = true;
+        break;
+      }
+    }
+    if (tooClose) continue;
+    const bushGroup = new Group();
+    const clusterCount = 2 + Math.floor(Math.random() * 3);
+    for (let c = 0; c < clusterCount; c++) {
+      const bushSize = 0.3 + Math.random() * 0.3;
+      const bush = new Mesh(
+        new IcosahedronGeometry(bushSize, 1),
+        mat.bushGreen
+      );
+      bush.position.set(
+        (Math.random() - 0.5) * 0.4,
+        bushSize * 0.5,
+        (Math.random() - 0.5) * 0.4
+      );
+      bush.rotation.set(
+        Math.random() * 0.3,
+        Math.random() * Math.PI * 2,
+        Math.random() * 0.3
+      );
+      bush.castShadow = true;
+      bush.receiveShadow = true;
+      bushGroup.add(bush);
+    }
+    bushGroup.position.set(bx, 0.05, bz);
+    scene.add(bushGroup);
+    if (Math.random() > 0.5) {
+      const flowerCount2 = 2 + Math.floor(Math.random() * 3);
+      for (let f = 0; f < flowerCount2; f++) {
+        const flower = new Mesh(
+          new SphereGeometry(0.05, 6, 4),
+          flowerColors[Math.floor(Math.random() * flowerColors.length)]
+        );
+        flower.position.set(
+          bx + (Math.random() - 0.5) * 0.5,
+          0.2 + Math.random() * 0.2,
+          bz + (Math.random() - 0.5) * 0.5
+        );
+        scene.add(flower);
+      }
+    }
   }
   const pondX = cx + 4, pondZ = cz + 4;
+  const pondRadius = 2.2;
+  const basin = new Mesh(
+    new CircleGeometry(pondRadius + 0.3, 32),
+    new MeshStandardMaterial({ color: 4021322, roughness: 1 })
+  );
+  basin.rotation.x = -Math.PI / 2;
+  basin.position.set(pondX, -0.02, pondZ);
+  basin.receiveShadow = true;
+  scene.add(basin);
   const waterShaderMat = new ShaderMaterial({
     vertexShader: waterVertexShader,
     fragmentShader: waterFragmentShader,
     uniforms: {
       uTime: { value: 0 },
-      uColor: { value: new Color(6013163) },
-      uDeepColor: { value: new Color(1735605) }
+      uColor: { value: new Color(5093588) },
+      uDeepColor: { value: new Color(1731466) }
     },
     transparent: true,
     side: DoubleSide
   });
-  const pondGeo = new CircleGeometry(1.8, 24);
+  const pondGeo = new CircleGeometry(pondRadius, 32);
   const pond = new Mesh(pondGeo, waterShaderMat);
   pond.rotation.x = -Math.PI / 2;
   pond.position.set(pondX, 0.02, pondZ);
   scene.add(pond);
   if (!window._waterMeshes) window._waterMeshes = [];
   window._waterMeshes.push(pond);
-  for (let i = 0; i < 3; i++) {
+  for (let a = 0; a < Math.PI * 2; a += Math.PI / 16) {
+    const r = pondRadius + (Math.random() - 0.5) * 0.2;
+    const stoneSize = 0.1 + Math.random() * 0.15;
+    const stone = new Mesh(
+      new SphereGeometry(stoneSize, 8, 6),
+      mat.rock
+    );
+    stone.position.set(
+      pondX + Math.cos(a) * r,
+      stoneSize * 0.4,
+      pondZ + Math.sin(a) * r
+    );
+    stone.scale.y = 0.5 + Math.random() * 0.3;
+    stone.rotation.set(
+      Math.random() * 0.5,
+      Math.random() * Math.PI * 2,
+      Math.random() * 0.5
+    );
+    stone.castShadow = true;
+    scene.add(stone);
+  }
+  for (let i = 0; i < 4; i++) {
     const la = Math.random() * Math.PI * 2;
-    const lr = 0.5 + Math.random() * 0.8;
+    const lr = 0.4 + Math.random() * 1;
     const lily = new Mesh(
-      new CircleGeometry(0.2, 8),
-      new MeshStandardMaterial({ color: 5025616, roughness: 0.8, side: DoubleSide })
+      new CircleGeometry(0.25, 12),
+      new MeshStandardMaterial({
+        color: 4033600,
+        roughness: 0.7,
+        side: DoubleSide
+      })
     );
     lily.rotation.x = -Math.PI / 2;
-    lily.position.set(pondX + Math.cos(la) * lr, 0.04, pondZ + Math.sin(la) * lr);
+    lily.position.set(
+      pondX + Math.cos(la) * lr,
+      0.04,
+      pondZ + Math.sin(la) * lr
+    );
     scene.add(lily);
+    if (Math.random() > 0.5) {
+      const flower = new Mesh(
+        new SphereGeometry(0.08, 8, 6),
+        new MeshStandardMaterial({
+          color: Math.random() > 0.5 ? 16738740 : 16777215,
+          roughness: 0.6
+        })
+      );
+      flower.position.set(
+        pondX + Math.cos(la) * lr,
+        0.08,
+        pondZ + Math.sin(la) * lr
+      );
+      scene.add(flower);
+    }
   }
-  for (let a = 0; a < Math.PI * 2; a += Math.PI / 6) {
-    const r = 1.8 + (Math.random() - 0.5) * 0.3;
-    const rs = new Mesh(new SphereGeometry(0.15 + Math.random() * 0.1, 6, 5), mat.rock);
-    rs.position.set(pondX + Math.cos(a) * r, 0.1, pondZ + Math.sin(a) * r);
-    rs.scale.y = 0.6;
-    scene.add(rs);
+  for (let f = 0; f < 3; f++) {
+    const fish = new Mesh(
+      new ConeGeometry(0.04, 0.15, 4),
+      new MeshStandardMaterial({ color: 16753920 })
+    );
+    fish.rotation.x = Math.PI / 2;
+    fish.position.set(
+      pondX + (Math.random() - 0.5) * pondRadius,
+      -0.1,
+      pondZ + (Math.random() - 0.5) * pondRadius
+    );
+    fish.userData = {
+      angle: Math.random() * Math.PI * 2,
+      speed: 0.5 + Math.random() * 0.5,
+      radius: 0.3 + Math.random() * 0.8,
+      _fish: true
+    };
+    scene.add(fish);
   }
   for (let i = 0; i < 4; i++) {
     const rx = ox + 1 + Math.random() * (W - 2);
@@ -31307,6 +31857,7 @@ function animate() {
     }
     updateMinionExpressions();
     updatePetals(dt, time);
+    updateFireflies(dt, time);
     updateDayNightCycle(dt);
     drawMinimap();
     if (Math.floor(time * 0.5) !== Math.floor((time - dt) * 0.5)) {
@@ -31323,6 +31874,15 @@ function animate() {
         if (w.material.uniforms?.uTime) w.material.uniforms.uTime.value = time;
       }
     }
+    scene.traverse((obj) => {
+      if (obj.userData?._fish) {
+        const ud = obj.userData;
+        ud.angle += ud.speed * dt;
+        obj.position.x = ud.baseX + Math.cos(ud.angle) * ud.radius;
+        obj.position.z = ud.baseZ + Math.sin(ud.angle) * ud.radius;
+        obj.rotation.y = ud.angle + Math.PI / 2;
+      }
+    });
     scene.traverse((obj) => {
       if (obj.material?.uniforms?.uTime && obj.material !== grassInstances[0]?.mat && !window._waterMeshes?.includes(obj)) {
         obj.material.uniforms.uTime.value = time;
@@ -31499,23 +32059,53 @@ window.addEventListener("resize", () => {
   }
 })();
 function initClouds() {
-  const cloudMat = new MeshBasicMaterial({ color: 16777215, transparent: true, opacity: 0.85 });
-  for (let i = 0; i < 15; i++) {
+  const cloudMats = [
+    new MeshBasicMaterial({ color: 16777215, transparent: true, opacity: 0.9 }),
+    new MeshBasicMaterial({ color: 16119285, transparent: true, opacity: 0.85 }),
+    new MeshBasicMaterial({ color: 15263976, transparent: true, opacity: 0.8 })
+  ];
+  for (let i = 0; i < 20; i++) {
     const cloud = new Group();
-    const count = 4 + Math.floor(Math.random() * 4);
+    const count = 5 + Math.floor(Math.random() * 6);
+    const cloudMat = cloudMats[Math.floor(Math.random() * cloudMats.length)];
     for (let j = 0; j < count; j++) {
-      const r = 2 + Math.random() * 3;
-      const puff = new Mesh(new SphereGeometry(r, 10, 8), cloudMat);
-      puff.position.set(j * 2.5 - count * 1.2, Math.random() * 0.8, Math.random() * 1.2);
-      puff.scale.y = 0.35 + Math.random() * 0.15;
+      const r = 1.5 + Math.random() * 4;
+      const puff = new Mesh(
+        new SphereGeometry(r, 12, 8),
+        cloudMat
+      );
+      puff.position.set(
+        j * 2.2 - count * 1.1,
+        Math.random() * 1.5,
+        Math.random() * 2 - 1
+      );
+      puff.scale.y = 0.3 + Math.random() * 0.2;
       cloud.add(puff);
     }
+    for (let d = 0; d < 3; d++) {
+      const detail = new Mesh(
+        new SphereGeometry(0.8 + Math.random() * 1, 8, 6),
+        cloudMat
+      );
+      detail.position.set(
+        (Math.random() - 0.5) * count * 2,
+        Math.random() * 0.5,
+        (Math.random() - 0.5) * 2
+      );
+      detail.scale.y = 0.25;
+      cloud.add(detail);
+    }
     cloud.position.set(
-      (Math.random() - 0.5) * 120,
-      25 + Math.random() * 10,
-      (Math.random() - 0.5) * 120
+      (Math.random() - 0.5) * 150,
+      22 + Math.random() * 15,
+      (Math.random() - 0.5) * 150
     );
-    cloud.userData = { speed: 0.2 + Math.random() * 0.3, dir: Math.random() > 0.5 ? 1 : -1, _atmosphere: true };
+    cloud.userData = {
+      speed: 0.15 + Math.random() * 0.25,
+      dir: Math.random() > 0.5 ? 1 : -1,
+      _atmosphere: true,
+      isCloud: true
+    };
     scene.add(cloud);
   }
 }
@@ -31687,6 +32277,7 @@ function initPetals() {
   }
 }
 initPetals();
+initFireflies();
 initRainSystem();
 function updatePetals(dt, time) {
   for (const p of petals) {
@@ -31701,6 +32292,51 @@ function updatePetals(dt, time) {
       p.position.x = (Math.random() - 0.5) * 100;
       p.position.z = (Math.random() - 0.5) * 100;
     }
+  }
+}
+var fireflies = [];
+var FIREFLY_COUNT = 40;
+function initFireflies() {
+  const fireflyGeo = new SphereGeometry(0.06, 8, 6);
+  for (let i = 0; i < FIREFLY_COUNT; i++) {
+    const fireflyMat = new MeshBasicMaterial({
+      color: 16777096,
+      transparent: true,
+      opacity: 0.8
+    });
+    const firefly = new Mesh(fireflyGeo, fireflyMat);
+    firefly.position.set(
+      (Math.random() - 0.5) * 80,
+      0.5 + Math.random() * 3,
+      (Math.random() - 0.5) * 80
+    );
+    firefly.userData = {
+      baseX: firefly.position.x,
+      baseY: firefly.position.y,
+      baseZ: firefly.position.z,
+      phase: Math.random() * Math.PI * 2,
+      speed: 0.5 + Math.random() * 1,
+      radius: 1 + Math.random() * 2,
+      blinkPhase: Math.random() * Math.PI * 2,
+      blinkSpeed: 2 + Math.random() * 3,
+      _atmosphere: true
+    };
+    scene.add(firefly);
+    fireflies.push(firefly);
+  }
+}
+function updateFireflies(dt, time) {
+  const dayProgress = gameTime % DAY_CYCLE / DAY_CYCLE;
+  const isNight = dayProgress > 0.7 || dayProgress < 0.2;
+  for (const ff of fireflies) {
+    const ud = ff.userData;
+    ff.position.x = ud.baseX + Math.sin(time * ud.speed + ud.phase) * ud.radius;
+    ff.position.y = ud.baseY + Math.sin(time * ud.speed * 0.7 + ud.phase) * 0.5;
+    ff.position.z = ud.baseZ + Math.cos(time * ud.speed * 0.5 + ud.phase) * ud.radius;
+    const blink = Math.sin(time * ud.blinkSpeed + ud.blinkPhase);
+    ff.material.opacity = isNight ? 0.3 + blink * 0.5 : 0;
+    const scale = 0.8 + blink * 0.4;
+    ff.scale.setScalar(scale);
   }
 }
 function updateDayNightCycle(dt) {
@@ -32363,11 +32999,29 @@ function interpolateAvatars() {
     av.mesh.rotation.y = before.yaw + (after.yaw - before.yaw) * t;
   }
 }
+var ws = null;
+var wsConnected = false;
+function connectWS() {
+  const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+  ws = new WebSocket(`${protocol}//${location.host}`);
+  ws.onopen = () => {
+    wsConnected = true;
+    console.log("WebSocket connected");
+  };
+  ws.onclose = () => {
+    wsConnected = false;
+    console.log("WebSocket disconnected, reconnecting...");
+    setTimeout(connectWS, 2e3);
+  };
+  ws.onerror = (err) => {
+    console.error("WebSocket error:", err);
+    wsConnected = false;
+  };
+}
 function reportMyPosition() {
-  authFetch("/api/users/position", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
+  if (wsConnected && ws && ws.readyState === 1) {
+    ws.send(JSON.stringify({
+      type: "position",
       userId: myUserId,
       x: walkPos.x,
       y: walkPos.y,
@@ -32375,9 +33029,23 @@ function reportMyPosition() {
       yaw,
       pitch,
       name: myUserName
-    })
-  }).catch(() => {
-  });
+    }));
+  } else {
+    authFetch("/api/users/position", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userId: myUserId,
+        x: walkPos.x,
+        y: walkPos.y,
+        z: walkPos.z,
+        yaw,
+        pitch,
+        name: myUserName
+      })
+    }).catch(() => {
+    });
+  }
 }
 setTimeout(() => {
   const lo = document.getElementById("loading-overlay");
@@ -32399,6 +33067,7 @@ checkAuth().then((authOk) => {
   }).catch(() => {
   }).finally(() => {
     connectSSE();
+    connectWS();
   });
 });
 var lastServerSave = 0;
