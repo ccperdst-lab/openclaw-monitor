@@ -28915,12 +28915,10 @@ window.addEventListener("keydown", (e) => {
   } else if (e.code === "ShiftLeft" || e.code === "ShiftRight") keys.shift = true;
   else if (e.code === "KeyR") toggleRain();
   else if (e.code === "KeyV") {
+    const wasThirdPerson = thirdPerson;
     thirdPerson = !thirdPerson;
     if (!selfAvatar) createSelfAvatar();
     if (selfAvatar) selfAvatar.visible = thirdPerson;
-    if (thirdPerson) {
-      walkPos.y = 1.5;
-    }
   } else if (e.code === "KeyT") {
     e.preventDefault();
     toggleChatPanel();
@@ -29878,7 +29876,7 @@ function getOrCreateBubble(sessionKey) {
     el = document.createElement("div");
     el.className = "bubble3d";
     const sk = sessionKey;
-    el.innerHTML = `<div class="bub-hd"><span class="bub-avatar">\u{1F7E1}</span><span class="bub-user"></span><button class="bub-pin" title="\u56FA\u5B9A\u5230\u5E95\u90E8">\u{1F4CC}</button><button class="bub-close">\u2715</button></div><div class="bub-msg"></div><div class="bub-acts collapsed"><div class="bub-acts-hd"><span class="bub-acts-tri">\u25B6</span><span class="bub-acts-lbl">\u601D\u8003\u8FC7\u7A0B</span><span class="bub-acts-cnt">0</span></div><div class="bub-acts-body"></div></div><div class="bub-chat"><input class="bub-chat-in" placeholder="\u76F4\u63A5\u5BF9\u8BDD..." /></div><div class="bub-foot"></div>`;
+    el.innerHTML = `<div class="bub-hd"><span class="bub-avatar">\u{1F7E1}</span><span class="bub-user"></span><button class="bub-abort" title="\u7EC8\u6B62\u601D\u8003">\u{1F6D1}</button><button class="bub-pin" title="\u56FA\u5B9A\u5230\u5E95\u90E8">\u{1F4CC}</button><button class="bub-close">\u2715</button></div><div class="bub-msg"></div><div class="bub-acts collapsed"><div class="bub-acts-hd"><span class="bub-acts-tri">\u25B6</span><span class="bub-acts-lbl">\u601D\u8003\u8FC7\u7A0B</span><span class="bub-acts-cnt">0</span></div><div class="bub-acts-body"></div></div><div class="bub-chat"><input class="bub-chat-in" placeholder="\u76F4\u63A5\u5BF9\u8BDD..." /></div><div class="bub-foot"></div>`;
     el.addEventListener("mousedown", (e) => {
       e.stopPropagation();
     });
@@ -29897,6 +29895,11 @@ function getOrCreateBubble(sessionKey) {
     pinBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       toggleFixedPanel(sk);
+    });
+    const abortBtn = el.querySelector(".bub-abort");
+    abortBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      abortSession(sk);
     });
     const actsEl = el.querySelector(".bub-acts");
     const actsHd = el.querySelector(".bub-acts-hd");
@@ -30007,6 +30010,8 @@ function updateBubbleContent(m) {
   if (ud.state === "thinking") el.classList.add("s-think");
   else if (ud.state === "streaming") el.classList.add("s-stream");
   else el.classList.add("s-done");
+  const abortBtn = el.querySelector(".bub-abort");
+  if (abortBtn) abortBtn.style.display = ud.state === "thinking" ? "" : "none";
   const tc = log2.filter((e) => e.type === "think").length;
   const oc = log2.filter((e) => e.type === "tool_use" || e.type === "tool_result").length;
   el.querySelector(".bub-foot").textContent = ud.state === "thinking" ? `\u{1F9E0} \u601D\u8003\u4E2D (${tc}\u6B65, ${oc}\u5DE5\u5177)...` : ud.state === "streaming" ? `\u270D\uFE0F \u6D41\u5F0F\u8F93\u51FA\u4E2D...` : `\u2705 \u601D\u8003\u4E86${tc}\u6B65 \xB7 \u{1F527}${oc}\u5DE5\u5177 \xB7 \u{1F4E4}${ud.replyCount}\u6761`;
@@ -30080,7 +30085,7 @@ function openFixedPanel(sessionKey) {
   if (!fixedPanelEl) {
     fixedPanelEl = document.createElement("div");
     fixedPanelEl.id = "fixed-panel";
-    fixedPanelEl.innerHTML = `<div class="fp-hd"><span class="fp-avatar">\u{1F4CC}</span><span class="fp-user"></span><button class="fp-unpin" title="\u53D6\u6D88\u56FA\u5B9A\u56DE\u6C14\u6CE1">\u{1F4CC}</button><button class="fp-close">\u2715</button></div><div class="fp-body"><div class="fp-msg"></div><div class="fp-acts collapsed"><div class="fp-acts-hd"><span class="fp-acts-tri">\u25B6</span><span class="fp-acts-lbl">\u601D\u8003\u8FC7\u7A0B</span><span class="fp-acts-cnt">0</span></div><div class="fp-acts-body"></div></div><div class="fp-chat"><input class="fp-chat-in" placeholder="\u76F4\u63A5\u5BF9\u8BDD..." /></div><div class="fp-foot"></div></div>`;
+    fixedPanelEl.innerHTML = `<div class="fp-hd"><span class="fp-avatar">\u{1F4CC}</span><span class="fp-user"></span><button class="fp-abort" title="\u7EC8\u6B62\u601D\u8003">\u{1F6D1}</button><button class="fp-unpin" title="\u53D6\u6D88\u56FA\u5B9A\u56DE\u6C14\u6CE1">\u{1F4CC}</button><button class="fp-close">\u2715</button></div><div class="fp-body"><div class="fp-msg"></div><div class="fp-acts collapsed"><div class="fp-acts-hd"><span class="fp-acts-tri">\u25B6</span><span class="fp-acts-lbl">\u601D\u8003\u8FC7\u7A0B</span><span class="fp-acts-cnt">0</span></div><div class="fp-acts-body"></div></div><div class="fp-chat"><input class="fp-chat-in" placeholder="\u76F4\u63A5\u5BF9\u8BDD..." /></div><div class="fp-foot"></div></div>`;
     document.body.appendChild(fixedPanelEl);
     fixedPanelEl.querySelector(".fp-close").addEventListener("click", (e) => {
       e.stopPropagation();
@@ -30095,6 +30100,10 @@ function openFixedPanel(sessionKey) {
         const mn = minions.find((m) => m.userData.sessionKey === sk);
         if (mn) showBubble(mn);
       }
+    });
+    fixedPanelEl.querySelector(".fp-abort").addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (fixedPanelSession) abortSession(fixedPanelSession);
     });
     fixedPanelEl.querySelector(".fp-acts-hd").addEventListener("click", (e) => {
       e.stopPropagation();
@@ -30199,6 +30208,8 @@ function updateFixedPanelContent(minion) {
   const oc = log2.filter((e) => e.type === "tool_use" || e.type === "tool_result").length;
   fixedPanelEl.querySelector(".fp-acts-cnt").textContent = tc + oc;
   fixedPanelEl.querySelector(".fp-foot").textContent = ud.state === "thinking" ? `\u{1F9E0} \u601D\u8003\u4E2D (${tc}\u6B65, ${oc}\u5DE5\u5177)...` : ud.state === "streaming" ? "\u270D\uFE0F \u6D41\u5F0F\u8F93\u51FA\u4E2D..." : `\u2705 \u601D\u8003\u4E86${tc}\u6B65 \xB7 \u{1F527}${oc}\u5DE5\u5177 \xB7 \u{1F4E4}${ud.replyCount}\u6761`;
+  const fpAbortBtn = fixedPanelEl.querySelector(".fp-abort");
+  if (fpAbortBtn) fpAbortBtn.style.display = ud.state === "thinking" ? "" : "none";
 }
 function showBubble(m) {
   const sk = m.userData.sessionKey;
@@ -30822,9 +30833,9 @@ function animate() {
       selfAvatar.position.set(walkPos.x, 0, walkPos.z);
       selfAvatar.rotation.y = yaw;
       selfAvatar.visible = true;
-      const dist = 4;
+      const dist = 5;
       const camX = walkPos.x - Math.sin(yaw) * dist * Math.cos(pitch);
-      const camY = 1.5 + Math.sin(-pitch) * dist * 0.8;
+      const camY = walkPos.y + Math.sin(-pitch) * dist * 0.3;
       const camZ = walkPos.z - Math.cos(yaw) * dist * Math.cos(pitch);
       camera.position.set(camX, camY, camZ);
       const lookDirX = Math.sin(yaw);
@@ -31285,6 +31296,21 @@ window.runCmd = function() {
   }).catch((e) => {
     out.textContent = "Error: " + e.message;
   });
+};
+window.abortSession = function(sessionKey) {
+  const minion = minions.find((m) => m.userData.sessionKey === sessionKey);
+  if (!minion) return;
+  const sessionId = minion.userData.sessionId;
+  const ud = minion.userData;
+  if (ud.state !== "thinking") return;
+  authFetch(`/api/sessions/${sessionId}/abort`, { method: "POST" }).then((r) => r.json()).then((result) => {
+    if (result.ok) {
+      ud.state = "done";
+      if (!ud.eventLog) ud.eventLog = [];
+      ud.eventLog.push({ type: "think", text: "\u{1F6D1} \u7528\u6237\u624B\u52A8\u7EC8\u6B62\u4E86\u601D\u8003" });
+      updateBubbleContent(minion);
+    }
+  }).catch((e) => console.error("Abort error:", e));
 };
 window.sendDirectChat = function(sessionKey, inputEl) {
   const text = inputEl.value.trim();

@@ -554,10 +554,11 @@ window.addEventListener('keydown', e => {
   else if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') keys.shift = true;
   else if (e.code === 'KeyR') toggleRain();
   else if (e.code === 'KeyV') {
+    const wasThirdPerson = thirdPerson;
     thirdPerson = !thirdPerson;
     if (!selfAvatar) createSelfAvatar();
     if (selfAvatar) selfAvatar.visible = thirdPerson;
-    if (thirdPerson) { walkPos.y = 1.5; } // reset to reasonable height
+    // walkPos.y stays as-is: first-person height becomes third-person orbit height
   }
   else if (e.code === 'KeyT') { e.preventDefault(); toggleChatPanel(); }
 });
@@ -1597,7 +1598,7 @@ function getOrCreateBubble(sessionKey) {
     el = document.createElement('div');
     el.className = 'bubble3d';
     const sk = sessionKey;
-    el.innerHTML = `<div class="bub-hd"><span class="bub-avatar">🟡</span><span class="bub-user"></span><button class="bub-pin" title="固定到底部">📌</button><button class="bub-close">✕</button></div><div class="bub-msg"></div><div class="bub-acts collapsed"><div class="bub-acts-hd"><span class="bub-acts-tri">▶</span><span class="bub-acts-lbl">思考过程</span><span class="bub-acts-cnt">0</span></div><div class="bub-acts-body"></div></div><div class="bub-chat"><input class="bub-chat-in" placeholder="直接对话..." /></div><div class="bub-foot"></div>`;
+    el.innerHTML = `<div class="bub-hd"><span class="bub-avatar">🟡</span><span class="bub-user"></span><button class="bub-abort" title="终止思考">🛑</button><button class="bub-pin" title="固定到底部">📌</button><button class="bub-close">✕</button></div><div class="bub-msg"></div><div class="bub-acts collapsed"><div class="bub-acts-hd"><span class="bub-acts-tri">▶</span><span class="bub-acts-lbl">思考过程</span><span class="bub-acts-cnt">0</span></div><div class="bub-acts-body"></div></div><div class="bub-chat"><input class="bub-chat-in" placeholder="直接对话..." /></div><div class="bub-foot"></div>`;
 
     // --- Focus management: prevent events from reaching canvas ---
     // Stop all mouse events from propagating out of the bubble
@@ -1617,6 +1618,13 @@ function getOrCreateBubble(sessionKey) {
     pinBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       toggleFixedPanel(sk);
+    });
+
+    // Abort button — terminate active thinking run
+    const abortBtn = el.querySelector('.bub-abort');
+    abortBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      abortSession(sk);
     });
 
     // Collapse/expand thinking panel
@@ -1744,6 +1752,10 @@ function updateBubbleContent(m) {
   else if (ud.state === 'streaming') el.classList.add('s-stream');
   else el.classList.add('s-done');
 
+  // Abort button: only visible during thinking
+  const abortBtn = el.querySelector('.bub-abort');
+  if (abortBtn) abortBtn.style.display = ud.state === 'thinking' ? '' : 'none';
+
   // Footer
   const tc = log.filter(e => e.type === 'think').length;
   const oc = log.filter(e => e.type === 'tool_use' || e.type === 'tool_result').length;
@@ -1827,10 +1839,11 @@ function openFixedPanel(sessionKey) {
   if (!fixedPanelEl) {
     fixedPanelEl = document.createElement('div');
     fixedPanelEl.id = 'fixed-panel';
-    fixedPanelEl.innerHTML = `<div class="fp-hd"><span class="fp-avatar">📌</span><span class="fp-user"></span><button class="fp-unpin" title="取消固定回气泡">📌</button><button class="fp-close">✕</button></div><div class="fp-body"><div class="fp-msg"></div><div class="fp-acts collapsed"><div class="fp-acts-hd"><span class="fp-acts-tri">▶</span><span class="fp-acts-lbl">思考过程</span><span class="fp-acts-cnt">0</span></div><div class="fp-acts-body"></div></div><div class="fp-chat"><input class="fp-chat-in" placeholder="直接对话..." /></div><div class="fp-foot"></div></div>`;
+    fixedPanelEl.innerHTML = `<div class="fp-hd"><span class="fp-avatar">📌</span><span class="fp-user"></span><button class="fp-abort" title="终止思考">🛑</button><button class="fp-unpin" title="取消固定回气泡">📌</button><button class="fp-close">✕</button></div><div class="fp-body"><div class="fp-msg"></div><div class="fp-acts collapsed"><div class="fp-acts-hd"><span class="fp-acts-tri">▶</span><span class="fp-acts-lbl">思考过程</span><span class="fp-acts-cnt">0</span></div><div class="fp-acts-body"></div></div><div class="fp-chat"><input class="fp-chat-in" placeholder="直接对话..." /></div><div class="fp-foot"></div></div>`;
     document.body.appendChild(fixedPanelEl);
     fixedPanelEl.querySelector('.fp-close').addEventListener('click', (e) => { e.stopPropagation(); closeFixedPanel(); });
     fixedPanelEl.querySelector('.fp-unpin').addEventListener('click', (e) => { e.stopPropagation(); const sk = fixedPanelSession; closeFixedPanel(); if (sk && bubbles[sk]) { bubbles[sk]._dismissed = false; const mn = minions.find(m => m.userData.sessionKey === sk); if (mn) showBubble(mn); } });
+    fixedPanelEl.querySelector('.fp-abort').addEventListener('click', (e) => { e.stopPropagation(); if (fixedPanelSession) abortSession(fixedPanelSession); });
     fixedPanelEl.querySelector('.fp-acts-hd').addEventListener('click', (e) => { e.stopPropagation(); fixedPanelEl.querySelector('.fp-acts').classList.toggle('collapsed'); setTimeout(clampPanelToViewport, 350); });
     const chatIn = fixedPanelEl.querySelector('.fp-chat-in');
     let isComposing = false;
@@ -1915,6 +1928,10 @@ function updateFixedPanelContent(minion) {
   const oc = log.filter(e => e.type === 'tool_use' || e.type === 'tool_result').length;
   fixedPanelEl.querySelector('.fp-acts-cnt').textContent = tc + oc;
   fixedPanelEl.querySelector('.fp-foot').textContent = ud.state === 'thinking' ? `🧠 思考中 (${tc}步, ${oc}工具)...` : ud.state === 'streaming' ? '✍️ 流式输出中...' : `✅ 思考了${tc}步 · 🔧${oc}工具 · 📤${ud.replyCount}条`;
+
+  // Abort button: only visible during thinking
+  const fpAbortBtn = fixedPanelEl.querySelector('.fp-abort');
+  if (fpAbortBtn) fpAbortBtn.style.display = ud.state === 'thinking' ? '' : 'none';
 }
 
 function showBubble(m) {
@@ -2602,14 +2619,15 @@ function animate() {
 
   // Set camera based on mode
   if (thirdPerson && selfAvatar) {
-    // Third-person: avatar at walkPos, camera behind and above
+    // Third-person: avatar on ground (y=0), camera orbits at walkPos.y height
+    // walkPos.y preserves the user's chosen viewing height (set before toggle or by Space/Shift)
     selfAvatar.position.set(walkPos.x, 0, walkPos.z);
     selfAvatar.rotation.y = yaw;
     selfAvatar.visible = true;
-    // Camera orbits around avatar
-    const dist = 4;
+    // Camera orbits behind and above avatar, at walkPos.y height
+    const dist = 5;
     const camX = walkPos.x - Math.sin(yaw) * dist * Math.cos(pitch);
-    const camY = 1.5 + Math.sin(-pitch) * dist * 0.8; // 1.5 above ground, pitch controls height
+    const camY = walkPos.y + Math.sin(-pitch) * dist * 0.3; // walkPos.y is the orbit height, pitch adjusts slightly
     const camZ = walkPos.z - Math.cos(yaw) * dist * Math.cos(pitch);
     camera.position.set(camX, camY, camZ);
     // Eye tracking: pupils follow camera (both X and Y)
@@ -3170,6 +3188,29 @@ window.runCmd = function() {
 
 // ===== Helper =====
 // ===== Direct Chat =====
+// Abort a session's active run
+window.abortSession = function(sessionKey) {
+  const minion = minions.find(m => m.userData.sessionKey === sessionKey);
+  if (!minion) return;
+  const sessionId = minion.userData.sessionId;
+  const ud = minion.userData;
+
+  // Only abort if currently thinking
+  if (ud.state !== 'thinking') return;
+
+  authFetch(`/api/sessions/${sessionId}/abort`, { method: 'POST' })
+    .then(r => r.json())
+    .then(result => {
+      if (result.ok) {
+        ud.state = 'done';
+        if (!ud.eventLog) ud.eventLog = [];
+        ud.eventLog.push({ type: 'think', text: '🛑 用户手动终止了思考' });
+        updateBubbleContent(minion);
+      }
+    })
+    .catch(e => console.error('Abort error:', e));
+};
+
 window.sendDirectChat = function(sessionKey, inputEl) {
   const text = inputEl.value.trim();
   if (!text) return;

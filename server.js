@@ -984,3 +984,38 @@ app.post('/api/chat/:sessionId', (req, res) => {
 
   res.json({ ok: true, method: 'gateway' });
 });
+
+// Abort: terminate a session's active run via Gateway API
+app.post('/api/sessions/:sessionId/abort', (req, res) => {
+  const sessionId = req.params.sessionId;
+
+  // Find the session key from agentState
+  let sessionKey = null;
+  for (const [, info] of Object.entries(agentState)) {
+    for (const [key, sess] of Object.entries(info.sessions)) {
+      if (sess.sessionId === sessionId) {
+        sessionKey = key;
+        break;
+      }
+    }
+    if (sessionKey) break;
+  }
+  if (!sessionKey) return res.status(404).json({ error: 'Session not found' });
+
+  log('info', `Abort → session=${sessionId}, key=${sessionKey}`);
+
+  const cmd = `openclaw gateway call chat.abort --params '${JSON.stringify({ sessionKey })}' --json`;
+  exec(cmd, { timeout: 10000, env: { ...process.env } }, (err, stdout, stderr) => {
+    if (err) {
+      log('error', `Abort error: ${stderr || err.message}`);
+      return res.status(500).json({ error: stderr || err.message });
+    }
+    try {
+      const result = JSON.parse(stdout || '{}');
+      log('info', `Abort result: ${JSON.stringify(result)}`);
+      res.json({ ok: true, ...result });
+    } catch {
+      res.json({ ok: true, raw: stdout });
+    }
+  });
+});
