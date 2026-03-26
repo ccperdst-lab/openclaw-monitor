@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🛡️ OpenClaw Admin</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0d0d1f;color:#e2e8f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;min-height:100vh}
+a{color:#63b3ed;text-decoration:none}
+/* Layout */
+.app{display:flex;height:100vh}
+.sidebar{width:220px;background:#111827;border-right:1px solid #1e293b;display:flex;flex-direction:column;flex-shrink:0}
+.sidebar-logo{padding:20px 16px;border-bottom:1px solid #1e293b}
+.sidebar-logo h1{font-size:13px;color:#63b3ed;letter-spacing:0.5px}
+.sidebar-logo p{font-size:10px;color:#4b5563;margin-top:3px}
+.sidebar-nav{flex:1;padding:12px 8px}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:6px;cursor:pointer;font-size:12px;color:#9ca3af;margin-bottom:2px;transition:all .15s}
+.nav-item:hover{background:#1e293b;color:#e2e8f0}
+.nav-item.active{background:rgba(99,179,237,0.12);color:#63b3ed}
+.nav-item span:first-child{font-size:14px;width:20px;text-align:center}
+.sidebar-footer{padding:12px;border-top:1px solid #1e293b}
+.user-tag{display:flex;align-items:center;gap:8px;padding:8px;border-radius:6px;background:#1e293b}
+.user-avatar{width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#667eea,#764ba2);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0}
+.user-info{flex:1;min-width:0}
+.user-name{font-size:11px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.user-role{font-size:9px;color:#6b7280}
+.logout-btn{background:none;border:none;color:#6b7280;cursor:pointer;font-size:14px;padding:2px 4px;border-radius:4px;transition:all .15s}
+.logout-btn:hover{color:#ef4444;background:rgba(239,68,68,0.1)}
+/* Main */
+.main{flex:1;overflow:hidden;display:flex;flex-direction:column}
+.topbar{padding:14px 24px;border-bottom:1px solid #1e293b;display:flex;align-items:center;justify-content:space-between;background:#111827;flex-shrink:0}
+.topbar h2{font-size:15px;font-weight:600}
+.topbar-actions{display:flex;gap:8px}
+.content{flex:1;overflow-y:auto;padding:24px}
+.content::-webkit-scrollbar{width:6px}.content::-webkit-scrollbar-thumb{background:#334155;border-radius:3px}
+/* Cards */
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:24px}
+.stat-card{background:#111827;border:1px solid #1e293b;border-radius:10px;padding:16px}
+.stat-card .label{font-size:10px;color:#6b7280;letter-spacing:0.5px;text-transform:uppercase;margin-bottom:8px}
+.stat-card .value{font-size:28px;font-weight:700;color:#e2e8f0}
+.stat-card .sub{font-size:10px;color:#4b5563;margin-top:4px}
+/* Table */
+.table-card{background:#111827;border:1px solid #1e293b;border-radius:10px;overflow:hidden}
+.table-hd{padding:14px 18px;border-bottom:1px solid #1e293b;display:flex;align-items:center;justify-content:space-between}
+.table-hd h3{font-size:13px;font-weight:600}
+table{width:100%;border-collapse:collapse}
+th{font-size:10px;color:#6b7280;font-weight:600;letter-spacing:0.5px;text-transform:uppercase;padding:10px 18px;text-align:left;background:#0f1629;border-bottom:1px solid #1e293b}
+td{font-size:12px;color:#d1d5db;padding:11px 18px;border-bottom:1px solid rgba(255,255,255,0.04)}
+tr:hover td{background:rgba(255,255,255,0.02)}
+tr:last-child td{border-bottom:none}
+.role-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600}
+.role-admin{background:rgba(245,158,11,0.15);color:#fcd34d;border:1px solid rgba(245,158,11,0.3)}
+.role-user{background:rgba(99,179,237,0.12);color:#63b3ed;border:1px solid rgba(99,179,237,0.25)}
+.role-viewer{background:rgba(107,114,128,0.15);color:#9ca3af;border:1px solid rgba(107,114,128,0.3)}
+.perm-badge{display:inline-block;padding:1px 6px;border-radius:4px;font-size:9px;background:rgba(52,211,153,0.1);color:#34d399;border:1px solid rgba(52,211,153,0.25);margin:1px}
+/* Buttons */
+.btn{padding:7px 14px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;border:none;transition:all .15s;outline:none}
+.btn-primary{background:#3b82f6;color:#fff}.btn-primary:hover{background:#2563eb}
+.btn-sm{padding:4px 10px;font-size:10px}
+.btn-danger{background:rgba(239,68,68,0.12);color:#f87171;border:1px solid rgba(239,68,68,0.25)}.btn-danger:hover{background:rgba(239,68,68,0.2)}
+.btn-ghost{background:transparent;color:#9ca3af;border:1px solid #374151}.btn-ghost:hover{border-color:#63b3ed;color:#63b3ed}
+.btn-success{background:rgba(52,211,153,0.12);color:#34d399;border:1px solid rgba(52,211,153,0.25)}.btn-success:hover{background:rgba(52,211,153,0.2)}
+.icon-btn{background:none;border:none;cursor:pointer;padding:5px;border-radius:5px;color:#6b7280;font-size:14px;transition:all .15s}
+.icon-btn:hover{background:#1e293b;color:#e2e8f0}
+/* Modal */
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px);z-index:1000;display:none;align-items:center;justify-content:center}
+.modal-bg.show{display:flex}
+.modal{background:#111827;border:1px solid #1e293b;border-radius:14px;padding:24px;min-width:360px;max-width:520px;width:90vw;max-height:80vh;overflow-y:auto}
+.modal::-webkit-scrollbar{width:4px}.modal::-webkit-scrollbar-thumb{background:#334155;border-radius:2px}
+.modal h3{font-size:15px;font-weight:700;margin-bottom:6px}
+.modal p{font-size:11px;color:#6b7280;margin-bottom:18px}
+.form-group{margin-bottom:14px}
+.form-group label{display:block;font-size:11px;font-weight:600;color:#9ca3af;margin-bottom:5px;letter-spacing:0.3px;text-transform:uppercase}
+.form-group input,.form-group select{width:100%;padding:9px 12px;background:#0d0d1f;border:1px solid #374151;border-radius:7px;color:#e2e8f0;font-size:12px;outline:none;transition:border-color .15s}
+.form-group input:focus,.form-group select:focus{border-color:#3b82f6}
+.form-row{display:flex;gap:10px}
+.form-row .form-group{flex:1}
+.modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+.error-msg{color:#f87171;font-size:11px;margin-top:8px;display:none}
+/* Permissions section */
+.perm-section{margin-top:16px}
+.perm-section h4{font-size:11px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px}
+.perm-option{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:6px;background:#0d0d1f;margin-bottom:5px;cursor:pointer;transition:background .12s}
+.perm-option:hover{background:#1e293b}
+.perm-option input[type=checkbox]{cursor:pointer;accent-color:#3b82f6}
+.perm-option .perm-label{flex:1;font-size:11px}
+.perm-option .perm-type{font-size:9px;color:#6b7280;padding:1px 6px;background:#1e293b;border-radius:3px}
+.divider{height:1px;background:#1e293b;margin:16px 0}
+/* Search */
+.search-wrap{position:relative}
+.search-wrap input{padding-left:30px;background:#0d0d1f;border:1px solid #374151;border-radius:7px;color:#e2e8f0;font-size:11px;padding:7px 10px 7px 30px;outline:none;width:200px;transition:border-color .15s}
+.search-wrap input:focus{border-color:#3b82f6;width:240px}
+.search-wrap::before{content:'🔍';position:absolute;left:8px;top:50%;transform:translateY(-50%);font-size:11px;pointer-events:none}
+/* Alert */
+.alert{padding:10px 14px;border-radius:7px;font-size:11px;margin-bottom:12px;display:none}
+.alert.show{display:block}
+.alert-success{background:rgba(52,211,153,0.1);border:1px solid rgba(52,211,153,0.3);color:#34d399}
+.alert-error{background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);color:#f87171}
+/* Page sections */
+.page{display:none}.page.active{display:block}
+.empty-state{text-align:center;padding:40px;color:#4b5563;font-size:12px}
+.empty-state .icon{font-size:32px;margin-bottom:10px}
+/* Agent/session tree */
+.agent-tree{margin-top:8px}
+.agent-node{background:#0d0d1f;border:1px solid #1e293b;border-radius:7px;margin-bottom:6px;overflow:hidden}
+.agent-node-hd{padding:8px 12px;font-size:11px;font-weight:600;color:#93c5fd;cursor:pointer;display:flex;align-items:center;gap:6px}
+.agent-node-hd:hover{background:#1e293b}
+.agent-node-body{padding:6px 8px 8px}
+.sess-check{display:flex;align-items:center;gap:7px;padding:5px 8px;border-radius:5px;cursor:pointer;transition:background .1s}
+.sess-check:hover{background:#1e293b}
+.sess-check input{cursor:pointer;accent-color:#3b82f6}
+.sess-check .sess-key{font-size:10px;color:#9ca3af;font-family:monospace;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sess-check .sess-type{font-size:9px;color:#6b7280;padding:1px 5px;background:rgba(255,255,255,0.05);border-radius:3px;flex-shrink:0}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <h1>🛡️ Admin Panel</h1>
+      <p>OpenClaw Monitor</p>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-item active" onclick="showPage('dashboard')" id="nav-dashboard"><span>📊</span><span>概览</span></div>
+      <div class="nav-item" onclick="showPage('users')" id="nav-users"><span>👥</span><span>用户管理</span></div>
+      <div class="nav-item" onclick="showPage('permissions')" id="nav-permissions"><span>🔐</span><span>权限管理</span></div>
+      <div class="nav-item" onclick="showPage('agents')" id="nav-agents"><span>🤖</span><span>Agents 总览</span></div>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="user-tag">
+        <div class="user-avatar" id="admin-avatar">A</div>
+        <div class="user-info">
+          <div class="user-name" id="admin-name">Admin</div>
+          <div class="user-role">管理员</div>
+        </div>
+        <button class="logout-btn" onclick="logout()" title="退出登录">⏻</button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main class="main">
+    <div class="topbar">
+      <h2 id="page-title">概览</h2>
+      <div class="topbar-actions" id="topbar-actions"></div>
+    </div>
+
+    <div class="content">
+      <div id="alert-box" class="alert"></div>
+
+      <!-- Dashboard Page -->
+      <div class="page active" id="page-dashboard">
+        <div class="stats-grid" id="stats-grid">
+          <div class="stat-card"><div class="label">用户总数</div><div class="value" id="stat-users">-</div><div class="sub">注册用户</div></div>
+          <div class="stat-card"><div class="label">Agents</div><div class="value" id="stat-agents">-</div><div class="sub">已发现</div></div>
+          <div class="stat-card"><div class="label">Sessions</div><div class="value" id="stat-sessions">-</div><div class="sub">活跃会话</div></div>
+          <div class="stat-card"><div class="label">在线用户</div><div class="value" id="stat-online">-</div><div class="sub">实时</div></div>
+        </div>
+        <div class="table-card">
+          <div class="table-hd"><h3>最近登录用户</h3></div>
+          <table>
+            <thead><tr><th>用户名</th><th>角色</th><th>注册时间</th><th>最后登录</th></tr></thead>
+            <tbody id="recent-users"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Users Page -->
+      <div class="page" id="page-users">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <div class="search-wrap"><input id="user-search" placeholder="搜索用户..." oninput="filterUsers()" /></div>
+          <button class="btn btn-primary" onclick="openCreateUser()">+ 新建用户</button>
+        </div>
+        <div class="table-card">
+          <table>
+            <thead><tr><th>用户名</th><th>角色</th><th>邮箱</th><th>注册时间</th><th>最后登录</th><th>权限</th><th>操作</th></tr></thead>
+            <tbody id="users-table"></tbody>
+          </table>
+          <div id="users-empty" class="empty-state" style="display:none"><div class="icon">👥</div>暂无用户</div>
+        </div>
+      </div>
+
+      <!-- Permissions Page -->
+      <div class="page" id="page-permissions">
+        <div class="table-card">
+          <div class="table-hd"><h3>用户权限一览</h3><span style="font-size:10px;color:#6b7280">点击行可编辑</span></div>
+          <table>
+            <thead><tr><th>用户名</th><th>角色</th><th>权限范围</th><th>操作</th></tr></thead>
+            <tbody id="perms-table"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Agents Page -->
+      <div class="page" id="page-agents">
+        <div class="table-card">
+          <div class="table-hd"><h3>Agents 总览</h3></div>
+          <div style="padding:12px" id="agents-tree"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- Create User Modal -->
+<div class="modal-bg" id="create-modal">
+  <div class="modal">
+    <h3>创建用户</h3>
+    <p>创建新账号，设置初始权限</p>
+    <div class="form-row">
+      <div class="form-group"><label>用户名</label><input id="cu-username" placeholder="admin123" /></div>
+      <div class="form-group"><label>邮箱（可选）</label><input id="cu-email" placeholder="user@example.com" /></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>密码</label><input id="cu-password" type="password" placeholder="至少6位" /></div>
+      <div class="form-group"><label>角色</label>
+        <select id="cu-role">
+          <option value="user">user — 普通用户</option>
+          <option value="viewer">viewer — 只读</option>
+          <option value="admin">admin — 管理员</option>
+        </select>
+      </div>
+    </div>
+    <div class="divider"></div>
+    <div class="perm-section">
+      <h4>初始权限</h4>
+      <div id="cu-perms-tree"></div>
+    </div>
+    <div class="error-msg" id="cu-error"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('create-modal')">取消</button>
+      <button class="btn btn-primary" onclick="submitCreateUser()">创建</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Permissions Modal -->
+<div class="modal-bg" id="perm-modal">
+  <div class="modal">
+    <h3>编辑权限</h3>
+    <p id="perm-modal-desc">为用户配置访问权限</p>
+    <div class="perm-section">
+      <div id="perm-modal-tree"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('perm-modal')">取消</button>
+      <button class="btn btn-primary" onclick="savePermissions()">保存权限</button>
+    </div>
+  </div>
+</div>
+
+<!-- Delete Confirm Modal -->
+<div class="modal-bg" id="delete-modal">
+  <div class="modal" style="max-width:360px">
+    <h3>确认删除</h3>
+    <p id="delete-msg" style="margin-bottom:18px;font-size:12px;color:#9ca3af"></p>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('delete-modal')">取消</button>
+      <button class="btn btn-danger" id="delete-confirm-btn">删除</button>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+let allUsers = [];
+let worldData = { agents: [] };
+let editingPermUserId = null;
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+function fmt(ts) {
+  if (!ts) return '—';
+  return new Date(ts * 1000).toLocaleString('zh-CN', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+}
+function roleBadge(role) {
+  const cls = role === 'admin' ? 'role-admin' : role === 'user' ? 'role-user' : 'role-viewer';
+  const label = { admin:'管理员', user:'用户', viewer:'只读' }[role] || role;
+  return `<span class="role-badge ${cls}">${label}</span>`;
+}
+function permSummary(perms) {
+  if (!perms || perms.length === 0) return '<span style="color:#4b5563;font-size:10px">无权限</span>';
+  if (perms.some(p => p.resource_type === 'all')) return '<span class="perm-badge">全部访问</span>';
+  return perms.slice(0, 3).map(p => `<span class="perm-badge">${p.resource_type}:${p.resource_id?.slice(0,14) || '*'}</span>`).join('')
+    + (perms.length > 3 ? `<span style="font-size:9px;color:#6b7280"> +${perms.length-3}</span>` : '');
+}
+function showAlert(msg, type = 'success') {
+  const el = document.getElementById('alert-box');
+  el.className = `alert show alert-${type}`;
+  el.textContent = msg;
+  setTimeout(() => el.classList.remove('show'), 3000);
+}
+function openModal(id) { document.getElementById(id).classList.add('show'); }
+function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+
+// ── Auth ───────────────────────────────────────────────────────────────────────
+async function logout() {
+  await fetch('/api/auth/logout', { method: 'POST' });
+  location.href = '/login.html';
+}
+
+// ── Page navigation ───────────────────────────────────────────────────────────
+function showPage(page) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('page-' + page).classList.add('active');
+  document.getElementById('nav-' + page).classList.add('active');
+  const titles = { dashboard:'概览', users:'用户管理', permissions:'权限管理', agents:'Agents 总览' };
+  document.getElementById('page-title').textContent = titles[page];
+
+  const actions = document.getElementById('topbar-actions');
+  actions.innerHTML = '';
+  if (page === 'users') {
+    actions.innerHTML = `<button class="btn btn-primary btn-sm" onclick="openCreateUser()">+ 新建用户</button>`;
+  }
+}
+
+// ── Load data ─────────────────────────────────────────────────────────────────
+async function loadAll() {
+  const [meRes, usersRes, worldRes] = await Promise.all([
+    fetch('/api/auth/me'),
+    fetch('/api/admin/users'),
+    fetch('/api/admin/world'),
+  ]);
+  const me = await meRes.json();
+  const usersData = await usersRes.json();
+  worldData = await worldRes.json();
+  allUsers = usersData.users || [];
+
+  // Current admin info
+  if (me.user) {
+    document.getElementById('admin-name').textContent = me.user.username;
+    document.getElementById('admin-avatar').textContent = me.user.username[0].toUpperCase();
+  }
+
+  renderDashboard();
+  renderUsersTable();
+  renderPermsTable();
+  renderAgentsTree(document.getElementById('agents-tree'));
+  renderPermTree(document.getElementById('cu-perms-tree'), []);
+}
+
+// ── Dashboard ─────────────────────────────────────────────────────────────────
+async function renderDashboard() {
+  document.getElementById('stat-users').textContent = allUsers.length;
+  const agents = worldData.agents || [];
+  document.getElementById('stat-agents').textContent = agents.length;
+  document.getElementById('stat-sessions').textContent = agents.reduce((s, a) => s + (a.sessions || []).length, 0);
+
+  try {
+    const r = await fetch('/api/users');
+    const d = await r.json();
+    document.getElementById('stat-online').textContent = Object.keys(d.users || {}).length;
+  } catch { document.getElementById('stat-online').textContent = '—'; }
+
+  const sorted = [...allUsers].sort((a, b) => (b.last_login || 0) - (a.last_login || 0)).slice(0, 5);
+  document.getElementById('recent-users').innerHTML = sorted.map(u =>
+    `<tr><td><strong>${esc(u.username)}</strong></td><td>${roleBadge(u.role)}</td><td style="font-size:10px;color:#6b7280">${fmt(u.created_at)}</td><td style="font-size:10px;color:#6b7280">${fmt(u.last_login)}</td></tr>`
+  ).join('');
+}
+
+// ── Users Table ───────────────────────────────────────────────────────────────
+function filterUsers() {
+  const q = document.getElementById('user-search').value.toLowerCase();
+  const filtered = allUsers.filter(u => u.username.toLowerCase().includes(q));
+  renderUsersTable(filtered);
+}
+
+function renderUsersTable(users = allUsers) {
+  const tbody = document.getElementById('users-table');
+  const empty = document.getElementById('users-empty');
+  if (users.length === 0) { tbody.innerHTML = ''; empty.style.display = ''; return; }
+  empty.style.display = 'none';
+  tbody.innerHTML = users.map(u =>
+    `<tr>
+      <td><strong>${esc(u.username)}</strong></td>
+      <td>${roleBadge(u.role)}</td>
+      <td style="font-size:10px;color:#6b7280">${esc(u.email || '—')}</td>
+      <td style="font-size:10px;color:#6b7280">${fmt(u.created_at)}</td>
+      <td style="font-size:10px;color:#6b7280">${fmt(u.last_login)}</td>
+      <td>${permSummary(u.permissions)}</td>
+      <td style="white-space:nowrap">
+        <button class="icon-btn" onclick="editPerms('${u.id}')" title="编辑权限">🔐</button>
+        <button class="icon-btn" onclick="changeRole('${u.id}', '${u.role}')" title="修改角色">✏️</button>
+        <button class="icon-btn" onclick="confirmDelete('${u.id}', '${esc(u.username)}')" title="删除用户">🗑️</button>
+      </td>
+    </tr>`
+  ).join('');
+}
+
+// ── Permissions Table ─────────────────────────────────────────────────────────
+function renderPermsTable() {
+  document.getElementById('perms-table').innerHTML = allUsers.map(u =>
+    `<tr style="cursor:pointer" onclick="editPerms('${u.id}')">
+      <td><strong>${esc(u.username)}</strong></td>
+      <td>${roleBadge(u.role)}</td>
+      <td>${permSummary(u.permissions)}</td>
+      <td><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();editPerms('${u.id}')">编辑</button></td>
+    </tr>`
+  ).join('');
+}
+
+// ── Agents Tree ───────────────────────────────────────────────────────────────
+function renderAgentsTree(container, selectedPerms = null, prefix = 'tree') {
+  const agents = worldData.agents || [];
+  if (agents.length === 0) { container.innerHTML = '<div class="empty-state"><div class="icon">🤖</div>暂无 Agent</div>'; return; }
+  container.innerHTML = agents.map(a => {
+    const sessions = a.sessions || [];
+    const hasAll = selectedPerms && selectedPerms.some(p => p.type === 'all');
+    const agentSelected = selectedPerms && (hasAll || selectedPerms.some(p => p.type === 'agent' && p.resourceId === a.name));
+    return `<div class="agent-node">
+      <div class="agent-node-hd">
+        ${selectedPerms != null ? `<input type="checkbox" id="${prefix}-a-${a.name}" ${agentSelected ? 'checked' : ''} onchange="onAgentCheck('${a.name}', '${prefix}')" style="cursor:pointer;accent-color:#3b82f6">` : ''}
+        🤖 ${esc(a.name)}
+        <span style="font-size:9px;color:#4b5563;margin-left:auto">${sessions.length} sessions</span>
+      </div>
+      <div class="agent-node-body">${sessions.map(s => {
+        const sessSelected = selectedPerms && (hasAll || agentSelected || selectedPerms.some(p => p.type === 'session' && p.resourceId === s.key));
+        return `<div class="sess-check">
+          ${selectedPerms != null ? `<input type="checkbox" id="${prefix}-s-${s.key}" ${sessSelected ? 'checked' : ''} style="cursor:pointer;accent-color:#3b82f6">` : ''}
+          <span class="sess-key" title="${esc(s.key)}">${esc(s.key)}</span>
+          <span class="sess-type">${s.type}</span>
+        </div>`;
+      }).join('')}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderPermTree(container, currentPerms) {
+  const hasAll = currentPerms.some(p => p.type === 'all');
+  container.innerHTML = `
+    <div class="perm-option">
+      <input type="checkbox" id="perm-all" ${hasAll ? 'checked' : ''} onchange="onAllCheck(this, '${container.id}')">
+      <span class="perm-label">全部访问权限</span><span class="perm-type">all</span>
+    </div>
+    <div class="divider" style="margin:8px 0"></div>
+    <div id="${container.id}-tree"></div>`;
+  renderAgentsTree(document.getElementById(container.id + '-tree'), currentPerms, container.id);
+}
+
+function onAllCheck(cb, containerId) {
+  const treeEl = document.getElementById(containerId + '-tree');
+  treeEl.querySelectorAll('input[type=checkbox]').forEach(c => { c.checked = cb.checked; c.disabled = cb.checked; });
+}
+function onAgentCheck(agentName, prefix) {
+  const cb = document.getElementById(`${prefix}-a-${agentName}`);
+  const agent = (worldData.agents || []).find(a => a.name === agentName);
+  if (!agent) return;
+  agent.sessions.forEach(s => {
+    const sc = document.getElementById(`${prefix}-s-${s.key}`);
+    if (sc) { sc.checked = cb.checked; sc.disabled = cb.checked; }
+  });
+}
+
+function collectPerms(containerId) {
+  const perms = [];
+  const allCb = document.getElementById('perm-all');
+  if (allCb && allCb.checked) return [{ type: 'all', resourceId: null }];
+  const agents = worldData.agents || [];
+  agents.forEach(a => {
+    const acb = document.getElementById(`${containerId}-a-${a.name}`);
+    if (acb && acb.checked) { perms.push({ type: 'agent', resourceId: a.name }); return; }
+    a.sessions.forEach(s => {
+      const scb = document.getElementById(`${containerId}-s-${s.key}`);
+      if (scb && scb.checked) perms.push({ type: 'session', resourceId: s.key });
+    });
+  });
+  return perms;
+}
+
+// ── Create User ───────────────────────────────────────────────────────────────
+function openCreateUser() {
+  document.getElementById('cu-username').value = '';
+  document.getElementById('cu-password').value = '';
+  document.getElementById('cu-email').value = '';
+  document.getElementById('cu-role').value = 'user';
+  document.getElementById('cu-error').style.display = 'none';
+  renderPermTree(document.getElementById('cu-perms-tree'), []);
+  openModal('create-modal');
+}
+
+async function submitCreateUser() {
+  const username = document.getElementById('cu-username').value.trim();
+  const password = document.getElementById('cu-password').value;
+  const email    = document.getElementById('cu-email').value.trim();
+  const role     = document.getElementById('cu-role').value;
+  const errEl    = document.getElementById('cu-error');
+
+  if (!username || !password) { errEl.textContent = '请填写用户名和密码'; errEl.style.display = 'block'; return; }
+  if (password.length < 6) { errEl.textContent = '密码至少6位'; errEl.style.display = 'block'; return; }
+
+  try {
+    const r = await fetch('/api/admin/users', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password, role, email }),
+    });
+    const d = await r.json();
+    if (!r.ok) { errEl.textContent = d.error; errEl.style.display = 'block'; return; }
+
+    // Set permissions
+    const perms = collectPerms('cu-perms-tree');
+    if (perms.length > 0) {
+      await fetch(`/api/admin/users/${d.user.id}/permissions`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ permissions: perms }),
+      });
+    }
+    closeModal('create-modal');
+    showAlert(`用户 ${username} 创建成功`);
+    await loadAll();
+  } catch (e) { errEl.textContent = e.message; errEl.style.display = 'block'; }
+}
+
+// ── Edit Permissions ──────────────────────────────────────────────────────────
+function editPerms(userId) {
+  editingPermUserId = userId;
+  const user = allUsers.find(u => u.id === userId);
+  if (!user) return;
+  document.getElementById('perm-modal-desc').textContent = `用户：${user.username}`;
+  renderPermTree(document.getElementById('perm-modal-tree'), user.permissions || []);
+  openModal('perm-modal');
+}
+
+async function savePermissions() {
+  if (!editingPermUserId) return;
+  const perms = collectPerms('perm-modal-tree');
+  try {
+    const r = await fetch(`/api/admin/users/${editingPermUserId}/permissions`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ permissions: perms }),
+    });
+    if (!r.ok) throw new Error((await r.json()).error);
+    closeModal('perm-modal');
+    showAlert('权限保存成功');
+    await loadAll();
+  } catch (e) { showAlert(e.message, 'error'); }
+}
+
+// ── Change Role ───────────────────────────────────────────────────────────────
+async function changeRole(userId, currentRole) {
+  const roles = ['user', 'viewer', 'admin'];
+  const next = roles[(roles.indexOf(currentRole) + 1) % roles.length];
+  if (!confirm(`将角色改为 ${next}？`)) return;
+  const r = await fetch(`/api/admin/users/${userId}/role`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ role: next }),
+  });
+  if (r.ok) { showAlert(`角色已更新为 ${next}`); await loadAll(); }
+  else showAlert((await r.json()).error, 'error');
+}
+
+// ── Delete User ───────────────────────────────────────────────────────────────
+function confirmDelete(userId, username) {
+  document.getElementById('delete-msg').textContent = `确定要删除用户 "${username}" 吗？此操作不可撤销。`;
+  document.getElementById('delete-confirm-btn').onclick = () => deleteUser(userId, username);
+  openModal('delete-modal');
+}
+async function deleteUser(userId, username) {
+  const r = await fetch(`/api/admin/users/${userId}`, { method: 'DELETE' });
+  closeModal('delete-modal');
+  if (r.ok) { showAlert(`用户 ${username} 已删除`); await loadAll(); }
+  else showAlert((await r.json()).error, 'error');
+}
+
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+loadAll();
+</script>
+</body>
+</html>

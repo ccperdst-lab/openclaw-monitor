@@ -3,50 +3,22 @@ import * as THREE from 'three';
 // ===== Globals =====
 const container = document.getElementById('scene3d');
 
-// ===== Feature 3: Auth Token Helper =====
-let authToken = localStorage.getItem('monitor-authToken') || '';
-function authFetch(url, options = {}) {
-  const sep = url.includes('?') ? '&' : '?';
-  const fullUrl = authToken ? `${url}${sep}token=${encodeURIComponent(authToken)}` : url;
-  return fetch(fullUrl, options);
-}
+// ===== Auth (session cookie) =====
+function authFetch(url, options = {}) { return fetch(url, options); }
 
-// Check auth on load
 async function checkAuth() {
   try {
-    // Use stored token if available
-    const url = authToken ? `/api/world?token=${encodeURIComponent(authToken)}` : '/api/world';
-    const res = await fetch(url);
-    if (res.status === 401) {
-      // Token invalid or missing — show login
-      document.getElementById('login-overlay').classList.add('show');
-      return false;
-    }
+    const res = await fetch('/api/auth/status');
+    const d = await res.json();
+    if (!d.authenticated) { location.href = '/login.html'; return false; }
+    window._currentUser = d.user;
     return true;
-  } catch {
-    return true; // if server unreachable, let it proceed
-  }
+  } catch { return true; }
 }
 
+
 // Login handler
-document.getElementById('login-btn').addEventListener('click', async () => {
-  const token = document.getElementById('login-token').value.trim();
-  if (!token) return;
-  try {
-    const res = await fetch(`/api/auth/verify?token=${encodeURIComponent(token)}`);
-    const data = await res.json();
-    if (data.valid || !data.authRequired) {
-      localStorage.setItem('monitor-authToken', token);
-      authToken = token;
-      document.getElementById('login-overlay').classList.remove('show');
-      location.reload();
-    } else {
-      document.getElementById('login-err').textContent = '令牌无效，请重试';
-    }
-  } catch {
-    document.getElementById('login-err').textContent = '连接失败';
-  }
-});
+;
 document.getElementById('login-token').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') document.getElementById('login-btn').click();
 });
@@ -148,6 +120,9 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.1;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
 container.appendChild(renderer.domElement);
 
 // Camera controls
@@ -2559,7 +2534,7 @@ function showBubble(m) {
 let eventSource = null;
 function connectSSE() {
   if (eventSource) eventSource.close();
-  const sseUrl = authToken ? `/api/events?token=${encodeURIComponent(authToken)}` : '/api/events';
+  const sseUrl = '/api/events';
   eventSource = new EventSource(sseUrl);
   eventSource.onmessage = (e) => {
     try {
@@ -5192,10 +5167,7 @@ setTimeout(() => {
 checkAuth().then(authOk => {
   if (!authOk) return; // login overlay shown
   authFetch('/api/state').then(r => {
-    if (r.status === 401) {
-      document.getElementById('login-overlay').classList.add('show');
-      return null;
-    }
+    if (r.status === 401) { location.href = '/login.html'; return null; }
     return r.json();
   }).then(s => { if (s) serverState = s; }).catch(() => {}).finally(() => {
     connectSSE();
@@ -5258,7 +5230,7 @@ window.addEventListener('beforeunload', () => {
     if (el && el.classList.contains('show') && !el._dismissed) openBubbles.push(sk);
   }
   const data = JSON.stringify({ positions, states, openBubbles, fixedPanelSession });
-  const beaconUrl = authToken ? `/api/state?token=${encodeURIComponent(authToken)}` : '/api/state';
+  const beaconUrl = '/api/state';
   navigator.sendBeacon(beaconUrl, new Blob([data], { type: 'application/json' }));
 });
 

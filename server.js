@@ -5,6 +5,7 @@ const chokidar = require('chokidar');
 const YAML = require('yaml');
 const { execSync, exec } = require('child_process');
 const { WebSocketServer } = require('ws');
+const auth = require('./auth');
 
 // ===== Config =====
 const CONFIG_FILE = path.join(__dirname, 'config.yaml');
@@ -29,50 +30,195 @@ function loadConfig() {
 let config = loadConfig();
 const AGENTS_DIR = path.join(config.openclawRoot, 'agents');
 
-// ===== Feature 3: Simple Token Auth =====
-let authToken = null;
-function initAuth() {
-  if (!config.auth?.enabled) {
-    authToken = null;
-    return;
-  }
-  // Generate random 6-char alphanumeric token
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
-  let token = '';
-  for (let i = 0; i < 6; i++) token += chars[Math.floor(Math.random() * chars.length)];
-  authToken = token;
-  console.log(`\n🔐 Auth Token: ${token}\n`);
-  // Save to file
-  try {
-    fs.writeFileSync(path.join(LOG_DIR, 'auth-token.txt'), token);
-  } catch {}
-}
-initAuth();
-
 // ===== Express App =====
 const app = express();
 app.use(express.json());
+
+function parseCookies(req) {
+  const header = req.headers.cookie || '';
+  return Object.fromEntries(
+    header.split(';').filter(Boolean)
+      .map(c => c.trim().split('='))
+      .map(([k, ...v]) => [k.trim(), v.join('=')])
+  );
+}
+function setCookie(res, name, value, maxAge = 7 * 86400) {
+  res.setHeader('Set-Cookie', `${name}=${value}; HttpOnly; Path=/; Max-Age=${maxAge}; SameSite=Lax`);
+}
+function clearCookie(res, name) {
+  res.setHeader('Set-Cookie', `${name}=; HttpOnly; Path=/; Max-Age=0`);
+}
+
+
+// Serve admin.html before static middleware so /admin works
+app.get('/admin', (req, res) => {
+  const cookies = parseCookies(req);
+  const session = auth.getSession(cookies.sessionToken);
+  if (!session) return res.redirect('/login.html');
+  const user = auth.getUserById(session.user_id);
+  if (!user || user.role !== 'admin') return res.status(403).send('Forbidden — Admin only');
+  res.sendFile(path.join(__dirname, 'public', 'admin.html'));
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Auth middleware (after static files)
+// ===== Auth Middleware =====
+// Applied to all /api/* routes except /api/auth/*
 app.use((req, res, next) => {
-  if (!authToken) return next(); // auth disabled
-  // Skip auth for static files and auth verify endpoint
-  if (req.path === '/api/auth/verify') return next();
-  if (!req.path.startsWith('/api/')) return next(); // static files already served above
-
-  const token = req.query.token || req.cookies?.token;
-  if (token === authToken) return next();
-  res.status(401).json({ error: 'Unauthorized', authRequired: true });
+  if (!req.path.startsWith('/api/')) return next();
+  if (req.path.startsWith('/api/auth/')) return next(); // public auth endpoints
+  
+  const cookies = parseCookies(req);
+  const token = cookies.sessionToken || req.headers['x-session-token'];
+  const session = auth.getSession(token);
+  if (!session) return res.status(401).json({ error: 'Unauthorized', needsAuth: true });
+  
+  const user = auth.getUserById(session.user_id);
+  if (!user) return res.status(401).json({ error: 'User not found', needsAuth: true });
+  
+  req.user = user;
+  req.sessionToken = token;
+  next();
 });
 
-// Auth verify endpoint
-app.get('/api/auth/verify', (req, res) => {
-  if (!authToken) return res.json({ authRequired: false });
-  const token = req.query.token;
-  if (token === authToken) return res.json({ authRequired: false, valid: true });
-  res.json({ authRequired: true, valid: false });
+function requireAdmin(req, res, next) {
+  if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+  next();
+}
+
+// ===== Auth API =====
+
+// Check if any users exist (frontend decides to show register vs login)
+app.get('/api/auth/status', (req, res) => {
+  const hasUsers = auth.getUserCount() > 0;
+  const cookies = parseCookies(req);
+  const session = auth.getSession(cookies.sessionToken);
+  const user = session ? auth.getUserById(session.user_id) : null;
+  res.json({
+    hasUsers,
+    authenticated: !!user,
+    user: user ? { id: user.id, username: user.username, role: user.role } : null,
+  });
 });
+
+// Register (first user = admin, subsequent = needs admin session)
+app.post('/api/auth/register', (req, res) => {
+  const { username, password, email } = req.body || {};
+  if (!username || !password) return res.status(400).json({ error: '用户名和密码不能为空' });
+  if (password.length < 6) return res.status(400).json({ error: '密码至少6位' });
+
+  const isFirst = auth.getUserCount() === 0;
+
+  if (!isFirst) {
+    // Subsequent registrations require admin session
+    const cookies = parseCookies(req);
+    const session = auth.getSession(cookies.sessionToken);
+    const caller = session ? auth.getUserById(session.user_id) : null;
+    if (!caller || caller.role !== 'admin') {
+      return res.status(403).json({ error: '注册需要管理员授权' });
+    }
+  }
+
+  if (auth.getUserByUsername(username)) {
+    return res.status(409).json({ error: '用户名已存在' });
+  }
+
+  try {
+    const role = isFirst ? 'admin' : 'user';
+    const user = auth.createUser(username, password, role, email || '');
+    if (isFirst) {
+      // First admin gets full access
+      auth.setUserPermissions(user.id, [{ type: 'all', resourceId: null }]);
+    }
+    const token = auth.createSession(user.id);
+    setCookie(res, 'sessionToken', token);
+    log('info', `User registered: ${username} (${role})`);
+    res.json({ ok: true, user: { id: user.id, username: user.username, role: user.role }, isFirst });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Login
+app.post('/api/auth/login', (req, res) => {
+  const { username, password } = req.body || {};
+  if (!username || !password) return res.status(400).json({ error: '请填写用户名和密码' });
+
+  const user = auth.getUserByUsername(username);
+  if (!user || !auth.verifyPassword(password, user.pwd_hash, user.salt)) {
+    return res.status(401).json({ error: '用户名或密码错误' });
+  }
+
+  auth.touchLogin(user.id);
+  const token = auth.createSession(user.id);
+  setCookie(res, 'sessionToken', token);
+  log('info', `User login: ${username}`);
+  res.json({ ok: true, user: { id: user.id, username: user.username, role: user.role } });
+});
+
+// Logout
+app.post('/api/auth/logout', (req, res) => {
+  const cookies = parseCookies(req);
+  if (cookies.sessionToken) auth.deleteSession(cookies.sessionToken);
+  clearCookie(res, 'sessionToken');
+  res.json({ ok: true });
+});
+
+// Current user
+app.get('/api/auth/me', (req, res) => {
+  res.json({ user: { id: req.user.id, username: req.user.username, role: req.user.role, email: req.user.email } });
+});
+
+// ===== Admin API =====
+
+// List all users with permissions
+app.get('/api/admin/users', requireAdmin, (req, res) => {
+  const users = auth.getAllUsers().map(u => ({
+    ...u,
+    permissions: auth.getUserPermissions(u.id),
+  }));
+  res.json({ users });
+});
+
+// Create user
+app.post('/api/admin/users', requireAdmin, (req, res) => {
+  const { username, password, role, email } = req.body || {};
+  if (!username || !password) return res.status(400).json({ error: 'Missing username or password' });
+  if (auth.getUserByUsername(username)) return res.status(409).json({ error: 'Username taken' });
+  try {
+    const user = auth.createUser(username, password, role || 'user', email || '');
+    res.json({ ok: true, user });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Delete user
+app.delete('/api/admin/users/:id', requireAdmin, (req, res) => {
+  if (req.params.id === req.user.id) return res.status(400).json({ error: 'Cannot delete yourself' });
+  auth.deleteUser(req.params.id);
+  res.json({ ok: true });
+});
+
+// Update user role
+app.put('/api/admin/users/:id/role', requireAdmin, (req, res) => {
+  const { role } = req.body || {};
+  if (!['admin', 'user', 'viewer'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
+  auth.updateUserRole(req.params.id, role);
+  res.json({ ok: true });
+});
+
+// Update user permissions
+app.put('/api/admin/users/:id/permissions', requireAdmin, (req, res) => {
+  const { permissions } = req.body || {};
+  if (!Array.isArray(permissions)) return res.status(400).json({ error: 'permissions must be array' });
+  auth.setUserPermissions(req.params.id, permissions);
+  res.json({ ok: true });
+});
+
+// Admin: list all agents+sessions for permission assignment
+app.get('/api/admin/world', requireAdmin, (req, res) => {
+  res.json(getWorldState());
+});
+
 
 // ===== Logging =====
 try { fs.mkdirSync(LOG_DIR, { recursive: true }); } catch {}
@@ -542,7 +688,9 @@ app.get('/api/config', (req, res) => {
 
 // World state
 app.get('/api/world', (req, res) => {
-  res.json(getWorldState());
+  const world = getWorldState();
+  if (!req.user) return res.json(world);
+  res.json(auth.filterWorldState(req.user.id, world));
 });
 
 // Messages for a session
