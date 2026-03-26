@@ -1,7 +1,7 @@
 openclawRoot: ~/.openclaw
 
 server:
-  port: 13234
+  port: 7777
   host: 0.0.0.0
 
 display:

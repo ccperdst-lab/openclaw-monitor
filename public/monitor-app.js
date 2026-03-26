@@ -2035,6 +2035,30 @@ function stopBubbleRefresh(sk) {
   }
 }
 
+// ===== Background State Sync =====
+// Reconcile minion states every 10s — catches missed SSE events
+setInterval(() => {
+  for (const m of minions) {
+    const ud = m.userData;
+    if (ud.state !== 'thinking' || !ud.sessionId) continue;
+    // Skip if bubble polling is already handling it
+    if (bubbleRefreshTimers[ud.sessionKey]) continue;
+    authFetch(`/api/messages/${ud.sessionId}`)
+      .then(r => r.json())
+      .then(data => {
+        if (!data.messages || data.messages.length === 0) return;
+        const prevState = ud.state;
+        applyMessagesToMinion(m, data.messages);
+        // If state changed, update UI
+        if (ud.state !== prevState) {
+          updateBubbleContent(m);
+          if (fixedPanelSession === ud.sessionKey) updateFixedPanelContent(m);
+        }
+      })
+      .catch(() => {});
+  }
+}, 10000);
+
 // Format timestamp to HH:MM:SS
 function fmtTime(ts) {
   if (!ts) return '';
@@ -2139,6 +2163,7 @@ function handleEvent(ev) {
     if (!ud.eventLog) ud.eventLog = [];
     ud.eventLog.push(mkEvt('tool_result', (ev.tool || '?') + ' ✓', ev.result || '', ev.ts));
     showBubble(m);
+    startBubbleRefresh(m); // tool_result usually precedes a reply
   } else if (ev.type === 'reply_intermediate') {
     ud.replyText = ev.text || '';
     ud.state = 'thinking'; ud.lastEventTime = Date.now();

@@ -30293,6 +30293,23 @@ function stopBubbleRefresh(sk) {
     delete bubbleRefreshTimers[sk];
   }
 }
+setInterval(() => {
+  for (const m of minions) {
+    const ud = m.userData;
+    if (ud.state !== "thinking" || !ud.sessionId) continue;
+    if (bubbleRefreshTimers[ud.sessionKey]) continue;
+    authFetch(`/api/messages/${ud.sessionId}`).then((r) => r.json()).then((data) => {
+      if (!data.messages || data.messages.length === 0) return;
+      const prevState = ud.state;
+      applyMessagesToMinion(m, data.messages);
+      if (ud.state !== prevState) {
+        updateBubbleContent(m);
+        if (fixedPanelSession === ud.sessionKey) updateFixedPanelContent(m);
+      }
+    }).catch(() => {
+    });
+  }
+}, 1e4);
 function fmtTime(ts) {
   if (!ts) return "";
   const d = new Date(ts);
@@ -30389,6 +30406,7 @@ function handleEvent(ev) {
     if (!ud.eventLog) ud.eventLog = [];
     ud.eventLog.push(mkEvt("tool_result", (ev.tool || "?") + " \u2713", ev.result || "", ev.ts));
     showBubble(m);
+    startBubbleRefresh(m);
   } else if (ev.type === "reply_intermediate") {
     ud.replyText = ev.text || "";
     ud.state = "thinking";
