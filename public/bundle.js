@@ -28440,7 +28440,8 @@ function authFetch(url, options = {}) {
 }
 async function checkAuth() {
   try {
-    const res = await fetch("/api/world");
+    const url = authToken ? `/api/world?token=${encodeURIComponent(authToken)}` : "/api/world";
+    const res = await fetch(url);
     if (res.status === 401) {
       document.getElementById("login-overlay").classList.add("show");
       return false;

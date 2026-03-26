@@ -14,9 +14,11 @@ function authFetch(url, options = {}) {
 // Check auth on load
 async function checkAuth() {
   try {
-    const res = await fetch('/api/world');
+    // Use stored token if available
+    const url = authToken ? `/api/world?token=${encodeURIComponent(authToken)}` : '/api/world';
+    const res = await fetch(url);
     if (res.status === 401) {
-      // Show login overlay
+      // Token invalid or missing — show login
       document.getElementById('login-overlay').classList.add('show');
       return false;
     }
