@@ -2588,12 +2588,12 @@ function startBubbleRefresh(minion) {
   const sk = minion.userData.sessionKey;
   if (bubbleRefreshTimers[sk]) return; // already running
 
-  // Immediate first refresh
-  authFetch(`/api/messages/${minion.userData.sessionId}`)
+  // Immediate first refresh - use server-side processing
+  authFetch(`/api/session-state/${minion.userData.sessionId}`)
     .then(r => r.json())
     .then(data => {
-      if (!data.messages || data.messages.length === 0) return;
-      applyMessagesToMinion(minion, data.messages);
+      if (!data.eventLog && !data.userMsg) return;
+      applySessionState(minion, data);
       updateBubbleContent(minion);
       // Also update fixed panel if open
       if (fixedPanelSession === sk) updateFixedPanelContent(minion);
@@ -2607,12 +2607,12 @@ function startBubbleRefresh(minion) {
       stopBubbleRefresh(sk);
       return;
     }
-    // Fetch latest messages and update bubble
-    authFetch(`/api/messages/${minion.userData.sessionId}`)
+    // Fetch latest state and update bubble
+    authFetch(`/api/session-state/${minion.userData.sessionId}`)
       .then(r => r.json())
       .then(data => {
-        if (!data.messages || data.messages.length === 0) return;
-        applyMessagesToMinion(minion, data.messages);
+        if (!data.eventLog && !data.userMsg) return;
+        applySessionState(minion, data);
         updateBubbleContent(minion);
         if (fixedPanelSession === sk) updateFixedPanelContent(minion);
       })
@@ -2635,12 +2635,12 @@ setInterval(() => {
     if (ud.state !== 'thinking' || !ud.sessionId) continue;
     // Skip if bubble polling is already handling it
     if (bubbleRefreshTimers[ud.sessionKey]) continue;
-    authFetch(`/api/messages/${ud.sessionId}`)
+    authFetch(`/api/session-state/${ud.sessionId}`)
       .then(r => r.json())
       .then(data => {
-        if (!data.messages || data.messages.length === 0) return;
+        if (!data.eventLog && !data.userMsg) return;
         const prevState = ud.state;
-        applyMessagesToMinion(m, data.messages);
+        applySessionState(m, data);
         // If state changed, update UI
         if (ud.state !== prevState) {
           updateBubbleContent(m);
@@ -2675,6 +2675,26 @@ function mkEvt(type, text, detail, ts) {
     item.timestamp = ts; // raw timestamp for history loading
   }
   return item;
+}
+
+// Apply pre-computed session state from server (no client-side processing)
+function applySessionState(minion, data) {
+  const ud = minion.userData;
+  
+  // Update user message
+  if (data.userMsg) ud.userMsg = data.userMsg;
+  if (data.userName) ud.userName = data.userName;
+  
+  // Update event log (already computed server-side)
+  if (data.eventLog && data.eventLog.length > 0) {
+    ud.eventLog = data.eventLog.map(item => mkEvt(item.type, item.text, item.args || item.result || null, item.ts));
+  }
+  
+  // Update state
+  if (data.state) ud.state = data.state;
+  
+  // Update reply text
+  if (data.replyText) ud.replyText = data.replyText;
 }
 
 // Apply parsed messages from API to minion userData (rebuild eventLog)
@@ -2775,9 +2795,9 @@ function handleEvent(ev) {
     }
     // Do one final refresh after 2s to catch any trailing data
     setTimeout(() => {
-      authFetch(`/api/messages/${m.userData.sessionId}`)
+      authFetch(`/api/session-state/${m.userData.sessionId}`)
         .then(r => r.json())
-        .then(data => { if (data.messages) { applyMessagesToMinion(m, data.messages); updateBubbleContent(m); } })
+        .then(data => { if (data.eventLog || data.userMsg) { applySessionState(m, data); updateBubbleContent(m); } })
         .catch(() => {});
     }, 2000);
     // Stop polling after a short delay (conversation is done)
@@ -3112,31 +3132,10 @@ window.addEventListener('click', (e) => {
       if (b && b.classList.contains('show')) {
         hideBubble(target.userData.sessionKey);
       } else {
-        // Load messages from API
-        authFetch(`/api/messages/${target.userData.sessionId}`).then(r => r.json()).then(data => {
-          if (data.messages) {
-            const last = data.messages.filter(m => m.role === 'user').pop();
-            if (last) target.userData.userMsg = last.text || '';
-            const lastReply = data.messages.filter(m => m.role === 'assistant' && m.texts?.length).pop();
-            if (lastReply) target.userData.replyText = lastReply.texts.join(' ');
-            // Build eventLog from historical messages — with timestamps + full text
-            const histLog = [];
-            const recent = data.messages.slice(-20);
-            for (const msg of recent) {
-              const ts = msg.timestamp;
-              if (msg.role === 'assistant') {
-                if (msg.thinking) histLog.push(mkEvt('think', msg.thinking, null, ts));
-                if (msg.toolCalls) {
-                  for (const tc of msg.toolCalls) {
-                    histLog.push(mkEvt('tool_use', tc.name, tc.args || '', ts));
-                  }
-                }
-                if (msg.texts?.length) histLog.push(mkEvt('reply_snippet', msg.texts.join(' '), null, ts));
-              } else if (msg.role === 'toolResult') {
-                histLog.push(mkEvt('tool_result', (msg.toolName || '?') + ' ✓', msg.result || '', ts));
-              }
-            }
-            target.userData.eventLog = histLog;
+        // Load session state from server-side API
+        authFetch(`/api/session-state/${target.userData.sessionId}`).then(r => r.json()).then(data => {
+          if (data.eventLog || data.userMsg) {
+            applySessionState(target, data);
           }
           const b2 = getOrCreateBubble(target.userData.sessionKey);
           b2._dismissed = false;

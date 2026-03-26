@@ -602,6 +602,141 @@ app.get('/api/messages/:sessionId', (req, res) => {
   } catch { res.json({ messages: [], hasMore: false }); }
 });
 
+// ===== Server-side Message Processing =====
+// Returns pre-computed session state for frontend (no client-side processing needed)
+app.get('/api/session-state/:sessionId', (req, res) => {
+  const sessionId = req.params.sessionId;
+  const recentMinutes = parseInt(req.query.recentMinutes) || config.display?.recentMinutes || 10;
+  const cutoffMs = Date.now() - recentMinutes * 60 * 1000;
+  const limit = Math.min(parseInt(req.query.limit) || 20, 50);
+  const before = req.query.before ? new Date(req.query.before).getTime() : null;
+
+  // Find which agent this belongs to
+  let filePath = null;
+  let sessionKey = null;
+  for (const [agentName, info] of Object.entries(agentState)) {
+    for (const [key, sess] of Object.entries(info.sessions)) {
+      if (sess.sessionId === sessionId) {
+        filePath = path.join(AGENTS_DIR, agentName, 'sessions', sessionId + '.jsonl');
+        sessionKey = key;
+        break;
+      }
+    }
+    if (filePath) break;
+  }
+  if (!filePath || !fs.existsSync(filePath)) {
+    return res.json({ eventLog: [], state: 'idle', userMsg: '', userName: '', replyText: '', hasMore: false });
+  }
+
+  try {
+    const raw = fs.readFileSync(filePath, 'utf-8');
+    const lines = raw.split('\n').filter(Boolean);
+    const allMessages = [];
+    
+    for (const line of lines.slice(-500)) {
+      try {
+        const entry = JSON.parse(line);
+        if (entry.type !== 'message') continue;
+        const msg = entry.message || {};
+        const ts = new Date(entry.timestamp).getTime();
+        allMessages.push({ role: msg.role, timestamp: entry.timestamp, id: entry.id, _ts: ts, msg });
+      } catch {}
+    }
+
+    // Get messages for display (with pagination)
+    let displayMessages;
+    if (before) {
+      displayMessages = allMessages.filter(m => m._ts < before).slice(-limit);
+    } else {
+      displayMessages = allMessages.slice(-limit);
+    }
+
+    // Build eventLog (server-side, no frontend processing needed)
+    const eventLog = [];
+    for (const entry of displayMessages) {
+      const { msg, timestamp: ts } = entry;
+      if (msg.role === 'assistant') {
+        const ac = parseAssistantContent(msg.content);
+        if (ac.thinking) {
+          eventLog.push({ type: 'think', text: ac.thinking, ts, fullContent: ac.thinking });
+        }
+        for (const tc of (ac.toolCalls || [])) {
+          eventLog.push({ type: 'tool_use', text: tc.name, args: tc.args, ts });
+        }
+        if (ac.texts?.length) {
+          // Don't add reply text to event log (user doesn't want it in thinking panel)
+        }
+      } else if (msg.role === 'toolResult') {
+        const result = parseToolResult(msg.content);
+        eventLog.push({
+          type: 'tool_result',
+          text: (msg.toolName || '?') + ' ✓',
+          result: result,
+          ts,
+          fullContent: result
+        });
+      }
+    }
+
+    // Get last user message
+    const lastUserMsg = allMessages.filter(m => m.msg.role === 'user').pop();
+    let userMsg = '';
+    let userName = '';
+    if (lastUserMsg) {
+      userMsg = parseUserMessage(
+        typeof lastUserMsg.msg.content === 'string'
+          ? lastUserMsg.msg.content
+          : JSON.stringify(lastUserMsg.msg.content)
+      );
+      // Extract sender name from message
+      const rawContent = typeof lastUserMsg.msg.content === 'string'
+        ? lastUserMsg.msg.content
+        : JSON.stringify(lastUserMsg.msg.content);
+      const nameMatch = rawContent.match(/\]\s*(\S+?):\s*/);
+      userName = nameMatch ? nameMatch[1] : '';
+    }
+
+    // Determine state
+    const lastMsg = allMessages[allMessages.length - 1];
+    let state = 'idle';
+    if (lastMsg) {
+      if (lastMsg.msg.role === 'assistant') {
+        const ac = parseAssistantContent(lastMsg.msg.content);
+        state = ac.texts?.length ? 'done' : 'thinking';
+      } else if (lastMsg.msg.role === 'toolResult') {
+        state = 'thinking';
+      } else if (lastMsg.msg.role === 'user') {
+        state = 'thinking';
+      }
+    }
+
+    // Get last reply text
+    const lastReply = allMessages.filter(m => {
+      if (m.msg.role !== 'assistant') return false;
+      const ac = parseAssistantContent(m.msg.content);
+      return ac.texts?.length > 0;
+    }).pop();
+    let replyText = '';
+    if (lastReply) {
+      const ac = parseAssistantContent(lastReply.msg.content);
+      replyText = ac.texts.join(' ');
+    }
+
+    res.json({
+      eventLog,
+      state,
+      userMsg,
+      userName,
+      replyText,
+      hasMore: displayMessages.length >= limit || (before ? allMessages.filter(m => m._ts < (before || Infinity)).length > displayMessages.length : false),
+      oldestTimestamp: displayMessages.length > 0 ? displayMessages[0].timestamp : null,
+      sessionKey
+    });
+  } catch (err) {
+    res.json({ eventLog: [], state: 'idle', userMsg: '', userName: '', replyText: '', hasMore: false });
+  }
+});
+
 // SSE
 app.get('/api/events', (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
