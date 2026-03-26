@@ -550,6 +550,8 @@ app.get('/api/messages/:sessionId', (req, res) => {
   const sessionId = req.params.sessionId;
   const recentMinutes = parseInt(req.query.recentMinutes) || config.display?.recentMinutes || 10;
   const cutoffMs = Date.now() - recentMinutes * 60 * 1000;
+  const limit = Math.min(parseInt(req.query.limit) || 30, 100);
+  const before = req.query.before ? new Date(req.query.before).getTime() : null;
 
   // Find which agent this belongs to
   let filePath = null;
@@ -562,42 +564,42 @@ app.get('/api/messages/:sessionId', (req, res) => {
     }
     if (filePath) break;
   }
-  if (!filePath || !fs.existsSync(filePath)) return res.json({ messages: [], recentMinutes });
+  if (!filePath || !fs.existsSync(filePath)) return res.json({ messages: [], hasMore: false });
 
   try {
     const raw = fs.readFileSync(filePath, 'utf-8');
     const lines = raw.split('\n').filter(Boolean);
-    const messages = [];
-    // Parse all message entries, filter by time for thinking/tool messages
-    for (const line of lines.slice(-200)) {
+    const allMessages = [];
+    for (const line of lines.slice(-500)) {
       try {
         const entry = JSON.parse(line);
         if (entry.type !== 'message') continue;
         const msg = entry.message || {};
         const ts = new Date(entry.timestamp).getTime();
-        const parsed = {
-          role: msg.role,
-          timestamp: entry.timestamp,
-          id: entry.id,
-        };
+        const parsed = { role: msg.role, timestamp: entry.timestamp, id: entry.id, _ts: ts };
         if (msg.role === 'user') {
           parsed.text = parseUserMessage(typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content));
         } else if (msg.role === 'assistant') {
-          // Filter thinking/tool by recentMinutes
           const ac = parseAssistantContent(msg.content);
-          parsed.thinking = (ts > cutoffMs) ? ac.thinking : '';
-          parsed.toolCalls = (ts > cutoffMs) ? ac.toolCalls : [];
+          parsed.thinking = (!before || ts > cutoffMs) ? ac.thinking : ac.thinking;
+          parsed.toolCalls = (!before || ts > cutoffMs) ? ac.toolCalls : ac.toolCalls;
           parsed.texts = ac.texts;
         } else if (msg.role === 'toolResult') {
-          // Filter tool results by recentMinutes
           parsed.toolName = msg.toolName;
-          parsed.result = (ts > cutoffMs) ? parseToolResult(msg.content) : '';
+          parsed.result = (!before || ts > cutoffMs) ? parseToolResult(msg.content) : parseToolResult(msg.content);
         }
-        messages.push(parsed);
+        allMessages.push(parsed);
       } catch {}
     }
-    res.json({ messages });
-  } catch { res.json({ messages: [] }); }
+    let messages;
+    if (before) {
+      messages = allMessages.filter(m => m._ts < before).slice(-limit);
+    } else {
+      messages = allMessages.slice(-limit);
+    }
+    messages.forEach(m => delete m._ts);
+    res.json({ messages, hasMore: messages.length >= limit });
+  } catch { res.json({ messages: [], hasMore: false }); }
 });
 
 // SSE

@@ -2152,6 +2152,8 @@ function getOrCreateBubble(sessionKey) {
     el.className = 'bubble3d';
     const sk = sessionKey;
     el.innerHTML = `<div class="bub-hd"><span class="bub-avatar">🟡</span><span class="bub-user"></span><button class="bub-abort" title="终止思考">🛑</button><button class="bub-pin" title="固定到底部">📌</button><button class="bub-close">✕</button></div><div class="bub-msg"></div><div class="bub-acts collapsed"><div class="bub-acts-hd"><span class="bub-acts-tri">▶</span><span class="bub-acts-lbl">思考过程</span><span class="bub-acts-cnt">0</span></div><div class="bub-acts-body"></div></div><div class="bub-chat"><input class="bub-chat-in" placeholder="直接对话..." /></div><div class="bub-foot"></div>`;
+    el._hasMore = true;
+    el._loadingHistory = false;
 
     // --- Focus management: prevent events from reaching canvas ---
     // Stop all mouse events from propagating out of the bubble
@@ -2190,6 +2192,46 @@ function getOrCreateBubble(sessionKey) {
     // Also stop propagation on the acts body (clickable area)
     actsEl.addEventListener('mousedown', (e) => { e.stopPropagation(); });
 
+    // Scroll-to-load-more: load older messages when scrolling to top
+    const actsBody = el.querySelector('.bub-acts-body');
+    actsBody.addEventListener('scroll', () => {
+      if (actsBody.scrollTop <= 5 && !el._loadingHistory && el._hasMore !== false) {
+        el._loadingHistory = true;
+        const oldestTs = actsBody.querySelector('.bact')?.dataset?.timestamp;
+        const url = oldestTs
+          ? `/api/messages/${el._sessionId}?before=${encodeURIComponent(oldestTs)}&limit=20`
+          : `/api/messages/${el._sessionId}?limit=20`;
+        authFetch(url)
+          .then(r => r.json())
+          .then(data => {
+            if (!data.messages || data.messages.length === 0) { el._hasMore = false; return; }
+            const m = minions.find(mn => mn.userData.sessionId === el._sessionId);
+            if (!m) return;
+            // Build HTML for older messages
+            const scrollH = actsBody.scrollHeight;
+            const tempItems = [];
+            for (const msg of data.messages) {
+              const ts = msg.timestamp;
+              if (msg.role === 'assistant') {
+                if (msg.thinking) tempItems.push(`<div class="bact bact-think" data-full-text="${escAttr(msg.thinking)}" data-timestamp="${ts}"><span>💭</span><span>${esc(msg.thinking.slice(0,150))}${ts ? ' <em style="color:#999;font-size:9px">'+fmtTime(ts)+'</em>' : ''}</span></div>`);
+                if (msg.toolCalls) for (const tc of msg.toolCalls) tempItems.push(`<div class="bact bact-tool" data-full-text="${escAttr(tc.name+'\n'+tc.args)}" data-timestamp="${ts}"><span>🔧</span><span>${esc(tc.name)} <em>${esc((tc.args||'').slice(0,100))}</em>${ts ? ' <em style="color:#999;font-size:9px">'+fmtTime(ts)+'</em>' : ''}</span></div>`);
+                if (msg.texts?.length) tempItems.push(`<div class="bact bact-reply" data-full-text="${escAttr(msg.texts.join(' '))}" data-timestamp="${ts}"><span>💬</span><span>${esc(msg.texts.join(' ').slice(0,150))}${ts ? ' <em style="color:#999;font-size:9px">'+fmtTime(ts)+'</em>' : ''}</span></div>`);
+              } else if (msg.role === 'toolResult') tempItems.push(`<div class="bact bact-result" data-full-text="${escAttr((msg.toolName||'?')+' ✓\n'+(msg.result||''))}" data-timestamp="${ts}"><span>📋</span><span>${esc((msg.toolName||'?')+' ✓')} <em>${esc((msg.result||'').slice(0,100))}</em>${ts ? ' <em style="color:#999;font-size:9px">'+fmtTime(ts)+'</em>' : ''}</span></div>`);
+            }
+            if (tempItems.length > 0) {
+              const prepend = document.createElement('div');
+              prepend.innerHTML = tempItems.join('');
+              actsBody.insertBefore(prepend, actsBody.firstChild);
+              // Maintain scroll position
+              actsBody.scrollTop = actsBody.scrollHeight - scrollH;
+            }
+            el._hasMore = data.hasMore;
+          })
+          .catch(() => {})
+          .finally(() => { el._loadingHistory = false; });
+      }
+    });
+
     // IME-safe input handling: Enter submits only when not in composition
     const inputEl = el.querySelector('.bub-chat-in');
     let isComposing = false;
@@ -2216,6 +2258,9 @@ function getOrCreateBubble(sessionKey) {
 
     document.body.appendChild(el);
     bubbles[sessionKey] = el;
+    // Store sessionId for history loading
+    const minion = minions.find(m => m.userData.sessionKey === sessionKey);
+    if (minion) el._sessionId = minion.userData.sessionId;
   }
   return el;
 }
@@ -2274,20 +2319,16 @@ function updateBubbleContent(m) {
       items.push('<div class="bact-divider"><span>── 回复 ──</span></div>');
     }
     if (evt.type === 'think') {
-      items.push(`<div class="bact bact-think" data-full-text="${escAttr(evt.fullText || evt.text)}"><span>💭</span><span>${escFull(evt.text)}${evt.time ? ` <em style="color:#999;font-size:9px">${esc(evt.time)}</em>` : ''}</span></div>`);
+      items.push(`<div class="bact bact-think" data-full-text="${escAttr(evt.fullText || evt.text)}" data-timestamp="${evt.timestamp||''}"><span>💭</span><span>${escFull(evt.text)}${evt.time ? ` <em style="color:#999;font-size:9px">${esc(evt.time)}</em>` : ''}</span></div>`);
     } else if (evt.type === 'tool_use') {
-      items.push(`<div class="bact bact-tool" data-full-text="${escAttr((evt.fullText || evt.text) + '\n' + (evt.fullDetail || evt.detail || ''))}"><span>🔧</span><span>${escFull(evt.text)} <em>${escFull(evt.detail || '')}</em>${evt.time ? ` <em style="color:#999;font-size:9px">${esc(evt.time)}</em>` : ''}</span></div>`);
+      items.push(`<div class="bact bact-tool" data-full-text="${escAttr((evt.fullText || evt.text) + '\n' + (evt.fullDetail || evt.detail || ''))}" data-timestamp="${evt.timestamp||''}"><span>🔧</span><span>${escFull(evt.text)} <em>${escFull(evt.detail || '')}</em>${evt.time ? ` <em style="color:#999;font-size:9px">${esc(evt.time)}</em>` : ''}</span></div>`);
     } else if (evt.type === 'tool_result') {
-      items.push(`<div class="bact bact-result" data-full-text="${escAttr((evt.fullText || evt.text) + '\n' + (evt.fullDetail || evt.detail || ''))}"><span>📋</span><span>${escFull(evt.text)} <em>${escFull(evt.detail || '')}</em>${evt.time ? ` <em style="color:#999;font-size:9px">${esc(evt.time)}</em>` : ''}</span></div>`);
+      items.push(`<div class="bact bact-result" data-full-text="${escAttr((evt.fullText || evt.text) + '\n' + (evt.fullDetail || evt.detail || ''))}" data-timestamp="${evt.timestamp||''}"><span>📋</span><span>${escFull(evt.text)} <em>${escFull(evt.detail || '')}</em>${evt.time ? ` <em style="color:#999;font-size:9px">${esc(evt.time)}</em>` : ''}</span></div>`);
     } else if (evt.type === 'reply_snippet') {
-      items.push(`<div class="bact bact-reply" data-full-text="${escAttr(evt.fullText || evt.text)}"><span>💬</span><span>${esc(evt.text)}${evt.time ? ` <em style="color:#999;font-size:9px">${esc(evt.time)}</em>` : ''}</span></div>`);
+      items.push(`<div class="bact bact-reply" data-full-text="${escAttr(evt.fullText || evt.text)}" data-timestamp="${evt.timestamp||''}"><span>💬</span><span>${esc(evt.text)}${evt.time ? ` <em style="color:#999;font-size:9px">${esc(evt.time)}</em>` : ''}</span></div>`);
     }
   }
-  // Final reply text — divider only if no snippets already placed one
-  if (hasFinalReply) {
-    if (!hasSnippets) items.push('<div class="bact-divider"><span>── 回复 ──</span></div>');
-    items.push(`<div class="bact bact-reply bact-final" data-full-text="${escAttr(ud.replyText)}"><span>💬</span><span>${esc(ud.replyText)}</span></div>`);
-  }
+  // No final reply in thinking panel — it's shown in the main message area above
 
   actsBody.innerHTML = items.slice(-30).join('');
 
@@ -2474,7 +2515,7 @@ function updateFixedPanelContent(minion) {
     else if (evt.type === 'tool_result') items.push(`<div class="bact bact-result" data-full-text="${escAttr((evt.fullText || evt.text) + '\n' + (evt.fullDetail || evt.detail || ''))}"><span>📋</span><span>${esc(evt.text)} <em>${esc(evt.detail||'')}</em>${evt.time ? ' <em style="color:#999;font-size:9px">'+esc(evt.time)+'</em>' : ''}</span></div>`);
     else if (evt.type === 'reply_snippet') items.push(`<div class="bact bact-reply" data-full-text="${escAttr(evt.fullText || evt.text)}"><span>💬</span><span>${esc(evt.text)}${evt.time ? ' <em style="color:#999;font-size:9px">'+esc(evt.time)+'</em>' : ''}</span></div>`);
   }
-  if (hasFinalReply) { if (!hasSnippets) items.push('<div class="bact-divider"><span>── 回复 ──</span></div>'); items.push(`<div class="bact bact-reply bact-final" data-full-text="${escAttr(ud.replyText)}"><span>💬</span><span>${esc(ud.replyText)}</span></div>`); }
+  // No final reply in thinking panel — it's shown in the main message area above
   actsBody.innerHTML = items.slice(-50).join('');
   if (wasAtBottom) actsBody.scrollTop = actsBody.scrollHeight;
   const tc = log.filter(e => e.type === 'think').length;
@@ -2629,7 +2670,10 @@ function mkEvt(type, text, detail, ts) {
     item.fullDetail = detail;
     item.detail = detail.slice(0, maxDetail);
   }
-  if (ts) item.time = fmtTime(ts);
+  if (ts) {
+    item.time = fmtTime(ts);
+    item.timestamp = ts; // raw timestamp for history loading
+  }
   return item;
 }
 
