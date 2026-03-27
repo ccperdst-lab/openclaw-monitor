@@ -651,8 +651,10 @@ const mat = {
   pupil: new THREE.MeshStandardMaterial({ color: 0x111111 }),
   roofColors: [0x5c6bc0, 0xef5350, 0x66bb6a, 0xffa726, 0xab47bc, 0x26c6da, 0xec407a, 0xff7043],
   wallColors: null, // set below
+  flowerColors: null, // set below
 };
 mat.wallColors = [mat.wallPink, mat.wallBlue, mat.wallYellow, mat.wallGreen];
+mat.flowerColors = [mat.flowerRed, mat.flowerPink, mat.flowerYellow, mat.flowerPurple, mat.flowerWhite];
 
 // Apply seasonal theme now that mat is defined
 if (!_seasonalApplied) {

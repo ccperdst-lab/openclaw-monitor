@@ -29132,10 +29132,13 @@ var mat = {
   eye: new MeshStandardMaterial({ color: 16777215 }),
   pupil: new MeshStandardMaterial({ color: 1118481 }),
   roofColors: [6056896, 15684432, 6732650, 16754470, 11225020, 2541274, 15483002, 16740419],
-  wallColors: null
+  wallColors: null,
+  // set below
+  flowerColors: null
   // set below
 };
 mat.wallColors = [mat.wallPink, mat.wallBlue, mat.wallYellow, mat.wallGreen];
+mat.flowerColors = [mat.flowerRed, mat.flowerPink, mat.flowerYellow, mat.flowerPurple, mat.flowerWhite];
 if (!_seasonalApplied) {
   _seasonalApplied = true;
   applySeasonalTheme();
