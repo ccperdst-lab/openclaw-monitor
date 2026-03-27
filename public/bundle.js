@@ -32781,8 +32781,13 @@ function hideDetailPopup() {
   interactingWithOverlay = false;
 }
 var myUserId = localStorage.getItem("monitor-userId") || "user-" + Math.random().toString(36).slice(2, 8);
-localStorage.setItem("monitor-userId", myUserId);
 var myUserName = localStorage.getItem("monitor-userName") || "\u8BBF\u5BA2" + myUserId.slice(-3);
+localStorage.setItem("monitor-userId", myUserId);
+function bindAuthUser(user) {
+  if (!user) return;
+  myUserId = user.id;
+  myUserName = user.username;
+}
 var thirdPerson = false;
 var selfAvatar = null;
 var walkPos = new Vector3(25, 30, 35);
@@ -33003,6 +33008,7 @@ setTimeout(() => {
 }, 3e3);
 checkAuth().then((authOk) => {
   if (!authOk) return;
+  bindAuthUser(window._currentUser);
   authFetch("/api/state").then((r) => {
     if (r.status === 401) {
       location.href = "/login.html";

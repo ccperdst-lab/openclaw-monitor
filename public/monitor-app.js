@@ -4909,9 +4909,16 @@ function hideDetailPopup() {
 }
 
 // ===== Multi-User Avatars =====
-const myUserId = localStorage.getItem('monitor-userId') || ('user-' + Math.random().toString(36).slice(2, 8));
+let myUserId = localStorage.getItem('monitor-userId') || ('user-' + Math.random().toString(36).slice(2, 8));
+let myUserName = localStorage.getItem('monitor-userName') || '访客' + myUserId.slice(-3);
 localStorage.setItem('monitor-userId', myUserId);
-const myUserName = localStorage.getItem('monitor-userName') || '访客' + myUserId.slice(-3);
+
+// Bind to auth user after login
+function bindAuthUser(user) {
+  if (!user) return;
+  myUserId = user.id;
+  myUserName = user.username;
+}
 
 // ===== Third-Person Camera =====
 let thirdPerson = false;
@@ -5170,6 +5177,7 @@ setTimeout(() => {
 // Check auth, then fetch state and connect
 checkAuth().then(authOk => {
   if (!authOk) return; // login overlay shown
+  bindAuthUser(window._currentUser); // bind user identity for chat/position
   authFetch('/api/state').then(r => {
     if (r.status === 401) { location.href = '/login.html'; return null; }
     return r.json();

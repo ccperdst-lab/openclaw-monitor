@@ -1,6 +1,7 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const chokidar = require('chokidar');
 const YAML = require('yaml');
 const { execSync, exec } = require('child_process');
@@ -50,15 +51,26 @@ function clearCookie(res, name) {
 }
 
 
-// Serve admin.html before static middleware so /admin works
-app.get('/admin', (req, res) => {
+// Generate admin path (random slug, persists across restarts)
+const ADMIN_PATH_FILE = path.join(LOG_DIR, 'admin-path.txt');
+let adminPath;
+try {
+  adminPath = fs.readFileSync(ADMIN_PATH_FILE, 'utf-8').trim();
+} catch {
+  adminPath = '/admin/' + crypto.randomBytes(8).toString('hex');
+  try { fs.writeFileSync(ADMIN_PATH_FILE, adminPath); } catch {}
+}
+
+// Serve admin.html at secret path + keep /admin for backwards compat
+function serveAdmin(req, res) {
   const cookies = parseCookies(req);
   const session = auth.getSession(cookies.sessionToken);
   if (!session) return res.redirect('/login.html');
   const user = auth.getUserById(session.user_id);
   if (!user || user.role !== 'admin') return res.status(403).send('Forbidden — Admin only');
   res.sendFile(path.join(__dirname, 'public', 'admin.html'));
-});
+}
+app.get(adminPath, serveAdmin);
 
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -172,6 +184,9 @@ app.get('/api/auth/me', (req, res) => {
 // ===== Admin API =====
 
 // List all users with permissions
+app.get('/api/admin/path', requireAdmin, (req, res) => {
+  res.json({ path: adminPath });
+});
 app.get('/api/admin/users', requireAdmin, (req, res) => {
   const users = auth.getAllUsers().map(u => ({
     ...u,
@@ -1012,6 +1027,7 @@ const PORT = config.server?.port || 7777;
 const HOST = config.server?.host || '0.0.0.0';
 const server = app.listen(PORT, HOST, () => {
   log('info', `🟢 OpenClaw Monitor v7 on http://${HOST}:${PORT}`);
+  log('info', `🛡️ Admin panel: http://${HOST}:${PORT}${adminPath}`);
 });
 
 // ===== WebSocket Server =====
