@@ -4730,8 +4730,8 @@ function updateSaveStateTimer(dt) {
   }
 }
 
-// Restore state on load
-restoreSceneState();
+// Restore state on load (called after walkPos is initialized)
+// restoreSceneState();
 
 // ===== Notification Box System =====
 const MAX_NOTIFY_BOXES = 5;
@@ -5178,6 +5178,7 @@ setTimeout(() => {
 checkAuth().then(authOk => {
   if (!authOk) return; // login overlay shown
   bindAuthUser(window._currentUser); // bind user identity for chat/position
+  restoreSceneState(); // restore camera position from localStorage
   authFetch('/api/state').then(r => {
     if (r.status === 401) { location.href = '/login.html'; return null; }
     return r.json();

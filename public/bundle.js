@@ -32639,7 +32639,6 @@ function updateSaveStateTimer(dt) {
     saveSceneState();
   }
 }
-restoreSceneState();
 var MAX_NOTIFY_BOXES = 5;
 var notifyBoxes = [];
 function showNotifyBox(sessionKey, userName, message, minionName) {
@@ -33009,6 +33008,7 @@ setTimeout(() => {
 checkAuth().then((authOk) => {
   if (!authOk) return;
   bindAuthUser(window._currentUser);
+  restoreSceneState();
   authFetch("/api/state").then((r) => {
     if (r.status === 401) {
       location.href = "/login.html";
