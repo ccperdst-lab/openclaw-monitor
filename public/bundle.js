@@ -28576,16 +28576,19 @@ async function checkAuth() {
     return true;
   }
 }
-document.getElementById("login-token").addEventListener("keydown", (e) => {
-  if (e.key === "Enter") document.getElementById("login-btn").click();
-});
+var loginTokenEl = document.getElementById("login-token");
+if (loginTokenEl) {
+  loginTokenEl.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") document.getElementById("login-btn")?.click();
+  });
+}
 var chatPanelOpen = false;
 var chatMessagesData = [];
-document.getElementById("chat-close").addEventListener("click", (e) => {
+document.getElementById("chat-close")?.addEventListener("click", (e) => {
   e.stopPropagation();
   toggleChatPanel();
 });
-document.getElementById("chat-panel").addEventListener("mousedown", (e) => e.stopPropagation());
+document.getElementById("chat-panel")?.addEventListener("mousedown", (e) => e.stopPropagation());
 function toggleChatPanel() {
   chatPanelOpen = !chatPanelOpen;
   const panel = document.getElementById("chat-panel");

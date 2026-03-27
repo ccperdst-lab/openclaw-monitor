@@ -17,22 +17,24 @@ async function checkAuth() {
 }
 
 
-// Login handler
-;
-document.getElementById('login-token').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') document.getElementById('login-btn').click();
-});
+// Login handler (elements only exist on login.html)
+const loginTokenEl = document.getElementById('login-token');
+if (loginTokenEl) {
+  loginTokenEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') document.getElementById('login-btn')?.click();
+  });
+}
 
 // ===== Feature 2: World Chat Panel =====
 let chatPanelOpen = false;
 let chatMessagesData = [];
 
 // Chat panel toggle
-document.getElementById('chat-close').addEventListener('click', (e) => {
+document.getElementById('chat-close')?.addEventListener('click', (e) => {
   e.stopPropagation();
   toggleChatPanel();
 });
-document.getElementById('chat-panel').addEventListener('mousedown', (e) => e.stopPropagation());
+document.getElementById('chat-panel')?.addEventListener('mousedown', (e) => e.stopPropagation());
 
 function toggleChatPanel() {
   chatPanelOpen = !chatPanelOpen;
