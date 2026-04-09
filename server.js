@@ -1146,19 +1146,39 @@ function broadcastWS(data) {
   }
 }
 
-// CLI endpoint (admin only, whitelist-based to prevent command injection)
-const ALLOWED_CLI_COMMANDS = [
-  /^openclaw\s+(status|gateway\s+status|gateway\s+start|gateway\s+stop|gateway\s+restart|agent\s+list|help)(\s|$)/,
+// CLI endpoint (admin only, strict whitelist — no shell interpretation)
+// Allowed subcommands + their optional args (must match the FULL command, no extra tokens)
+const ALLOWED_CLI_SUBCOMMANDS = [
+  ['status'],
+  ['gateway', 'status'],
+  ['gateway', 'start'],
+  ['gateway', 'stop'],
+  ['gateway', 'restart'],
+  ['agent', 'list'],
+  ['help'],
 ];
 app.post('/api/cli', requireAdmin, (req, res) => {
-  const cmd = (req.body.cmd || '').trim();
-  if (!cmd.startsWith('openclaw')) return res.status(400).json({ error: 'Only openclaw commands allowed' });
-  const allowed = ALLOWED_CLI_COMMANDS.some(re => re.test(cmd));
+  const raw = (req.body.cmd || '').trim();
+  // Split on whitespace; first token must be 'openclaw'
+  const parts = raw.split(/\s+/);
+  if (parts[0] !== 'openclaw') return res.status(400).json({ error: 'Only openclaw commands allowed' });
+  const args = parts.slice(1);
+  // Exact match against allowlist (no extra tokens, no shell operators)
+  const allowed = ALLOWED_CLI_SUBCOMMANDS.some(
+    allowed => allowed.length === args.length && allowed.every((a, i) => a === args[i])
+  );
   if (!allowed) return res.status(403).json({ error: 'Command not in allowlist' });
-  exec(cmd, { timeout: 30000 }, (err, stdout, stderr) => {
-    if (err) return res.json({ error: stderr || err.message });
-    res.json({ output: stdout || stderr || 'Done' });
+  // Use spawn (not exec) so no shell is involved — prevents && ; | injection
+  const { spawn } = require('child_process');
+  const child = spawn('openclaw', args, { timeout: 30000 });
+  let out = '', err = '';
+  child.stdout.on('data', d => out += d);
+  child.stderr.on('data', d => err += d);
+  child.on('close', code => {
+    if (code !== 0) return res.json({ error: err || `exit ${code}` });
+    res.json({ output: out || err || 'Done' });
   });
+  child.on('error', e => res.json({ error: e.message }));
 });
 
 // ===== MCP Control Endpoints =====
