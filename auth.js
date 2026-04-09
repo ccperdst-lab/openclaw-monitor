@@ -6,9 +6,14 @@ const crypto = require('node:crypto');
 const fs = require('fs');
 const path = require('path');
 
-const DB_DIR = '/tmp/openclaw';
+// Prefer persistent storage under ~/.openclaw; fall back to /tmp/openclaw
+const PERSISTENT_DIR = path.join(process.env.HOME || '/root', '.openclaw', 'monitor');
+const DB_DIR = (() => {
+  try { fs.mkdirSync(PERSISTENT_DIR, { recursive: true }); return PERSISTENT_DIR; } catch { return '/tmp/openclaw'; }
+})();
 const DB_PATH = path.join(DB_DIR, 'monitor-auth.db');
 try { fs.mkdirSync(DB_DIR, { recursive: true }); } catch {}
+try { fs.mkdirSync('/tmp/openclaw', { recursive: true }); } catch {}
 
 // Suppress experimental warning for sqlite
 process.removeAllListeners('warning');

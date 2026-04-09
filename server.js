@@ -76,10 +76,19 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // ===== Auth Middleware =====
 // Applied to all /api/* routes except /api/auth/*
+// When auth.enabled=false in config.yaml, a virtual admin user is attached so requireAdmin still works
+const VIRTUAL_ADMIN = { id: 'local', username: 'local', role: 'admin', email: '' };
 app.use((req, res, next) => {
   if (!req.path.startsWith('/api/')) return next();
   if (req.path.startsWith('/api/auth/')) return next(); // public auth endpoints
-  
+
+  // If auth is explicitly disabled, attach a virtual admin and skip token check
+  if (config.auth?.enabled === false) {
+    req.user = VIRTUAL_ADMIN;
+    req.sessionToken = null;
+    return next();
+  }
+
   const cookies = parseCookies(req);
   const token = cookies.sessionToken || req.headers['x-session-token'];
   const session = auth.getSession(token);
@@ -237,11 +246,32 @@ app.get('/api/admin/world', requireAdmin, (req, res) => {
 
 // ===== Logging =====
 try { fs.mkdirSync(LOG_DIR, { recursive: true }); } catch {}
+const LOG_FILE = path.join(LOG_DIR, 'monitor.log');
+const LOG_MAX_BYTES = 20 * 1024 * 1024; // 20 MB per file
+const LOG_MAX_ARCHIVES = 3;
+
+function rotateLogs() {
+  try {
+    const stat = fs.statSync(LOG_FILE);
+    if (stat.size < LOG_MAX_BYTES) return;
+    // Rotate: .log.2 -> .log.3, .log.1 -> .log.2, .log -> .log.1
+    for (let i = LOG_MAX_ARCHIVES - 1; i >= 1; i--) {
+      const from = `${LOG_FILE}.${i}`;
+      const to = `${LOG_FILE}.${i + 1}`;
+      try { if (fs.existsSync(from)) fs.renameSync(from, to); } catch {}
+    }
+    fs.renameSync(LOG_FILE, `${LOG_FILE}.1`);
+  } catch {}
+}
+
 function log(level, msg) {
   const ts = new Date().toISOString();
   const line = `[${ts}] [${level.toUpperCase()}] ${msg}`;
   console.log(line);
-  try { fs.appendFileSync(path.join(LOG_DIR, 'monitor.log'), line + '\n'); } catch {}
+  try {
+    rotateLogs();
+    fs.appendFileSync(LOG_FILE, line + '\n');
+  } catch {}
 }
 
 // ===== Multi-User: Connected Users =====
@@ -289,10 +319,15 @@ let lastUserCount = 0;
 app.post('/api/chat/send', (req, res) => {
   const { userId, name, text } = req.body;
   if (!userId || !text) return res.status(400).json({ error: 'Missing userId or text' });
-  const msg = { userId, name: name || '匿名', text: text.slice(0, 500), time: Date.now() };
+  // Sanitize chat content: strip HTML tags to prevent XSS via chat messages
+  const sanitize = s => (s || '').replace(/<[^>]*>/g, '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+  const safeText = sanitize(text).slice(0, 500);
+  const safeName = sanitize(name || '匿名').slice(0, 50);
+  const msg = { userId, name: safeName, text: safeText, time: Date.now() };
   chatMessages.push(msg);
   if (chatMessages.length > MAX_CHAT_MESSAGES) chatMessages.shift();
   broadcast({ type: 'chat', data: { chat: msg } });
+  broadcastWS({ type: 'chat', data: { chat: msg } });
   res.json({ ok: true });
 });
 
@@ -900,8 +935,13 @@ app.get('/api/session-state/:sessionId', (req, res) => {
   }
 });
 
-// SSE
+// SSE (requires login)
 app.get('/api/events', (req, res) => {
+  // Auth check via query param (SSE can't send headers easily)
+  const token = req.query.token || req.headers['x-session-token'];
+  const session = auth.getSession(token);
+  if (!session) return res.status(401).json({ error: 'Unauthorized' });
+
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
@@ -918,7 +958,7 @@ app.get('/api/events', (req, res) => {
 app.get('/api/minion-profiles', (req, res) => {
   res.json(loadProfiles());
 });
-app.post('/api/minion-profiles', (req, res) => {
+app.post('/api/minion-profiles', requireAdmin, (req, res) => {
   try {
     const existing = loadProfiles();
     for (const [key, profile] of Object.entries(req.body)) {
@@ -1035,7 +1075,16 @@ const wss = new WebSocketServer({ server });
 const wsClients = new Map(); // ws -> { userId, name }
 
 wss.on('connection', (ws, req) => {
-  log('info', 'WebSocket connected');
+  // Auth check via query param
+  const urlParams = new URLSearchParams(req.url.replace(/^[^?]*/, ''));
+  const token = urlParams.get('token');
+  const session = auth.getSession(token);
+  if (!session) {
+    log('info', 'WebSocket rejected: no valid token');
+    ws.close(4001, 'Unauthorized');
+    return;
+  }
+  log('info', `WebSocket connected (user: ${session.user_id})`);
   
   ws.on('message', (data) => {
     try {
@@ -1090,10 +1139,15 @@ function broadcastWS(data) {
   }
 }
 
-// CLI endpoint
-app.post('/api/cli', (req, res) => {
+// CLI endpoint (admin only, whitelist-based to prevent command injection)
+const ALLOWED_CLI_COMMANDS = [
+  /^openclaw\s+(status|gateway\s+status|gateway\s+start|gateway\s+stop|gateway\s+restart|agent\s+list|help)(\s|$)/,
+];
+app.post('/api/cli', requireAdmin, (req, res) => {
   const cmd = (req.body.cmd || '').trim();
   if (!cmd.startsWith('openclaw')) return res.status(400).json({ error: 'Only openclaw commands allowed' });
+  const allowed = ALLOWED_CLI_COMMANDS.some(re => re.test(cmd));
+  if (!allowed) return res.status(403).json({ error: 'Command not in allowlist' });
   exec(cmd, { timeout: 30000 }, (err, stdout, stderr) => {
     if (err) return res.json({ error: stderr || err.message });
     res.json({ output: stdout || stderr || 'Done' });
@@ -1142,7 +1196,7 @@ app.get('/api/minions', (req, res) => {
 });
 
 // Move a minion toward a target position (pathfinding walk)
-app.post('/api/minions/:sessionKey/move', (req, res) => {
+app.post('/api/minions/:sessionKey/move', requireAdmin, (req, res) => {
   const sk = req.params.sessionKey;
   const { x, z, speed } = req.body;
   if (x === undefined || z === undefined) return res.status(400).json({ error: 'Missing x or z' });
@@ -1156,7 +1210,7 @@ app.post('/api/minions/:sessionKey/move', (req, res) => {
 });
 
 // Move a minion toward another minion
-app.post('/api/minions/:sessionKey/move-to/:targetKey', (req, res) => {
+app.post('/api/minions/:sessionKey/move-to/:targetKey', requireAdmin, (req, res) => {
   const sk = req.params.sessionKey;
   const tk = req.params.targetKey;
   const { offsetDistance } = req.body;
@@ -1170,7 +1224,7 @@ app.post('/api/minions/:sessionKey/move-to/:targetKey', (req, res) => {
 });
 
 // Teleport a minion instantly
-app.post('/api/minions/:sessionKey/teleport', (req, res) => {
+app.post('/api/minions/:sessionKey/teleport', requireAdmin, (req, res) => {
   const sk = req.params.sessionKey;
   const { x, z } = req.body;
   if (x === undefined || z === undefined) return res.status(400).json({ error: 'Missing x or z' });
@@ -1184,7 +1238,7 @@ app.post('/api/minions/:sessionKey/teleport', (req, res) => {
 });
 
 // Play animation
-app.post('/api/minions/:sessionKey/animate', (req, res) => {
+app.post('/api/minions/:sessionKey/animate', requireAdmin, (req, res) => {
   const sk = req.params.sessionKey;
   const { animation, duration } = req.body;
   const validAnims = ['jump', 'wave', 'dance', 'spin', 'nod', 'shake', 'bow', 'clap', 'think', 'celebrate'];
@@ -1201,7 +1255,7 @@ app.post('/api/minions/:sessionKey/animate', (req, res) => {
 });
 
 // Show speech bubble
-app.post('/api/minions/:sessionKey/say', (req, res) => {
+app.post('/api/minions/:sessionKey/say', requireAdmin, (req, res) => {
   const sk = req.params.sessionKey;
   const { text, duration, sender } = req.body;
   if (!text) return res.status(400).json({ error: 'Missing text' });
@@ -1246,7 +1300,7 @@ app.get('/api/minions/:sessionKey', (req, res) => {
 });
 
 // Batch control: send multiple commands at once
-app.post('/api/minions/batch', (req, res) => {
+app.post('/api/minions/batch', requireAdmin, (req, res) => {
   const commands = req.body.commands;
   if (!Array.isArray(commands)) return res.status(400).json({ error: 'Expected { commands: [...] }' });
 
@@ -1264,7 +1318,7 @@ app.post('/api/minions/batch', (req, res) => {
 });
 
 // Make all minions in an agent do something together
-app.post('/api/agents/:agentName/action', (req, res) => {
+app.post('/api/agents/:agentName/action', requireAdmin, (req, res) => {
   const agentName = req.params.agentName;
   const { action, animation, text, duration } = req.body;
 
@@ -1301,8 +1355,8 @@ app.post('/api/agents/:agentName/action', (req, res) => {
   res.json({ ok: true, action, agentName, minionCount: sessionKeys.length });
 });
 
-// Direct chat: inject message via OpenClaw Gateway API
-app.post('/api/chat/:sessionId', (req, res) => {
+// Direct chat: inject message via OpenClaw Gateway API (admin only)
+app.post('/api/chat/:sessionId', requireAdmin, (req, res) => {
   const sessionId = req.params.sessionId;
   const text = (req.body.text || '').trim();
   if (!text) return res.status(400).json({ error: 'Empty message' });
@@ -1339,21 +1393,29 @@ app.post('/api/chat/:sessionId', (req, res) => {
   log('info', `Direct chat → session=${sessionId}, text="${text.slice(0, 80)}"`);
 
   // Use async exec to avoid blocking the response
-  const safeText = text.replace(/"/g, '\\"').replace(/\n/g, '\\n');
-  const cmd = `openclaw agent --session-id "${sessionId}" --message "[Direct Chat from Monitor] ${safeText}" --json`;
-  exec(cmd, { timeout: 60000, env: { ...process.env } }, (err, stdout, stderr) => {
-    if (err) {
-      log('error', `Direct chat agent error: ${stderr || err.message}`);
+  // Pass sessionId and message as separate arguments (no shell interpolation) to prevent injection
+  const { spawn } = require('child_process');
+  const fullMsg = `[Direct Chat from Monitor] ${text}`;
+  const child = spawn('openclaw', ['agent', '--session-id', sessionId, '--message', fullMsg, '--json'], {
+    timeout: 60000,
+    env: { ...process.env },
+  });
+  let stdout = '', stderr = '';
+  child.stdout.on('data', d => stdout += d);
+  child.stderr.on('data', d => stderr += d);
+  child.on('close', code => {
+    if (code !== 0) {
+      log('error', `Direct chat agent error: ${stderr.slice(0, 200)}`);
     } else {
-      log('info', `Direct chat agent response: ${(stdout || '').slice(0, 200)}`);
+      log('info', `Direct chat agent response: ${stdout.slice(0, 200)}`);
     }
   });
 
   res.json({ ok: true, method: 'gateway' });
 });
 
-// Abort: terminate a session's active run via Gateway API
-app.post('/api/sessions/:sessionId/abort', (req, res) => {
+// Abort: terminate a session's active run via Gateway API (admin only)
+app.post('/api/sessions/:sessionId/abort', requireAdmin, (req, res) => {
   const sessionId = req.params.sessionId;
 
   // Find the session key from agentState
