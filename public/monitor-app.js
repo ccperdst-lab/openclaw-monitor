@@ -626,22 +626,29 @@ function generateTextures() {
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
     return tex;
   }
+  // Fast pixel fill using ImageData (avoids per-pixel fillRect overhead)
+  function fillPixels(ctx, size, fn) {
+    const img = ctx.createImageData(size, size);
+    const d = img.data;
+    for (let i = 0; i < size * size; i++) {
+      const x = i % size, y = Math.floor(i / size);
+      const [r, g, b] = fn(x, y);
+      d[i * 4]     = r;
+      d[i * 4 + 1] = g;
+      d[i * 4 + 2] = b;
+      d[i * 4 + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+  }
 
   // --- Grass Texture ---
   const grassCanvas = makeCanvas(256);
   {
     const ctx = grassCanvas.getContext('2d');
-    // Base green noise
-    for (let y = 0; y < 256; y++) {
-      for (let x = 0; x < 256; x++) {
-        const n = Math.random();
-        const g = Math.floor(130 + n * 50);
-        const r = Math.floor(50 + n * 30);
-        const b = Math.floor(40 + n * 20);
-        ctx.fillStyle = `rgb(${r},${g},${b})`;
-        ctx.fillRect(x, y, 1, 1);
-      }
-    }
+    fillPixels(ctx, 256, (x, y) => {
+      const n = Math.random();
+      return [Math.floor(50 + n * 30), Math.floor(130 + n * 50), Math.floor(40 + n * 20)];
+    });
     // Small grass blades (short lines)
     ctx.strokeStyle = 'rgba(30,100,30,0.7)';
     ctx.lineWidth = 1;
@@ -661,16 +668,10 @@ function generateTextures() {
   const dirtCanvas = makeCanvas(256);
   {
     const ctx = dirtCanvas.getContext('2d');
-    for (let y = 0; y < 256; y++) {
-      for (let x = 0; x < 256; x++) {
-        const n = Math.random();
-        const r = Math.floor(150 + n * 50);
-        const g = Math.floor(100 + n * 40);
-        const b = Math.floor(50 + n * 20);
-        ctx.fillStyle = `rgb(${r},${g},${b})`;
-        ctx.fillRect(x, y, 1, 1);
-      }
-    }
+    fillPixels(ctx, 256, () => {
+      const n = Math.random();
+      return [Math.floor(150 + n * 50), Math.floor(100 + n * 40), Math.floor(50 + n * 20)];
+    });
     // Dirt particles/pebbles
     for (let i = 0; i < 200; i++) {
       const px = Math.random() * 256;
@@ -688,16 +689,12 @@ function generateTextures() {
   const stoneCanvas = makeCanvas(256);
   {
     const ctx = stoneCanvas.getContext('2d');
-    // Base grey noise
-    for (let y = 0; y < 256; y++) {
-      for (let x = 0; x < 256; x++) {
-        const n = Math.random();
-        const v = Math.floor(120 + n * 60);
-        ctx.fillStyle = `rgb(${v},${v},${v - 5})`;
-        ctx.fillRect(x, y, 1, 1);
-      }
-    }
-    // Crack lines (polygon boundaries)
+    fillPixels(ctx, 256, () => {
+      const n = Math.random();
+      const v = Math.floor(120 + n * 60);
+      return [v, v, Math.max(0, v - 5)];
+    });
+    // Crack lines
     ctx.strokeStyle = 'rgba(60,60,70,0.6)';
     ctx.lineWidth = 1;
     for (let i = 0; i < 18; i++) {
@@ -716,7 +713,7 @@ function generateTextures() {
   const woodCanvas = makeCanvas(256);
   {
     const ctx = woodCanvas.getContext('2d');
-    // Vertical grain stripes
+    // Vertical grain stripes using column fills (fast)
     for (let x = 0; x < 256; x++) {
       const n = Math.sin(x * 0.3) * 0.5 + 0.5 + Math.random() * 0.1;
       const r = Math.floor(100 + n * 60);
