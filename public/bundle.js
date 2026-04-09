@@ -29051,12 +29051,13 @@ window.addEventListener("wheel", (e) => {
   moveSpeed = Math.max(4, Math.min(30, moveSpeed - e.deltaY * 0.01));
 }, { passive: true });
 scene.add(new AmbientLight(16770244, 0.3));
-var hemiLight = new HemisphereLight(8900331, 4881497, 0.6);
+scene.add(new AmbientLight(16777215, 0.4));
+var hemiLight = new HemisphereLight(16772789, 4881486, 0.8);
 scene.add(hemiLight);
-var sun = new DirectionalLight(16772829, 1.2);
+var sun = new DirectionalLight(16772829, 1.8);
 sun.position.set(30, 50, 20);
 sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.mapSize.set(4096, 4096);
 sun.shadow.camera.near = 0.5;
 sun.shadow.camera.far = 200;
 var sc = sun.shadow.camera;
@@ -29094,26 +29095,211 @@ var sunOuterGlow = new Mesh(
 sunOuterGlow.position.copy(sun.position);
 sunOuterGlow.userData._atmosphere = true;
 scene.add(sunOuterGlow);
+function generateTextures() {
+  function makeCanvas(size) {
+    const c = document.createElement("canvas");
+    c.width = size;
+    c.height = size;
+    return c;
+  }
+  function makeTexture(canvas) {
+    const tex = new CanvasTexture(canvas);
+    tex.wrapS = tex.wrapT = RepeatWrapping;
+    return tex;
+  }
+  const grassCanvas = makeCanvas(256);
+  {
+    const ctx = grassCanvas.getContext("2d");
+    for (let y = 0; y < 256; y++) {
+      for (let x = 0; x < 256; x++) {
+        const n = Math.random();
+        const g = Math.floor(130 + n * 50);
+        const r = Math.floor(50 + n * 30);
+        const b = Math.floor(40 + n * 20);
+        ctx.fillStyle = `rgb(${r},${g},${b})`;
+        ctx.fillRect(x, y, 1, 1);
+      }
+    }
+    ctx.strokeStyle = "rgba(30,100,30,0.7)";
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 400; i++) {
+      const bx = Math.random() * 256;
+      const by = Math.random() * 256;
+      const len = 4 + Math.random() * 6;
+      const angle = -Math.PI / 2 + (Math.random() - 0.5) * 0.8;
+      ctx.beginPath();
+      ctx.moveTo(bx, by);
+      ctx.lineTo(bx + Math.cos(angle) * len, by + Math.sin(angle) * len);
+      ctx.stroke();
+    }
+  }
+  const dirtCanvas = makeCanvas(256);
+  {
+    const ctx = dirtCanvas.getContext("2d");
+    for (let y = 0; y < 256; y++) {
+      for (let x = 0; x < 256; x++) {
+        const n = Math.random();
+        const r = Math.floor(150 + n * 50);
+        const g = Math.floor(100 + n * 40);
+        const b = Math.floor(50 + n * 20);
+        ctx.fillStyle = `rgb(${r},${g},${b})`;
+        ctx.fillRect(x, y, 1, 1);
+      }
+    }
+    for (let i = 0; i < 200; i++) {
+      const px = Math.random() * 256;
+      const py = Math.random() * 256;
+      const r = 1 + Math.random() * 2;
+      const dark = Math.random() > 0.5;
+      ctx.fillStyle = dark ? "rgba(80,50,20,0.5)" : "rgba(200,160,90,0.4)";
+      ctx.beginPath();
+      ctx.arc(px, py, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  const stoneCanvas = makeCanvas(256);
+  {
+    const ctx = stoneCanvas.getContext("2d");
+    for (let y = 0; y < 256; y++) {
+      for (let x = 0; x < 256; x++) {
+        const n = Math.random();
+        const v = Math.floor(120 + n * 60);
+        ctx.fillStyle = `rgb(${v},${v},${v - 5})`;
+        ctx.fillRect(x, y, 1, 1);
+      }
+    }
+    ctx.strokeStyle = "rgba(60,60,70,0.6)";
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 18; i++) {
+      const sx = Math.random() * 256, sy = Math.random() * 256;
+      const pts = 3 + Math.floor(Math.random() * 3);
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      for (let j = 0; j < pts; j++) {
+        ctx.lineTo(sx + (Math.random() - 0.5) * 50, sy + (Math.random() - 0.5) * 50);
+      }
+      ctx.stroke();
+    }
+  }
+  const woodCanvas = makeCanvas(256);
+  {
+    const ctx = woodCanvas.getContext("2d");
+    for (let x = 0; x < 256; x++) {
+      const n = Math.sin(x * 0.3) * 0.5 + 0.5 + Math.random() * 0.1;
+      const r = Math.floor(100 + n * 60);
+      const g = Math.floor(60 + n * 40);
+      const b = Math.floor(20 + n * 20);
+      ctx.fillStyle = `rgb(${r},${g},${b})`;
+      ctx.fillRect(x, 0, 1, 256);
+    }
+    ctx.strokeStyle = "rgba(60,30,10,0.3)";
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 20; i++) {
+      const x = Math.random() * 256;
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      for (let y = 0; y < 256; y += 8) {
+        ctx.lineTo(x + (Math.random() - 0.5) * 3, y);
+      }
+      ctx.stroke();
+    }
+  }
+  const waterCanvas = makeCanvas(256);
+  {
+    const ctx = waterCanvas.getContext("2d");
+    ctx.fillStyle = "#4a9fca";
+    ctx.fillRect(0, 0, 256, 256);
+    for (let i = 0; i < 12; i++) {
+      const cx = Math.random() * 256, cy = Math.random() * 256;
+      for (let r = 5; r < 60; r += 10) {
+        ctx.strokeStyle = `rgba(100,180,230,${0.4 - r / 150})`;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+    ctx.strokeStyle = "rgba(180,230,255,0.2)";
+    ctx.lineWidth = 1;
+    for (let y = 0; y < 256; y += 6) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      for (let x = 0; x < 256; x += 8) {
+        ctx.lineTo(x, y + (Math.random() - 0.5) * 2);
+      }
+      ctx.stroke();
+    }
+  }
+  const roofCanvas = makeCanvas(256);
+  {
+    const ctx = roofCanvas.getContext("2d");
+    ctx.fillStyle = "#888888";
+    ctx.fillRect(0, 0, 256, 256);
+    const tileW = 32, tileH = 20;
+    for (let row = 0; row < 256 / tileH + 1; row++) {
+      for (let col = 0; col < 256 / tileW + 1; col++) {
+        const offsetX = row % 2 * (tileW / 2);
+        const x = col * tileW + offsetX;
+        const y = row * tileH;
+        const shade = 140 + Math.floor(Math.random() * 30);
+        ctx.fillStyle = `rgb(${shade},${shade},${shade})`;
+        ctx.fillRect(x + 1, y + 1, tileW - 2, tileH - 2);
+        ctx.fillStyle = `rgba(255,255,255,0.15)`;
+        ctx.fillRect(x + 1, y + 1, tileW - 2, 3);
+        ctx.fillStyle = `rgba(0,0,0,0.2)`;
+        ctx.fillRect(x + 1, y + tileH - 3, tileW - 2, 3);
+      }
+    }
+  }
+  const wallCanvas = makeCanvas(256);
+  {
+    const ctx = wallCanvas.getContext("2d");
+    ctx.fillStyle = "#cccccc";
+    ctx.fillRect(0, 0, 256, 256);
+    const brickW = 40, brickH = 18;
+    for (let row = 0; row < 256 / brickH + 1; row++) {
+      for (let col = 0; col < 256 / brickW + 2; col++) {
+        const offsetX = row % 2 * (brickW / 2);
+        const x = col * brickW - offsetX;
+        const y = row * brickH;
+        const n = Math.random();
+        const shade = Math.floor(210 + n * 30);
+        ctx.fillStyle = `rgb(${shade},${shade - 5},${shade - 10})`;
+        ctx.fillRect(x + 2, y + 2, brickW - 4, brickH - 4);
+      }
+    }
+  }
+  return {
+    grassTex: makeTexture(grassCanvas),
+    dirtTex: makeTexture(dirtCanvas),
+    stoneTex: makeTexture(stoneCanvas),
+    woodTex: makeTexture(woodCanvas),
+    waterTex: makeTexture(waterCanvas),
+    roofTex: makeTexture(roofCanvas),
+    wallTex: makeTexture(wallCanvas)
+  };
+}
+var _textures = generateTextures();
 var mat = {
   // Ground
-  grass: new MeshStandardMaterial({ color: 6210153, roughness: 0.95 }),
-  grassDark: new MeshStandardMaterial({ color: 4761684, roughness: 0.95 }),
-  dirt: new MeshStandardMaterial({ color: 12887666, roughness: 1 }),
-  stone: new MeshStandardMaterial({ color: 10265519, roughness: 0.8 }),
-  cobblestone: new MeshStandardMaterial({ color: 11047032, roughness: 0.9 }),
-  water: new MeshStandardMaterial({ color: 6013163, roughness: 0.1, metalness: 0.2, transparent: true, opacity: 0.7 }),
+  grass: new MeshStandardMaterial({ map: _textures.grassTex, roughness: 0.95 }),
+  grassDark: new MeshStandardMaterial({ color: 4761684, map: _textures.grassTex, roughness: 0.95 }),
+  dirt: new MeshStandardMaterial({ map: _textures.dirtTex, roughness: 1 }),
+  stone: new MeshStandardMaterial({ map: _textures.stoneTex, roughness: 0.8 }),
+  cobblestone: new MeshStandardMaterial({ color: 11047032, map: _textures.stoneTex, roughness: 0.9 }),
+  water: new MeshStandardMaterial({ map: _textures.waterTex, roughness: 0.1, metalness: 0.2, transparent: true, opacity: 0.7 }),
   // House
-  wallPink: new MeshStandardMaterial({ color: 16573676, roughness: 0.8 }),
-  wallBlue: new MeshStandardMaterial({ color: 14938877, roughness: 0.8 }),
-  wallYellow: new MeshStandardMaterial({ color: 16775620, roughness: 0.8 }),
-  wallGreen: new MeshStandardMaterial({ color: 15267305, roughness: 0.8 }),
-  doorWood: new MeshStandardMaterial({ color: 9268835, roughness: 0.7 }),
+  wallPink: new MeshStandardMaterial({ color: 16573676, map: _textures.wallTex, roughness: 0.8 }),
+  wallBlue: new MeshStandardMaterial({ color: 14938877, map: _textures.wallTex, roughness: 0.8 }),
+  wallYellow: new MeshStandardMaterial({ color: 16775620, map: _textures.wallTex, roughness: 0.8 }),
+  wallGreen: new MeshStandardMaterial({ color: 15267305, map: _textures.wallTex, roughness: 0.8 }),
+  doorWood: new MeshStandardMaterial({ map: _textures.woodTex, roughness: 0.7 }),
   windowGlass: new MeshStandardMaterial({ color: 12312315, roughness: 0.1, metalness: 0.3, transparent: true, opacity: 0.6 }),
-  chimney: new MeshStandardMaterial({ color: 7951688, roughness: 0.9 }),
+  chimney: new MeshStandardMaterial({ color: 7951688, map: _textures.stoneTex, roughness: 0.9 }),
   // Decorations
-  wood: new MeshStandardMaterial({ color: 10586239, roughness: 0.85 }),
-  fencePost: new MeshStandardMaterial({ color: 14142664, roughness: 0.8 }),
-  trunkBrown: new MeshStandardMaterial({ color: 7951688, roughness: 0.9 }),
+  wood: new MeshStandardMaterial({ map: _textures.woodTex, roughness: 0.85 }),
+  fencePost: new MeshStandardMaterial({ color: 14142664, map: _textures.woodTex, roughness: 0.8 }),
+  trunkBrown: new MeshStandardMaterial({ map: _textures.woodTex, roughness: 0.9 }),
   leafGreen: new MeshStandardMaterial({ color: 6732650, roughness: 0.8 }),
   leafDark: new MeshStandardMaterial({ color: 3706428, roughness: 0.8 }),
   flowerRed: new MeshStandardMaterial({ color: 15684432, roughness: 0.6 }),
@@ -29124,13 +29310,13 @@ var mat = {
   bushGreen: new MeshStandardMaterial({ color: 5025616, roughness: 0.85 }),
   lampPost: new MeshStandardMaterial({ color: 5592405, roughness: 0.4, metalness: 0.6 }),
   lampGlow: new MeshStandardMaterial({ color: 16772696, emissive: 16772696, emissiveIntensity: 0.6 }),
-  rock: new MeshStandardMaterial({ color: 10395294, roughness: 0.95 }),
+  rock: new MeshStandardMaterial({ map: _textures.stoneTex, roughness: 0.95 }),
   // Minion
-  minionYellow: new MeshStandardMaterial({ color: 16109619, roughness: 0.5 }),
+  minionYellow: new MeshStandardMaterial({ color: 16109619, roughness: 0.3, metalness: 0.1 }),
   minionBlue: new MeshStandardMaterial({ color: 3900150, roughness: 0.5 }),
-  goggle: new MeshStandardMaterial({ color: 8947848, metalness: 0.8, roughness: 0.2 }),
-  eye: new MeshStandardMaterial({ color: 16777215 }),
-  pupil: new MeshStandardMaterial({ color: 1118481 }),
+  goggle: new MeshStandardMaterial({ color: 8947848, metalness: 0.9, roughness: 0.1 }),
+  eye: new MeshStandardMaterial({ color: 16777215, roughness: 0.3 }),
+  pupil: new MeshStandardMaterial({ color: 1118481, emissive: 2236996, emissiveIntensity: 0.1 }),
   roofColors: [6056896, 15684432, 6732650, 16754470, 11225020, 2541274, 15483002, 16740419],
   wallColors: null,
   // set below
@@ -29530,6 +29716,7 @@ function createContinent(agentName, index) {
     posAttr.setY(i, height);
   }
   groundGeo.computeVertexNormals();
+  if (mat.grass.map) mat.grass.map.repeat.set(8, 8);
   const ground = new Mesh(groundGeo, mat.grass);
   ground.position.set(cx, -0.05, cz);
   ground.receiveShadow = true;
@@ -29586,6 +29773,7 @@ function createContinent(agentName, index) {
   const roofGeo = new ConeGeometry(houseW * 0.85, 2.5, 4);
   const roof = new Mesh(roofGeo, new MeshStandardMaterial({
     color: roofColor,
+    map: _textures.roofTex,
     roughness: 0.6,
     flatShading: true
   }));
@@ -29595,7 +29783,7 @@ function createContinent(agentName, index) {
   scene.add(roof);
   const overhang = new Mesh(
     new ConeGeometry(houseW * 0.92, 0.3, 4),
-    new MeshStandardMaterial({ color: roofColor, roughness: 0.7 })
+    new MeshStandardMaterial({ color: roofColor, map: _textures.roofTex, roughness: 0.7 })
   );
   overhang.position.set(hx, houseH + 0.5, hz);
   overhang.rotation.y = Math.PI / 4;
@@ -31816,6 +32004,10 @@ function animate() {
     updateSaveStateTimer(dt);
     maybeSaveServerState(dt);
     updateGrassWithLOD(time);
+    if (mat.water.map) {
+      mat.water.map.offset.x += 2e-4;
+      mat.water.map.offset.y += 1e-4;
+    }
     if (window._waterMeshes) {
       for (const w of window._waterMeshes) {
         if (w.material.uniforms?.uTime) w.material.uniforms.uTime.value = time;
