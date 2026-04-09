@@ -63,6 +63,10 @@ try {
 
 // Serve admin.html at secret path + keep /admin for backwards compat
 function serveAdmin(req, res) {
+  // Skip auth check when auth is disabled globally
+  if (config.auth?.enabled === false) {
+    return res.sendFile(path.join(__dirname, 'public', 'admin.html'));
+  }
   const cookies = parseCookies(req);
   const session = auth.getSession(cookies.sessionToken);
   if (!session) return res.redirect('/login.html');
