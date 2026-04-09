@@ -111,6 +111,14 @@ function requireAdmin(req, res, next) {
 
 // Check if any users exist (frontend decides to show register vs login)
 app.get('/api/auth/status', (req, res) => {
+  // When auth is disabled, always report as authenticated (virtual admin)
+  if (config.auth?.enabled === false) {
+    return res.json({
+      hasUsers: true,
+      authenticated: true,
+      user: { id: 'local', username: 'local', role: 'admin' },
+    });
+  }
   const hasUsers = auth.getUserCount() > 0;
   const cookies = parseCookies(req);
   const session = auth.getSession(cookies.sessionToken);
