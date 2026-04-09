@@ -938,9 +938,12 @@ app.get('/api/session-state/:sessionId', (req, res) => {
 // SSE (requires login)
 app.get('/api/events', (req, res) => {
   // Auth check via query param (SSE can't send headers easily)
-  const token = req.query.token || req.headers['x-session-token'];
-  const session = auth.getSession(token);
-  if (!session) return res.status(401).json({ error: 'Unauthorized' });
+  // Skip token check when auth is disabled globally
+  if (config.auth?.enabled !== false) {
+    const token = req.query.token || req.headers['x-session-token'];
+    const session = auth.getSession(token);
+    if (!session) return res.status(401).json({ error: 'Unauthorized' });
+  }
 
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
@@ -1075,16 +1078,20 @@ const wss = new WebSocketServer({ server });
 const wsClients = new Map(); // ws -> { userId, name }
 
 wss.on('connection', (ws, req) => {
-  // Auth check via query param
-  const urlParams = new URLSearchParams(req.url.replace(/^[^?]*/, ''));
-  const token = urlParams.get('token');
-  const session = auth.getSession(token);
-  if (!session) {
-    log('info', 'WebSocket rejected: no valid token');
-    ws.close(4001, 'Unauthorized');
-    return;
+  // Auth check via query param — skip when auth is disabled globally
+  if (config.auth?.enabled !== false) {
+    const urlParams = new URLSearchParams(req.url.replace(/^[^?]*/, ''));
+    const token = urlParams.get('token');
+    const session = auth.getSession(token);
+    if (!session) {
+      log('info', 'WebSocket rejected: no valid token');
+      ws.close(4001, 'Unauthorized');
+      return;
+    }
+    log('info', `WebSocket connected (user: ${session.user_id})`);
+  } else {
+    log('info', 'WebSocket connected (auth disabled)');
   }
-  log('info', `WebSocket connected (user: ${session.user_id})`);
   
   ws.on('message', (data) => {
     try {
