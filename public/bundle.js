@@ -557,18 +557,15 @@ window.addEventListener('wheel', e => { moveSpeed = Math.max(4, Math.min(30, mov
 // Ambient light - warm base
 scene.add(new THREE.AmbientLight(0xffe4c4, 0.3));
 
-// Extra ambient light to prevent dark shadows
-scene.add(new THREE.AmbientLight(0xffffff, 0.4));
-
 // Hemisphere light - realistic sky/ground color bleeding
-const hemiLight = new THREE.HemisphereLight(0xffeeb5, 0x4a7c4e, 0.8);
+const hemiLight = new THREE.HemisphereLight(0x87ceeb, 0x4a7c59, 0.6);
 scene.add(hemiLight);
 
 // Main directional light (sun) - warm golden hour
-const sun = new THREE.DirectionalLight(0xffeedd, 1.8);
+const sun = new THREE.DirectionalLight(0xffeedd, 1.2);
 sun.position.set(30, 50, 20);
 sun.castShadow = true;
-sun.shadow.mapSize.set(4096, 4096);
+sun.shadow.mapSize.set(2048, 2048);
 sun.shadow.camera.near = 0.5;
 sun.shadow.camera.far = 200;
 const sc = sun.shadow.camera;
@@ -614,238 +611,27 @@ sunOuterGlow.position.copy(sun.position);
 sunOuterGlow.userData._atmosphere = true;
 scene.add(sunOuterGlow);
 
-// ===== Procedural Texture Generator =====
-function generateTextures() {
-  function makeCanvas(size) {
-    const c = document.createElement('canvas');
-    c.width = size; c.height = size;
-    return c;
-  }
-  function makeTexture(canvas) {
-    const tex = new THREE.CanvasTexture(canvas);
-    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-    return tex;
-  }
-  // Fast pixel fill using ImageData (avoids per-pixel fillRect overhead)
-  function fillPixels(ctx, size, fn) {
-    const img = ctx.createImageData(size, size);
-    const d = img.data;
-    for (let i = 0; i < size * size; i++) {
-      const x = i % size, y = Math.floor(i / size);
-      const [r, g, b] = fn(x, y);
-      d[i * 4]     = r;
-      d[i * 4 + 1] = g;
-      d[i * 4 + 2] = b;
-      d[i * 4 + 3] = 255;
-    }
-    ctx.putImageData(img, 0, 0);
-  }
-
-  // --- Grass Texture ---
-  const grassCanvas = makeCanvas(256);
-  {
-    const ctx = grassCanvas.getContext('2d');
-    fillPixels(ctx, 256, (x, y) => {
-      const n = Math.random();
-      return [Math.floor(50 + n * 30), Math.floor(130 + n * 50), Math.floor(40 + n * 20)];
-    });
-    // Small grass blades (short lines)
-    ctx.strokeStyle = 'rgba(30,100,30,0.7)';
-    ctx.lineWidth = 1;
-    for (let i = 0; i < 400; i++) {
-      const bx = Math.random() * 256;
-      const by = Math.random() * 256;
-      const len = 4 + Math.random() * 6;
-      const angle = -Math.PI / 2 + (Math.random() - 0.5) * 0.8;
-      ctx.beginPath();
-      ctx.moveTo(bx, by);
-      ctx.lineTo(bx + Math.cos(angle) * len, by + Math.sin(angle) * len);
-      ctx.stroke();
-    }
-  }
-
-  // --- Dirt Texture ---
-  const dirtCanvas = makeCanvas(256);
-  {
-    const ctx = dirtCanvas.getContext('2d');
-    fillPixels(ctx, 256, () => {
-      const n = Math.random();
-      return [Math.floor(150 + n * 50), Math.floor(100 + n * 40), Math.floor(50 + n * 20)];
-    });
-    // Dirt particles/pebbles
-    for (let i = 0; i < 200; i++) {
-      const px = Math.random() * 256;
-      const py = Math.random() * 256;
-      const r = 1 + Math.random() * 2;
-      const dark = Math.random() > 0.5;
-      ctx.fillStyle = dark ? 'rgba(80,50,20,0.5)' : 'rgba(200,160,90,0.4)';
-      ctx.beginPath();
-      ctx.arc(px, py, r, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-
-  // --- Stone Texture ---
-  const stoneCanvas = makeCanvas(256);
-  {
-    const ctx = stoneCanvas.getContext('2d');
-    fillPixels(ctx, 256, () => {
-      const n = Math.random();
-      const v = Math.floor(120 + n * 60);
-      return [v, v, Math.max(0, v - 5)];
-    });
-    // Crack lines
-    ctx.strokeStyle = 'rgba(60,60,70,0.6)';
-    ctx.lineWidth = 1;
-    for (let i = 0; i < 18; i++) {
-      const sx = Math.random() * 256, sy = Math.random() * 256;
-      const pts = 3 + Math.floor(Math.random() * 3);
-      ctx.beginPath();
-      ctx.moveTo(sx, sy);
-      for (let j = 0; j < pts; j++) {
-        ctx.lineTo(sx + (Math.random() - 0.5) * 50, sy + (Math.random() - 0.5) * 50);
-      }
-      ctx.stroke();
-    }
-  }
-
-  // --- Wood Texture ---
-  const woodCanvas = makeCanvas(256);
-  {
-    const ctx = woodCanvas.getContext('2d');
-    // Vertical grain stripes using column fills (fast)
-    for (let x = 0; x < 256; x++) {
-      const n = Math.sin(x * 0.3) * 0.5 + 0.5 + Math.random() * 0.1;
-      const r = Math.floor(100 + n * 60);
-      const g = Math.floor(60 + n * 40);
-      const b = Math.floor(20 + n * 20);
-      ctx.fillStyle = `rgb(${r},${g},${b})`;
-      ctx.fillRect(x, 0, 1, 256);
-    }
-    // Grain lines
-    ctx.strokeStyle = 'rgba(60,30,10,0.3)';
-    ctx.lineWidth = 1;
-    for (let i = 0; i < 20; i++) {
-      const x = Math.random() * 256;
-      ctx.beginPath();
-      ctx.moveTo(x, 0);
-      for (let y = 0; y < 256; y += 8) {
-        ctx.lineTo(x + (Math.random() - 0.5) * 3, y);
-      }
-      ctx.stroke();
-    }
-  }
-
-  // --- Water Texture ---
-  const waterCanvas = makeCanvas(256);
-  {
-    const ctx = waterCanvas.getContext('2d');
-    // Base blue
-    ctx.fillStyle = '#4a9fca';
-    ctx.fillRect(0, 0, 256, 256);
-    // Concentric ripple rings
-    for (let i = 0; i < 12; i++) {
-      const cx = Math.random() * 256, cy = Math.random() * 256;
-      for (let r = 5; r < 60; r += 10) {
-        ctx.strokeStyle = `rgba(100,180,230,${0.4 - r / 150})`;
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.arc(cx, cy, r, 0, Math.PI * 2);
-        ctx.stroke();
-      }
-    }
-    // Horizontal shimmer lines
-    ctx.strokeStyle = 'rgba(180,230,255,0.2)';
-    ctx.lineWidth = 1;
-    for (let y = 0; y < 256; y += 6) {
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      for (let x = 0; x < 256; x += 8) {
-        ctx.lineTo(x, y + (Math.random() - 0.5) * 2);
-      }
-      ctx.stroke();
-    }
-  }
-
-  // --- Roof Tile Texture ---
-  const roofCanvas = makeCanvas(256);
-  {
-    const ctx = roofCanvas.getContext('2d');
-    ctx.fillStyle = '#888888';
-    ctx.fillRect(0, 0, 256, 256);
-    const tileW = 32, tileH = 20;
-    for (let row = 0; row < 256 / tileH + 1; row++) {
-      for (let col = 0; col < 256 / tileW + 1; col++) {
-        const offsetX = (row % 2) * (tileW / 2);
-        const x = col * tileW + offsetX;
-        const y = row * tileH;
-        const shade = 140 + Math.floor(Math.random() * 30);
-        ctx.fillStyle = `rgb(${shade},${shade},${shade})`;
-        ctx.fillRect(x + 1, y + 1, tileW - 2, tileH - 2);
-        // Highlight top edge
-        ctx.fillStyle = `rgba(255,255,255,0.15)`;
-        ctx.fillRect(x + 1, y + 1, tileW - 2, 3);
-        // Shadow bottom edge
-        ctx.fillStyle = `rgba(0,0,0,0.2)`;
-        ctx.fillRect(x + 1, y + tileH - 3, tileW - 2, 3);
-      }
-    }
-  }
-
-  // --- Brick Wall Texture ---
-  const wallCanvas = makeCanvas(256);
-  {
-    const ctx = wallCanvas.getContext('2d');
-    ctx.fillStyle = '#cccccc'; // mortar base
-    ctx.fillRect(0, 0, 256, 256);
-    const brickW = 40, brickH = 18;
-    for (let row = 0; row < 256 / brickH + 1; row++) {
-      for (let col = 0; col < 256 / brickW + 2; col++) {
-        const offsetX = (row % 2) * (brickW / 2);
-        const x = col * brickW - offsetX;
-        const y = row * brickH;
-        const n = Math.random();
-        const shade = Math.floor(210 + n * 30);
-        ctx.fillStyle = `rgb(${shade},${shade - 5},${shade - 10})`;
-        ctx.fillRect(x + 2, y + 2, brickW - 4, brickH - 4);
-      }
-    }
-  }
-
-  return {
-    grassTex: makeTexture(grassCanvas),
-    dirtTex: makeTexture(dirtCanvas),
-    stoneTex: makeTexture(stoneCanvas),
-    woodTex: makeTexture(woodCanvas),
-    waterTex: makeTexture(waterCanvas),
-    roofTex: makeTexture(roofCanvas),
-    wallTex: makeTexture(wallCanvas),
-  };
-}
-
-const _textures = generateTextures();
-
 // ===== Materials =====
 const mat = {
   // Ground
-  grass: new THREE.MeshStandardMaterial({ map: _textures.grassTex, roughness: 0.95 }),
-  grassDark: new THREE.MeshStandardMaterial({ color: 0x48a854, map: _textures.grassTex, roughness: 0.95 }),
-  dirt: new THREE.MeshStandardMaterial({ map: _textures.dirtTex, roughness: 1 }),
-  stone: new THREE.MeshStandardMaterial({ map: _textures.stoneTex, roughness: 0.8 }),
-  cobblestone: new THREE.MeshStandardMaterial({ color: 0xa89078, map: _textures.stoneTex, roughness: 0.9 }),
-  water: new THREE.MeshStandardMaterial({ map: _textures.waterTex, roughness: 0.1, metalness: 0.2, transparent: true, opacity: 0.7 }),
+  grass: new THREE.MeshStandardMaterial({ color: 0x5ec269, roughness: 0.95 }),
+  grassDark: new THREE.MeshStandardMaterial({ color: 0x48a854, roughness: 0.95 }),
+  dirt: new THREE.MeshStandardMaterial({ color: 0xc4a672, roughness: 1 }),
+  stone: new THREE.MeshStandardMaterial({ color: 0x9ca3af, roughness: 0.8 }),
+  cobblestone: new THREE.MeshStandardMaterial({ color: 0xa89078, roughness: 0.9 }),
+  water: new THREE.MeshStandardMaterial({ color: 0x5bc0eb, roughness: 0.1, metalness: 0.2, transparent: true, opacity: 0.7 }),
   // House
-  wallPink: new THREE.MeshStandardMaterial({ color: 0xfce4ec, map: _textures.wallTex, roughness: 0.8 }),
-  wallBlue: new THREE.MeshStandardMaterial({ color: 0xe3f2fd, map: _textures.wallTex, roughness: 0.8 }),
-  wallYellow: new THREE.MeshStandardMaterial({ color: 0xfff9c4, map: _textures.wallTex, roughness: 0.8 }),
-  wallGreen: new THREE.MeshStandardMaterial({ color: 0xe8f5e9, map: _textures.wallTex, roughness: 0.8 }),
-  doorWood: new THREE.MeshStandardMaterial({ map: _textures.woodTex, roughness: 0.7 }),
+  wallPink: new THREE.MeshStandardMaterial({ color: 0xfce4ec, roughness: 0.8 }),
+  wallBlue: new THREE.MeshStandardMaterial({ color: 0xe3f2fd, roughness: 0.8 }),
+  wallYellow: new THREE.MeshStandardMaterial({ color: 0xfff9c4, roughness: 0.8 }),
+  wallGreen: new THREE.MeshStandardMaterial({ color: 0xe8f5e9, roughness: 0.8 }),
+  doorWood: new THREE.MeshStandardMaterial({ color: 0x8d6e63, roughness: 0.7 }),
   windowGlass: new THREE.MeshStandardMaterial({ color: 0xbbdefb, roughness: 0.1, metalness: 0.3, transparent: true, opacity: 0.6 }),
-  chimney: new THREE.MeshStandardMaterial({ color: 0x795548, map: _textures.stoneTex, roughness: 0.9 }),
+  chimney: new THREE.MeshStandardMaterial({ color: 0x795548, roughness: 0.9 }),
   // Decorations
-  wood: new THREE.MeshStandardMaterial({ map: _textures.woodTex, roughness: 0.85 }),
-  fencePost: new THREE.MeshStandardMaterial({ color: 0xd7ccc8, map: _textures.woodTex, roughness: 0.8 }),
-  trunkBrown: new THREE.MeshStandardMaterial({ map: _textures.woodTex, roughness: 0.9 }),
+  wood: new THREE.MeshStandardMaterial({ color: 0xa1887f, roughness: 0.85 }),
+  fencePost: new THREE.MeshStandardMaterial({ color: 0xd7ccc8, roughness: 0.8 }),
+  trunkBrown: new THREE.MeshStandardMaterial({ color: 0x795548, roughness: 0.9 }),
   leafGreen: new THREE.MeshStandardMaterial({ color: 0x66bb6a, roughness: 0.8 }),
   leafDark: new THREE.MeshStandardMaterial({ color: 0x388e3c, roughness: 0.8 }),
   flowerRed: new THREE.MeshStandardMaterial({ color: 0xef5350, roughness: 0.6 }),
@@ -856,13 +642,13 @@ const mat = {
   bushGreen: new THREE.MeshStandardMaterial({ color: 0x4caf50, roughness: 0.85 }),
   lampPost: new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.4, metalness: 0.6 }),
   lampGlow: new THREE.MeshStandardMaterial({ color: 0xffee58, emissive: 0xffee58, emissiveIntensity: 0.6 }),
-  rock: new THREE.MeshStandardMaterial({ map: _textures.stoneTex, roughness: 0.95 }),
+  rock: new THREE.MeshStandardMaterial({ color: 0x9e9e9e, roughness: 0.95 }),
   // Minion
-  minionYellow: new THREE.MeshStandardMaterial({ color: 0xf5d033, roughness: 0.3, metalness: 0.1 }),
+  minionYellow: new THREE.MeshStandardMaterial({ color: 0xf5d033, roughness: 0.5 }),
   minionBlue: new THREE.MeshStandardMaterial({ color: 0x3b82f6, roughness: 0.5 }),
-  goggle: new THREE.MeshStandardMaterial({ color: 0x888888, metalness: 0.9, roughness: 0.1 }),
-  eye: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 }),
-  pupil: new THREE.MeshStandardMaterial({ color: 0x111111, emissive: 0x222244, emissiveIntensity: 0.1 }),
+  goggle: new THREE.MeshStandardMaterial({ color: 0x888888, metalness: 0.8, roughness: 0.2 }),
+  eye: new THREE.MeshStandardMaterial({ color: 0xffffff }),
+  pupil: new THREE.MeshStandardMaterial({ color: 0x111111 }),
   roofColors: [0x5c6bc0, 0xef5350, 0x66bb6a, 0xffa726, 0xab47bc, 0x26c6da, 0xec407a, 0xff7043],
   wallColors: null, // set below
   flowerColors: null, // set below
@@ -1308,7 +1094,6 @@ function createContinent(agentName, index) {
   }
   groundGeo.computeVertexNormals();
   
-  if (mat.grass.map) mat.grass.map.repeat.set(8, 8);
   const ground = new THREE.Mesh(groundGeo, mat.grass);
   ground.position.set(cx, -0.05, cz);
   ground.receiveShadow = true;
@@ -1378,8 +1163,7 @@ function createContinent(agentName, index) {
   // Roof - more detailed
   const roofGeo = new THREE.ConeGeometry(houseW * 0.85, 2.5, 4);
   const roof = new THREE.Mesh(roofGeo, new THREE.MeshStandardMaterial({ 
-    color: roofColor,
-    map: _textures.roofTex,
+    color: roofColor, 
     roughness: 0.6,
     flatShading: true 
   }));
@@ -1391,7 +1175,7 @@ function createContinent(agentName, index) {
   // Roof overhang
   const overhang = new THREE.Mesh(
     new THREE.ConeGeometry(houseW * 0.92, 0.3, 4),
-    new THREE.MeshStandardMaterial({ color: roofColor, map: _textures.roofTex, roughness: 0.7 })
+    new THREE.MeshStandardMaterial({ color: roofColor, roughness: 0.7 })
   );
   overhang.position.set(hx, houseH + 0.5, hz);
   overhang.rotation.y = Math.PI/4;
@@ -3972,12 +3756,6 @@ function animate() {
 
   // Update dynamic grass wind (with LOD)
   updateGrassWithLOD(time);
-
-  // Water texture animation
-  if (mat.water.map) {
-    mat.water.map.offset.x += 0.0002;
-    mat.water.map.offset.y += 0.0001;
-  }
 
   // Update water shader
   if (window._waterMeshes) {
