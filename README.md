@@ -25,6 +25,7 @@
 - **Agent Continents** — Each OpenClaw agent gets a vibrant village with houses, trees, flowers, ponds, fences, lamp posts, and benches
 - **Dynamic Nature** — Wind-swaying grass (600+ blades), fluffy animated trees, rippling water with lily pads, floating cherry blossom petals
 - **Clouds & Sky** — Volumetric clouds, dynamic lighting
+- **Weather Effects** — Toggleable rain system
 
 ## 🟡 Minions (Sessions)
 
@@ -42,6 +43,14 @@
 - **Expandable Content** — Thinking blocks are collapsible for long conversations
 - **Two View Modes** — Floating bubble (default) or fixed panel (pinned to bottom)
 - **Auto-scroll** — Smart scroll that respects user position
+- **Direct Chat** — Send messages directly to any session from the 3D world
+
+## 🛡️ Admin Panel
+
+- **User Management** — Create, delete, and manage user accounts
+- **Role-based Access** — Admin / User / Viewer roles with fine-grained permissions
+- **Agents Overview** — See all agents and their active sessions at a glance
+- **Secret Admin URL** — Admin panel is accessible only via a randomly-generated secret path (persisted across restarts)
 
 ## 🛠️ Quick Start
 
@@ -67,7 +76,38 @@ The monitor auto-detects your OpenClaw installation at `~/.openclaw`. You can cu
 ```yaml
 openclawRoot: ~/.openclaw  # Path to OpenClaw root
 port: 7777                 # Server port
+
+auth:
+  enabled: true            # Enable user auth (default: false for local use)
+
+display:
+  showCron: true           # Show cron sessions as minions
+  showSubagent: true       # Show subagent sessions as minions
+  recentMinutes: 10        # Only show sessions active in last N minutes
 ```
+
+## 🔐 Auth & Access Control
+
+When `auth.enabled: true`:
+- First user to register becomes **admin**
+- Admin can create/manage other users via the admin panel
+- Admin panel is accessible only at a secret randomized URL (shown in server logs on startup)
+- Roles: `admin` (full access), `user` (view + chat), `viewer` (read-only)
+
+When `auth.enabled: false` (default):
+- No login required — anyone with access to the port can use the monitor
+
+## ⌨️ Keyboard Shortcuts
+
+| Key | Action |
+|-----|--------|
+| `W/A/S/D` or Arrow Keys | Move camera |
+| `Mouse drag` | Rotate view |
+| `Scroll` | Zoom |
+| `T` | Toggle world chat panel |
+| `R` | Toggle rain |
+| `F1` | Screenshot mode (hide UI) |
+| `Click minion` | Open conversation bubble |
 
 ## 🏗️ Architecture
 
@@ -76,7 +116,7 @@ port: 7777                 # Server port
 │  OpenClaw       │ ──────────▶  │  Monitor     │
 │  Gateway        │              │  Server      │
 │  (agents/)      │ ◀──────────  │  (Express)   │
-└─────────────────┘   WebSocket  └──────┬───────┘
+└─────────────────┘   REST API   └──────┬───────┘
                                         │
                                    ┌────▼────┐
                                    │ Three.js │
@@ -92,7 +132,7 @@ port: 7777                 # Server port
 | [Divan](https://github.com/talhaorak/divan) | Room-based, no minions |
 | [agent-monitor](https://github.com/ruiqili2/agent-monitor) | Pixel art style |
 
-**Our edge:** Full 3D world + physics + per-session minions + direct chat.
+**Our edge:** Full 3D world + physics + per-session minions + direct chat + admin panel.
 
 ## 🤝 Contributing
 
