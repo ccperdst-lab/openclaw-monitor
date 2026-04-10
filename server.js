@@ -884,7 +884,12 @@ app.get('/api/session-state/:sessionId', (req, res) => {
           eventLog.push({ type: 'tool_use', text: tc.name, args: tc.args, ts });
         }
         if (ac.texts?.length) {
-          // Don't add reply text to event log (user doesn't want it in thinking panel)
+          eventLog.push({
+            type: 'reply_text',
+            text: ac.texts.join(' ').slice(0, 300),
+            ts,
+            fullContent: ac.texts.join('\n')
+          });
         }
       } else if (msg.role === 'toolResult') {
         const result = parseToolResult(msg.content);

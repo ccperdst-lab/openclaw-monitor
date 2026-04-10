@@ -976,6 +976,13 @@ function createMinion(profile) {
     const pupil = new THREE.Mesh(new THREE.SphereGeometry(pupilR, 8, 8), mat.pupil);
     pupil.position.set(ex, eyeY, br*0.85 + eyeR*0.5);
     group.add(pupil);
+    // Goggle frame: dark gray ring around each eye
+    const goggleFrame = new THREE.Mesh(
+      new THREE.TorusGeometry(eyeR*1.15, eyeR*0.18, 8, 20),
+      new THREE.MeshStandardMaterial({ color: 0x333333, metalness: 0.7, roughness: 0.2 })
+    );
+    goggleFrame.position.set(ex, eyeY, br*0.87);
+    group.add(goggleFrame);
   }
 
   // Hair
