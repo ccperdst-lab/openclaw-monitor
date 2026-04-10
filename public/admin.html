@@ -195,9 +195,18 @@ tr:last-child td{border-bottom:none}
 
       <!-- Agents Page -->
       <div class="page" id="page-agents">
+        <div id="agents-stats" style="display:flex;gap:12px;margin-bottom:16px"></div>
         <div class="table-card">
           <div class="table-hd"><h3>Agents 总览</h3></div>
           <div style="padding:12px" id="agents-tree"></div>
+        </div>
+        <div class="table-card" style="margin-top:16px">
+          <div class="table-hd"><h3>Sessions 列表</h3></div>
+          <table>
+            <thead><tr><th>Agent</th><th>Session 名称</th><th>类型</th><th>频道</th><th>状态</th></tr></thead>
+            <tbody id="agents-sessions-table"></tbody>
+          </table>
+          <div id="agents-sessions-empty" class="empty-state" style="display:none"><div class="icon">📡</div>暂无 Session</div>
         </div>
       </div>
     </div>
@@ -314,6 +323,7 @@ function showPage(page) {
   if (page === 'users') {
     actions.innerHTML = `<button class="btn btn-primary btn-sm" onclick="openCreateUser()">+ 新建用户</button>`;
   }
+  if (page === 'agents') { renderAgentsSessions(); }
 }
 
 // ── Load data ─────────────────────────────────────────────────────────────────
@@ -338,6 +348,7 @@ async function loadAll() {
   renderUsersTable();
   renderPermsTable();
   renderAgentsTree(document.getElementById('agents-tree'));
+  renderAgentsSessions();
   renderPermTree(document.getElementById('cu-perms-tree'), []);
 }
 
@@ -425,6 +436,38 @@ function renderAgentsTree(container, selectedPerms = null, prefix = 'tree') {
       }).join('')}</div>
     </div>`;
   }).join('');
+}
+
+// ── Agents Sessions Table ─────────────────────────────────────────────────────
+function renderAgentsSessions() {
+  const agents = worldData.agents || [];
+  const tbody = document.getElementById('agents-sessions-table');
+  const empty = document.getElementById('agents-sessions-empty');
+  if (!tbody) return;
+  const rows = [];
+  agents.forEach(a => {
+    (a.sessions || []).forEach(s => {
+      rows.push({ agent: a.name, ...s });
+    });
+  });
+  if (rows.length === 0) { tbody.innerHTML = ''; if(empty) empty.style.display = ''; return; }
+  if(empty) empty.style.display = 'none';
+  tbody.innerHTML = rows.map(r =>
+    `<tr>
+      <td><strong>${esc(r.agent)}</strong></td>
+      <td style="font-size:10px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(r.key)}">${esc(r.displayName || r.label || r.key)}</td>
+      <td>${esc(r.type || '—')}</td>
+      <td>${esc(r.channel || '—')}</td>
+      <td><span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;background:rgba(52,211,153,0.15);color:#34d399">在线</span></td>
+    </tr>`
+  ).join('');
+  const statsEl = document.getElementById('agents-stats');
+  if (statsEl) {
+    statsEl.innerHTML = `
+      <div class="stat-card" style="flex:1"><div class="label">Agents</div><div class="value">${agents.length}</div><div class="sub">活跃</div></div>
+      <div class="stat-card" style="flex:1"><div class="label">Sessions</div><div class="value">${rows.length}</div><div class="sub">总计</div></div>
+    `;
+  }
 }
 
 function renderPermTree(container, currentPerms) {
@@ -566,7 +609,13 @@ async function deleteUser(userId, username) {
 function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
-loadAll();
+document.addEventListener('DOMContentLoaded', () => {
+  loadAll().catch(err => {
+    console.error('loadAll failed:', err);
+    const ab = document.getElementById('alert-box');
+    if (ab) { ab.innerHTML = `<span>加载失败: ${err.message}，请刷新重试</span>`; ab.className = 'alert show alert-error'; }
+  });
+});
 </script>
 </body>
 </html>

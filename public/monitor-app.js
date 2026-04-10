@@ -4134,6 +4134,7 @@ window.addEventListener('resize', () => {
 (function initDrawer() {
   const drawer = document.getElementById('drawer');
   const toggle = document.getElementById('toggle');
+  drawer.classList.add('shut'); // default closed
 
   // Toggle button
   toggle.addEventListener('click', (e) => {
