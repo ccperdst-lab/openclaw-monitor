@@ -615,6 +615,209 @@ sunOuterGlow.position.copy(sun.position);
 sunOuterGlow.userData._atmosphere = true;
 scene.add(sunOuterGlow);
 
+// ===== Star Field =====
+// Stars are placed on the inside of a large sphere (like Minecraft sky dome)
+const STAR_COUNT = 2500;
+const STAR_BRIGHT_COUNT = 180; // extra bright/large stars
+const SKY_RADIUS = 280;
+
+function makeStarField() {
+  // Layer 1: small stars (canvas texture)
+  const starCanvas = document.createElement('canvas');
+  starCanvas.width = 64; starCanvas.height = 64;
+  const sctx = starCanvas.getContext('2d');
+  const grad = sctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grad.addColorStop(0, 'rgba(255,255,255,1)');
+  grad.addColorStop(0.25, 'rgba(200,220,255,0.9)');
+  grad.addColorStop(0.6, 'rgba(150,180,255,0.3)');
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
+  sctx.fillStyle = grad;
+  sctx.beginPath();
+  sctx.arc(32, 32, 32, 0, Math.PI * 2);
+  sctx.fill();
+  const starTex = new THREE.CanvasTexture(starCanvas);
+
+  const geo = new THREE.BufferGeometry();
+  const positions = new Float32Array(STAR_COUNT * 3);
+  const sizes = new Float32Array(STAR_COUNT);
+  for (let i = 0; i < STAR_COUNT; i++) {
+    // Uniform distribution on sphere surface
+    const u = Math.random(), v = Math.random();
+    const theta = 2 * Math.PI * u;
+    const phi = Math.acos(2 * v - 1);
+    // Only upper hemisphere + some below horizon (keep it natural)
+    const r = SKY_RADIUS + (Math.random() - 0.5) * 10;
+    positions[i * 3]     = r * Math.sin(phi) * Math.cos(theta);
+    positions[i * 3 + 1] = r * Math.cos(phi); // all angles
+    positions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+    // Star size variation: most small, some bigger
+    sizes[i] = 0.8 + Math.random() * 2.5;
+  }
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+
+  const mat = new THREE.PointsMaterial({
+    size: 1.8,
+    map: starTex,
+    sizeAttenuation: true,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    vertexColors: false,
+    color: 0xd0e0ff,
+  });
+  const stars = new THREE.Points(geo, mat);
+  stars.userData._stars = true;
+  stars.renderOrder = -1;
+  scene.add(stars);
+  return stars;
+}
+
+function makeBrightStars() {
+  // Layer 2: bright/twinkling stars — random sizes + slight color tints
+  const brightCanvas = document.createElement('canvas');
+  brightCanvas.width = 128; brightCanvas.height = 128;
+  const bctx = brightCanvas.getContext('2d');
+  const bg = bctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+  bg.addColorStop(0, 'rgba(255,255,255,1)');
+  bg.addColorStop(0.15, 'rgba(220,235,255,1)');
+  bg.addColorStop(0.4, 'rgba(180,200,255,0.5)');
+  bg.addColorStop(0.7, 'rgba(120,150,255,0.15)');
+  bg.addColorStop(1, 'rgba(0,0,0,0)');
+  bctx.fillStyle = bg;
+  bctx.beginPath();
+  bctx.arc(64, 64, 64, 0, Math.PI * 2);
+  bctx.fill();
+  const brightTex = new THREE.CanvasTexture(brightCanvas);
+
+  const geo = new THREE.BufferGeometry();
+  const positions = new Float32Array(STAR_BRIGHT_COUNT * 3);
+  const colors = new Float32Array(STAR_BRIGHT_COUNT * 3);
+  // Star color palette: white, warm yellow, cool blue, slight red
+  const palette = [
+    [1, 1, 1], [1, 0.97, 0.9], [0.9, 0.93, 1], [1, 1, 0.85], [0.85, 0.9, 1],
+    [1, 0.95, 0.8], [0.8, 0.85, 1], [1, 0.9, 0.85], [0.9, 1, 0.9],
+  ];
+  for (let i = 0; i < STAR_BRIGHT_COUNT; i++) {
+    const u = Math.random(), v = Math.random();
+    const theta = 2 * Math.PI * u;
+    const phi = Math.acos(2 * v - 1);
+    const r = SKY_RADIUS - 5;
+    positions[i * 3]     = r * Math.sin(phi) * Math.cos(theta);
+    positions[i * 3 + 1] = r * Math.cos(phi);
+    positions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+    const col = palette[Math.floor(Math.random() * palette.length)];
+    colors[i * 3] = col[0]; colors[i * 3 + 1] = col[1]; colors[i * 3 + 2] = col[2];
+  }
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+  const mat = new THREE.PointsMaterial({
+    size: 4,
+    map: brightTex,
+    sizeAttenuation: true,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    vertexColors: true,
+  });
+  const brightStars = new THREE.Points(geo, mat);
+  brightStars.userData._stars = true;
+  brightStars.renderOrder = -1;
+  scene.add(brightStars);
+  return brightStars;
+}
+
+// Moon
+function makeMoon() {
+  const moonCanvas = document.createElement('canvas');
+  moonCanvas.width = 256; moonCanvas.height = 256;
+  const mctx = moonCanvas.getContext('2d');
+  // Base moon color
+  const mg = mctx.createRadialGradient(128, 128, 0, 128, 128, 128);
+  mg.addColorStop(0, '#fffff0');
+  mg.addColorStop(0.5, '#e8ecd8');
+  mg.addColorStop(0.85, '#c8d0b8');
+  mg.addColorStop(1, 'rgba(180,190,160,0)');
+  mctx.fillStyle = mg;
+  mctx.beginPath();
+  mctx.arc(128, 128, 128, 0, Math.PI * 2);
+  mctx.fill();
+  // Crater spots
+  const craters = [
+    [90, 80, 18], [150, 110, 12], [70, 150, 10], [160, 160, 8], [110, 140, 6], [130, 80, 7]
+  ];
+  for (const [cx, cy, cr] of craters) {
+    const cg = mctx.createRadialGradient(cx, cy, 0, cx, cy, cr);
+    cg.addColorStop(0, 'rgba(160,168,140,0.5)');
+    cg.addColorStop(0.6, 'rgba(180,188,158,0.2)');
+    cg.addColorStop(1, 'rgba(200,208,178,0)');
+    mctx.fillStyle = cg;
+    mctx.beginPath();
+    mctx.arc(cx, cy, cr, 0, Math.PI * 2);
+    mctx.fill();
+  }
+  const moonTex = new THREE.CanvasTexture(moonCanvas);
+
+  const moonMesh = new THREE.Mesh(
+    new THREE.SphereGeometry(5, 32, 32),
+    new THREE.MeshBasicMaterial({ map: moonTex, transparent: true, opacity: 0, depthWrite: false })
+  );
+  moonMesh.userData._moon = true;
+  moonMesh.renderOrder = -1;
+  scene.add(moonMesh);
+
+  // Moon glow
+  const moonGlow = new THREE.Mesh(
+    new THREE.SphereGeometry(8, 24, 24),
+    new THREE.MeshBasicMaterial({ color: 0xd8eaff, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending })
+  );
+  moonGlow.userData._moon = true;
+  moonGlow.renderOrder = -1;
+  scene.add(moonGlow);
+
+  return { moonMesh, moonGlow };
+}
+
+const starField = makeStarField();
+const brightStarField = makeBrightStars();
+const { moonMesh, moonGlow } = makeMoon();
+
+// Milky Way band: extra dense stars in a tilted great circle
+function makeMilkyWay() {
+  const mwGeo = new THREE.BufferGeometry();
+  const MW_COUNT = 1200;
+  const positions = new Float32Array(MW_COUNT * 3);
+  const BAND_TILT = 0.5; // tilt of the galactic plane
+  for (let i = 0; i < MW_COUNT; i++) {
+    const theta = Math.random() * Math.PI * 2;
+    // Concentrated around a tilted great circle with gaussian spread
+    const spread = (Math.random() + Math.random() - 1) * 0.35; // ~gaussian
+    const phi = Math.PI / 2 + spread + Math.sin(theta) * BAND_TILT;
+    const r = SKY_RADIUS - 15 + Math.random() * 5;
+    positions[i * 3]     = r * Math.sin(phi) * Math.cos(theta);
+    positions[i * 3 + 1] = r * Math.cos(phi);
+    positions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+  }
+  mwGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  const mwMat = new THREE.PointsMaterial({
+    size: 1.2, color: 0xc8d4ff, transparent: true, opacity: 0,
+    depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true,
+  });
+  const mw = new THREE.Points(mwGeo, mwMat);
+  mw.userData._stars = true;
+  mw.renderOrder = -1;
+  scene.add(mw);
+  return mw;
+}
+const milkyWay = makeMilkyWay();
+
+// Twinkling: store per-star phase offsets
+const _starTwinklePhase = Array.from({ length: STAR_BRIGHT_COUNT }, () => Math.random() * Math.PI * 2);
+let _starTwinkleTime = 0;
+
 // ===== Procedural Texture Generator =====
 function generateTextures() {
   function makeCanvas(size) {
@@ -4025,9 +4228,10 @@ function animate() {
     }
   });
 
-  // Seasonal sky override (reapply in case day/night changed it)
-  if (season === 'autumn' || season === 'winter') {
-    // Blend seasonal tint with day/night cycle
+  // Seasonal sky override (only during daytime to preserve night sky)
+  const dayT = (gameTime % DAY_CYCLE) / DAY_CYCLE;
+  const isDayTime = dayT >= 0.18 && dayT < 0.65;
+  if (isDayTime && (season === 'autumn' || season === 'winter')) {
     const seasonTint = season === 'autumn' ? new THREE.Color(0xd4a574) : season === 'winter' ? new THREE.Color(0xc8d8e8) : null;
     if (seasonTint) {
       scene.background.lerp(seasonTint, 0.15);
@@ -4547,18 +4751,20 @@ function updateDayNightCycle(dt) {
   // Smooth interpolation between phases (no hard jumps)
   let skyColor, fogColor, sunIntensity, sunAngle;
 
-  // Define key points: [time, sky, sunIntensity, sunAngle]
+  // Define key points with deep night sky colors
   const phases = [
-    { t: 0.00, sky: new THREE.Color(0x6a8caf), sun: 0.35, angle: 0.0 },         // pre-dawn
-    { t: 0.12, sky: new THREE.Color(0xffa07a), sun: 0.5,  angle: 0.2 },          // dawn
-    { t: 0.20, sky: new THREE.Color(0x87ceeb), sun: 0.9,  angle: 0.35 },         // morning
-    { t: 0.40, sky: new THREE.Color(0x7ec8e3), sun: 1.0,  angle: 0.5 },          // noon
-    { t: 0.55, sky: new THREE.Color(0x87ceeb), sun: 0.85, angle: 0.65 },         // afternoon
-    { t: 0.65, sky: new THREE.Color(0xe8835a), sun: 0.55, angle: 0.75 },         // dusk
-    { t: 0.75, sky: new THREE.Color(0x6a5acd), sun: 0.35, angle: 0.85 },         // evening
-    { t: 0.85, sky: new THREE.Color(0x3a5070), sun: 0.4,  angle: 0.95 },         // night (brighter)
-    { t: 0.95, sky: new THREE.Color(0x4a6080), sun: 0.45, angle: 0.98 },         // late night
-    { t: 1.00, sky: new THREE.Color(0x6a8caf), sun: 0.35, angle: 1.0 },          // back to pre-dawn
+    { t: 0.00, sky: new THREE.Color(0x06091a), sun: 0.25, angle: 0.0  },  // deep night
+    { t: 0.08, sky: new THREE.Color(0x0d1433), sun: 0.20, angle: 0.08 },  // pre-dawn dark
+    { t: 0.14, sky: new THREE.Color(0x6a4040), sun: 0.35, angle: 0.15 },  // pre-dawn glow
+    { t: 0.18, sky: new THREE.Color(0xff8050), sun: 0.50, angle: 0.22 },  // dawn
+    { t: 0.24, sky: new THREE.Color(0x87ceeb), sun: 0.90, angle: 0.32 },  // morning
+    { t: 0.40, sky: new THREE.Color(0x4abde8), sun: 1.00, angle: 0.50 },  // noon (vivid blue)
+    { t: 0.56, sky: new THREE.Color(0x87ceeb), sun: 0.85, angle: 0.65 },  // afternoon
+    { t: 0.65, sky: new THREE.Color(0xff7040), sun: 0.55, angle: 0.75 },  // dusk
+    { t: 0.72, sky: new THREE.Color(0x4030a0), sun: 0.30, angle: 0.82 },  // twilight
+    { t: 0.80, sky: new THREE.Color(0x080d22), sun: 0.15, angle: 0.90 },  // night
+    { t: 0.90, sky: new THREE.Color(0x040812), sun: 0.12, angle: 0.96 },  // deep night
+    { t: 1.00, sky: new THREE.Color(0x06091a), sun: 0.25, angle: 1.00 },  // back to deep night
   ];
 
   // Find the two phases to interpolate between
@@ -4570,7 +4776,6 @@ function updateDayNightCycle(dt) {
   }
   const range = hi.t - lo.t || 1;
   const p = (t - lo.t) / range;
-  // Smooth step for nicer transitions
   const smooth = p * p * (3 - 2 * p);
 
   skyColor = lo.sky.clone().lerp(hi.sky, smooth);
@@ -4587,17 +4792,73 @@ function updateDayNightCycle(dt) {
     20 + Math.sin(sunAngle * Math.PI * 2) * 30,
     Math.sin(sunAngle * Math.PI * 2) * 30
   );
-  // Update visible sun sphere position + opacity
   sunSphere.position.copy(sun.position);
   sunGlow.position.copy(sun.position);
-  const sunVis = Math.max(0, sunIntensity);
+  const sunVis = Math.max(0, Math.min(1, (sunIntensity - 0.25) / 0.65));
   sunSphere.material.opacity = sunVis;
   sunSphere.material.transparent = true;
   sunGlow.material.opacity = sunVis * 0.25;
-  // Sun color: warm at dawn/dusk, bright at noon
   const sunColor = new THREE.Color(0xffee88).lerp(new THREE.Color(0xfff8e0), sunIntensity);
   sunSphere.material.color.copy(sunColor);
   sunGlow.material.color.copy(sunColor);
+
+  // ===== Stars + Moon visibility =====
+  // nightFactor: 0 = full day, 1 = deep night
+  // Appears at dusk (t~0.65), fully visible at night (t~0.80), disappears at dawn (t~0.18)
+  let nightFactor = 0;
+  if (t >= 0.18 && t < 0.65) {
+    nightFactor = 0; // full day
+  } else if (t >= 0.65 && t < 0.80) {
+    nightFactor = (t - 0.65) / 0.15; // dusk → night
+  } else if (t >= 0.80 || t < 0.08) {
+    nightFactor = 1; // deep night
+  } else if (t >= 0.08 && t < 0.18) {
+    nightFactor = 1 - (t - 0.08) / 0.10; // dawn fades stars
+  }
+  const starAlpha = Math.min(1, nightFactor * nightFactor);
+  const brightAlpha = Math.min(1, nightFactor);
+
+  // Twinkling for bright stars
+  _starTwinkleTime += dt;
+  if (brightStarField) {
+    const sizeAttr = brightStarField.geometry.attributes.size;
+    // Vary opacity of bright stars with per-star twinkle
+    let twinkleOpacity = brightAlpha;
+    for (let i = 0; i < _starTwinklePhase.length; i++) {
+      // Rotate stars slowly with the sky
+      _starTwinklePhase[i] += 0.0001;
+    }
+    brightStarField.material.opacity = twinkleOpacity;
+    // Subtle size pulse via material size
+    brightStarField.material.size = 4.0 + Math.sin(_starTwinkleTime * 0.8) * 0.5;
+  }
+  if (starField) { starField.material.opacity = starAlpha * 0.85; }
+  if (milkyWay) {
+    // Milky way only visible in deep night
+    milkyWay.material.opacity = Math.max(0, (nightFactor - 0.4) / 0.6) * 0.45;
+  }
+
+  // Slow-rotate star dome with game time (subtle drift)
+  const starRotation = (gameTime / DAY_CYCLE) * Math.PI * 2 * 0.1; // 10% of full rotation per day
+  if (starField) starField.rotation.y = starRotation;
+  if (brightStarField) brightStarField.rotation.y = starRotation * 1.02;
+  if (milkyWay) milkyWay.rotation.y = starRotation * 0.98;
+
+  // Moon: opposite side of sky from sun, same arc
+  const moonAngle = sunAngle + 0.5; // 180° from sun
+  const moonX = Math.cos(moonAngle * Math.PI * 2) * 200;
+  const moonY = 20 + Math.sin(moonAngle * Math.PI * 2) * 160;
+  const moonZ = Math.sin(moonAngle * Math.PI * 2) * 150;
+  const moonOpacity = brightAlpha;
+  if (moonMesh) {
+    moonMesh.position.set(moonX, moonY, moonZ);
+    moonMesh.material.opacity = moonOpacity;
+    moonGlow.position.set(moonX, moonY, moonZ);
+    moonGlow.material.opacity = moonOpacity * 0.18;
+    // Keep moon facing camera
+    moonMesh.lookAt(camera.position);
+    moonGlow.lookAt(camera.position);
+  }
 
   // Lamp posts: on at night, off during day
   const isNight = sunIntensity < 0.4;

@@ -13157,6 +13157,148 @@ function checkIntersection(object, raycaster2, ray, thresholdSq, a, b, i) {
     object
   };
 }
+var PointsMaterial = class extends Material {
+  /**
+   * Constructs a new points material.
+   *
+   * @param {Object} [parameters] - An object with one or more properties
+   * defining the material's appearance. Any property of the material
+   * (including any property from inherited materials) can be passed
+   * in here. Color values can be passed any type of value accepted
+   * by {@link Color#set}.
+   */
+  constructor(parameters) {
+    super();
+    this.isPointsMaterial = true;
+    this.type = "PointsMaterial";
+    this.color = new Color(16777215);
+    this.map = null;
+    this.alphaMap = null;
+    this.size = 1;
+    this.sizeAttenuation = true;
+    this.fog = true;
+    this.setValues(parameters);
+  }
+  copy(source) {
+    super.copy(source);
+    this.color.copy(source.color);
+    this.map = source.map;
+    this.alphaMap = source.alphaMap;
+    this.size = source.size;
+    this.sizeAttenuation = source.sizeAttenuation;
+    this.fog = source.fog;
+    return this;
+  }
+};
+var _inverseMatrix = /* @__PURE__ */ new Matrix4();
+var _ray = /* @__PURE__ */ new Ray();
+var _sphere = /* @__PURE__ */ new Sphere();
+var _position$3 = /* @__PURE__ */ new Vector3();
+var Points = class extends Object3D {
+  /**
+   * Constructs a new point cloud.
+   *
+   * @param {BufferGeometry} [geometry] - The points geometry.
+   * @param {Material|Array<Material>} [material] - The points material.
+   */
+  constructor(geometry = new BufferGeometry(), material = new PointsMaterial()) {
+    super();
+    this.isPoints = true;
+    this.type = "Points";
+    this.geometry = geometry;
+    this.material = material;
+    this.morphTargetDictionary = void 0;
+    this.morphTargetInfluences = void 0;
+    this.updateMorphTargets();
+  }
+  copy(source, recursive) {
+    super.copy(source, recursive);
+    this.material = Array.isArray(source.material) ? source.material.slice() : source.material;
+    this.geometry = source.geometry;
+    return this;
+  }
+  /**
+   * Computes intersection points between a casted ray and this point cloud.
+   *
+   * @param {Raycaster} raycaster - The raycaster.
+   * @param {Array<Object>} intersects - The target array that holds the intersection points.
+   */
+  raycast(raycaster2, intersects) {
+    const geometry = this.geometry;
+    const matrixWorld = this.matrixWorld;
+    const threshold = raycaster2.params.Points.threshold;
+    const drawRange = geometry.drawRange;
+    if (geometry.boundingSphere === null) geometry.computeBoundingSphere();
+    _sphere.copy(geometry.boundingSphere);
+    _sphere.applyMatrix4(matrixWorld);
+    _sphere.radius += threshold;
+    if (raycaster2.ray.intersectsSphere(_sphere) === false) return;
+    _inverseMatrix.copy(matrixWorld).invert();
+    _ray.copy(raycaster2.ray).applyMatrix4(_inverseMatrix);
+    const localThreshold = threshold / ((this.scale.x + this.scale.y + this.scale.z) / 3);
+    const localThresholdSq = localThreshold * localThreshold;
+    const index = geometry.index;
+    const attributes = geometry.attributes;
+    const positionAttribute = attributes.position;
+    if (index !== null) {
+      const start = Math.max(0, drawRange.start);
+      const end = Math.min(index.count, drawRange.start + drawRange.count);
+      for (let i = start, il = end; i < il; i++) {
+        const a = index.getX(i);
+        _position$3.fromBufferAttribute(positionAttribute, a);
+        testPoint(_position$3, a, localThresholdSq, matrixWorld, raycaster2, intersects, this);
+      }
+    } else {
+      const start = Math.max(0, drawRange.start);
+      const end = Math.min(positionAttribute.count, drawRange.start + drawRange.count);
+      for (let i = start, l = end; i < l; i++) {
+        _position$3.fromBufferAttribute(positionAttribute, i);
+        testPoint(_position$3, i, localThresholdSq, matrixWorld, raycaster2, intersects, this);
+      }
+    }
+  }
+  /**
+   * Sets the values of {@link Points#morphTargetDictionary} and {@link Points#morphTargetInfluences}
+   * to make sure existing morph targets can influence this 3D object.
+   */
+  updateMorphTargets() {
+    const geometry = this.geometry;
+    const morphAttributes = geometry.morphAttributes;
+    const keys2 = Object.keys(morphAttributes);
+    if (keys2.length > 0) {
+      const morphAttribute = morphAttributes[keys2[0]];
+      if (morphAttribute !== void 0) {
+        this.morphTargetInfluences = [];
+        this.morphTargetDictionary = {};
+        for (let m = 0, ml = morphAttribute.length; m < ml; m++) {
+          const name = morphAttribute[m].name || String(m);
+          this.morphTargetInfluences.push(0);
+          this.morphTargetDictionary[name] = m;
+        }
+      }
+    }
+  }
+};
+function testPoint(point, index, localThresholdSq, matrixWorld, raycaster2, intersects, object) {
+  const rayPointDistanceSq = _ray.distanceSqToPoint(point);
+  if (rayPointDistanceSq < localThresholdSq) {
+    const intersectPoint = new Vector3();
+    _ray.closestPointToPoint(point, intersectPoint);
+    intersectPoint.applyMatrix4(matrixWorld);
+    const distance = raycaster2.ray.origin.distanceTo(intersectPoint);
+    if (distance < raycaster2.near || distance > raycaster2.far) return;
+    intersects.push({
+      distance,
+      distanceToRay: Math.sqrt(rayPointDistanceSq),
+      point: intersectPoint,
+      index,
+      face: null,
+      faceIndex: null,
+      barycoord: null,
+      object
+    });
+  }
+}
 var CubeTexture = class extends Texture {
   /**
    * Constructs a new cube texture.
@@ -29289,6 +29431,202 @@ var sunOuterGlow = new Mesh(
 sunOuterGlow.position.copy(sun.position);
 sunOuterGlow.userData._atmosphere = true;
 scene.add(sunOuterGlow);
+var STAR_COUNT = 2500;
+var STAR_BRIGHT_COUNT = 180;
+var SKY_RADIUS = 280;
+function makeStarField() {
+  const starCanvas = document.createElement("canvas");
+  starCanvas.width = 64;
+  starCanvas.height = 64;
+  const sctx = starCanvas.getContext("2d");
+  const grad = sctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grad.addColorStop(0, "rgba(255,255,255,1)");
+  grad.addColorStop(0.25, "rgba(200,220,255,0.9)");
+  grad.addColorStop(0.6, "rgba(150,180,255,0.3)");
+  grad.addColorStop(1, "rgba(0,0,0,0)");
+  sctx.fillStyle = grad;
+  sctx.beginPath();
+  sctx.arc(32, 32, 32, 0, Math.PI * 2);
+  sctx.fill();
+  const starTex = new CanvasTexture(starCanvas);
+  const geo = new BufferGeometry();
+  const positions = new Float32Array(STAR_COUNT * 3);
+  const sizes = new Float32Array(STAR_COUNT);
+  for (let i = 0; i < STAR_COUNT; i++) {
+    const u = Math.random(), v = Math.random();
+    const theta = 2 * Math.PI * u;
+    const phi = Math.acos(2 * v - 1);
+    const r = SKY_RADIUS + (Math.random() - 0.5) * 10;
+    positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+    positions[i * 3 + 1] = r * Math.cos(phi);
+    positions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+    sizes[i] = 0.8 + Math.random() * 2.5;
+  }
+  geo.setAttribute("position", new BufferAttribute(positions, 3));
+  geo.setAttribute("size", new BufferAttribute(sizes, 1));
+  const mat2 = new PointsMaterial({
+    size: 1.8,
+    map: starTex,
+    sizeAttenuation: true,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    blending: AdditiveBlending,
+    vertexColors: false,
+    color: 13689087
+  });
+  const stars = new Points(geo, mat2);
+  stars.userData._stars = true;
+  stars.renderOrder = -1;
+  scene.add(stars);
+  return stars;
+}
+function makeBrightStars() {
+  const brightCanvas = document.createElement("canvas");
+  brightCanvas.width = 128;
+  brightCanvas.height = 128;
+  const bctx = brightCanvas.getContext("2d");
+  const bg = bctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+  bg.addColorStop(0, "rgba(255,255,255,1)");
+  bg.addColorStop(0.15, "rgba(220,235,255,1)");
+  bg.addColorStop(0.4, "rgba(180,200,255,0.5)");
+  bg.addColorStop(0.7, "rgba(120,150,255,0.15)");
+  bg.addColorStop(1, "rgba(0,0,0,0)");
+  bctx.fillStyle = bg;
+  bctx.beginPath();
+  bctx.arc(64, 64, 64, 0, Math.PI * 2);
+  bctx.fill();
+  const brightTex = new CanvasTexture(brightCanvas);
+  const geo = new BufferGeometry();
+  const positions = new Float32Array(STAR_BRIGHT_COUNT * 3);
+  const colors = new Float32Array(STAR_BRIGHT_COUNT * 3);
+  const palette = [
+    [1, 1, 1],
+    [1, 0.97, 0.9],
+    [0.9, 0.93, 1],
+    [1, 1, 0.85],
+    [0.85, 0.9, 1],
+    [1, 0.95, 0.8],
+    [0.8, 0.85, 1],
+    [1, 0.9, 0.85],
+    [0.9, 1, 0.9]
+  ];
+  for (let i = 0; i < STAR_BRIGHT_COUNT; i++) {
+    const u = Math.random(), v = Math.random();
+    const theta = 2 * Math.PI * u;
+    const phi = Math.acos(2 * v - 1);
+    const r = SKY_RADIUS - 5;
+    positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+    positions[i * 3 + 1] = r * Math.cos(phi);
+    positions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+    const col = palette[Math.floor(Math.random() * palette.length)];
+    colors[i * 3] = col[0];
+    colors[i * 3 + 1] = col[1];
+    colors[i * 3 + 2] = col[2];
+  }
+  geo.setAttribute("position", new BufferAttribute(positions, 3));
+  geo.setAttribute("color", new BufferAttribute(colors, 3));
+  const mat2 = new PointsMaterial({
+    size: 4,
+    map: brightTex,
+    sizeAttenuation: true,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    blending: AdditiveBlending,
+    vertexColors: true
+  });
+  const brightStars = new Points(geo, mat2);
+  brightStars.userData._stars = true;
+  brightStars.renderOrder = -1;
+  scene.add(brightStars);
+  return brightStars;
+}
+function makeMoon() {
+  const moonCanvas = document.createElement("canvas");
+  moonCanvas.width = 256;
+  moonCanvas.height = 256;
+  const mctx = moonCanvas.getContext("2d");
+  const mg = mctx.createRadialGradient(128, 128, 0, 128, 128, 128);
+  mg.addColorStop(0, "#fffff0");
+  mg.addColorStop(0.5, "#e8ecd8");
+  mg.addColorStop(0.85, "#c8d0b8");
+  mg.addColorStop(1, "rgba(180,190,160,0)");
+  mctx.fillStyle = mg;
+  mctx.beginPath();
+  mctx.arc(128, 128, 128, 0, Math.PI * 2);
+  mctx.fill();
+  const craters = [
+    [90, 80, 18],
+    [150, 110, 12],
+    [70, 150, 10],
+    [160, 160, 8],
+    [110, 140, 6],
+    [130, 80, 7]
+  ];
+  for (const [cx, cy, cr] of craters) {
+    const cg = mctx.createRadialGradient(cx, cy, 0, cx, cy, cr);
+    cg.addColorStop(0, "rgba(160,168,140,0.5)");
+    cg.addColorStop(0.6, "rgba(180,188,158,0.2)");
+    cg.addColorStop(1, "rgba(200,208,178,0)");
+    mctx.fillStyle = cg;
+    mctx.beginPath();
+    mctx.arc(cx, cy, cr, 0, Math.PI * 2);
+    mctx.fill();
+  }
+  const moonTex = new CanvasTexture(moonCanvas);
+  const moonMesh2 = new Mesh(
+    new SphereGeometry(5, 32, 32),
+    new MeshBasicMaterial({ map: moonTex, transparent: true, opacity: 0, depthWrite: false })
+  );
+  moonMesh2.userData._moon = true;
+  moonMesh2.renderOrder = -1;
+  scene.add(moonMesh2);
+  const moonGlow2 = new Mesh(
+    new SphereGeometry(8, 24, 24),
+    new MeshBasicMaterial({ color: 14215935, transparent: true, opacity: 0, depthWrite: false, blending: AdditiveBlending })
+  );
+  moonGlow2.userData._moon = true;
+  moonGlow2.renderOrder = -1;
+  scene.add(moonGlow2);
+  return { moonMesh: moonMesh2, moonGlow: moonGlow2 };
+}
+var starField = makeStarField();
+var brightStarField = makeBrightStars();
+var { moonMesh, moonGlow } = makeMoon();
+function makeMilkyWay() {
+  const mwGeo = new BufferGeometry();
+  const MW_COUNT = 1200;
+  const positions = new Float32Array(MW_COUNT * 3);
+  const BAND_TILT = 0.5;
+  for (let i = 0; i < MW_COUNT; i++) {
+    const theta = Math.random() * Math.PI * 2;
+    const spread = (Math.random() + Math.random() - 1) * 0.35;
+    const phi = Math.PI / 2 + spread + Math.sin(theta) * BAND_TILT;
+    const r = SKY_RADIUS - 15 + Math.random() * 5;
+    positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+    positions[i * 3 + 1] = r * Math.cos(phi);
+    positions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+  }
+  mwGeo.setAttribute("position", new BufferAttribute(positions, 3));
+  const mwMat = new PointsMaterial({
+    size: 1.2,
+    color: 13161727,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    blending: AdditiveBlending,
+    sizeAttenuation: true
+  });
+  const mw = new Points(mwGeo, mwMat);
+  mw.userData._stars = true;
+  mw.renderOrder = -1;
+  scene.add(mw);
+  return mw;
+}
+var milkyWay = makeMilkyWay();
+var _starTwinklePhase = Array.from({ length: STAR_BRIGHT_COUNT }, () => Math.random() * Math.PI * 2);
+var _starTwinkleTime = 0;
 function generateTextures() {
   function makeCanvas(size) {
     const c = document.createElement("canvas");
@@ -32248,7 +32586,9 @@ function animate() {
         obj.material.uniforms.uTime.value = time;
       }
     });
-    if (season === "autumn" || season === "winter") {
+    const dayT = gameTime % DAY_CYCLE / DAY_CYCLE;
+    const isDayTime = dayT >= 0.18 && dayT < 0.65;
+    if (isDayTime && (season === "autumn" || season === "winter")) {
       const seasonTint = season === "autumn" ? new Color(13935988) : season === "winter" ? new Color(13162728) : null;
       if (seasonTint) {
         scene.background.lerp(seasonTint, 0.15);
@@ -32705,26 +33045,30 @@ function updateDayNightCycle(dt) {
   const t = gameTime / DAY_CYCLE;
   let skyColor, fogColor, sunIntensity, sunAngle;
   const phases = [
-    { t: 0, sky: new Color(6982831), sun: 0.35, angle: 0 },
-    // pre-dawn
-    { t: 0.12, sky: new Color(16752762), sun: 0.5, angle: 0.2 },
+    { t: 0, sky: new Color(395546), sun: 0.25, angle: 0 },
+    // deep night
+    { t: 0.08, sky: new Color(857139), sun: 0.2, angle: 0.08 },
+    // pre-dawn dark
+    { t: 0.14, sky: new Color(6963264), sun: 0.35, angle: 0.15 },
+    // pre-dawn glow
+    { t: 0.18, sky: new Color(16744528), sun: 0.5, angle: 0.22 },
     // dawn
-    { t: 0.2, sky: new Color(8900331), sun: 0.9, angle: 0.35 },
+    { t: 0.24, sky: new Color(8900331), sun: 0.9, angle: 0.32 },
     // morning
-    { t: 0.4, sky: new Color(8308963), sun: 1, angle: 0.5 },
-    // noon
-    { t: 0.55, sky: new Color(8900331), sun: 0.85, angle: 0.65 },
+    { t: 0.4, sky: new Color(4898280), sun: 1, angle: 0.5 },
+    // noon (vivid blue)
+    { t: 0.56, sky: new Color(8900331), sun: 0.85, angle: 0.65 },
     // afternoon
-    { t: 0.65, sky: new Color(15237978), sun: 0.55, angle: 0.75 },
+    { t: 0.65, sky: new Color(16740416), sun: 0.55, angle: 0.75 },
     // dusk
-    { t: 0.75, sky: new Color(6970061), sun: 0.35, angle: 0.85 },
-    // evening
-    { t: 0.85, sky: new Color(3821680), sun: 0.4, angle: 0.95 },
-    // night (brighter)
-    { t: 0.95, sky: new Color(4874368), sun: 0.45, angle: 0.98 },
-    // late night
-    { t: 1, sky: new Color(6982831), sun: 0.35, angle: 1 }
-    // back to pre-dawn
+    { t: 0.72, sky: new Color(4206752), sun: 0.3, angle: 0.82 },
+    // twilight
+    { t: 0.8, sky: new Color(527650), sun: 0.15, angle: 0.9 },
+    // night
+    { t: 0.9, sky: new Color(264210), sun: 0.12, angle: 0.96 },
+    // deep night
+    { t: 1, sky: new Color(395546), sun: 0.25, angle: 1 }
+    // back to deep night
   ];
   let lo = phases[0], hi = phases[phases.length - 1];
   for (let i = 0; i < phases.length - 1; i++) {
@@ -32752,13 +33096,58 @@ function updateDayNightCycle(dt) {
   );
   sunSphere.position.copy(sun.position);
   sunGlow.position.copy(sun.position);
-  const sunVis = Math.max(0, sunIntensity);
+  const sunVis = Math.max(0, Math.min(1, (sunIntensity - 0.25) / 0.65));
   sunSphere.material.opacity = sunVis;
   sunSphere.material.transparent = true;
   sunGlow.material.opacity = sunVis * 0.25;
   const sunColor = new Color(16772744).lerp(new Color(16775392), sunIntensity);
   sunSphere.material.color.copy(sunColor);
   sunGlow.material.color.copy(sunColor);
+  let nightFactor = 0;
+  if (t >= 0.18 && t < 0.65) {
+    nightFactor = 0;
+  } else if (t >= 0.65 && t < 0.8) {
+    nightFactor = (t - 0.65) / 0.15;
+  } else if (t >= 0.8 || t < 0.08) {
+    nightFactor = 1;
+  } else if (t >= 0.08 && t < 0.18) {
+    nightFactor = 1 - (t - 0.08) / 0.1;
+  }
+  const starAlpha = Math.min(1, nightFactor * nightFactor);
+  const brightAlpha = Math.min(1, nightFactor);
+  _starTwinkleTime += dt;
+  if (brightStarField) {
+    const sizeAttr = brightStarField.geometry.attributes.size;
+    let twinkleOpacity = brightAlpha;
+    for (let i = 0; i < _starTwinklePhase.length; i++) {
+      _starTwinklePhase[i] += 1e-4;
+    }
+    brightStarField.material.opacity = twinkleOpacity;
+    brightStarField.material.size = 4 + Math.sin(_starTwinkleTime * 0.8) * 0.5;
+  }
+  if (starField) {
+    starField.material.opacity = starAlpha * 0.85;
+  }
+  if (milkyWay) {
+    milkyWay.material.opacity = Math.max(0, (nightFactor - 0.4) / 0.6) * 0.45;
+  }
+  const starRotation = gameTime / DAY_CYCLE * Math.PI * 2 * 0.1;
+  if (starField) starField.rotation.y = starRotation;
+  if (brightStarField) brightStarField.rotation.y = starRotation * 1.02;
+  if (milkyWay) milkyWay.rotation.y = starRotation * 0.98;
+  const moonAngle = sunAngle + 0.5;
+  const moonX = Math.cos(moonAngle * Math.PI * 2) * 200;
+  const moonY = 20 + Math.sin(moonAngle * Math.PI * 2) * 160;
+  const moonZ = Math.sin(moonAngle * Math.PI * 2) * 150;
+  const moonOpacity = brightAlpha;
+  if (moonMesh) {
+    moonMesh.position.set(moonX, moonY, moonZ);
+    moonMesh.material.opacity = moonOpacity;
+    moonGlow.position.set(moonX, moonY, moonZ);
+    moonGlow.material.opacity = moonOpacity * 0.18;
+    moonMesh.lookAt(camera.position);
+    moonGlow.lookAt(camera.position);
+  }
   const isNight = sunIntensity < 0.4;
   scene.traverse((obj) => {
     if (obj.isPointLight && obj.color.getHex() === 16772696) {
