@@ -199,7 +199,17 @@ app.post('/api/auth/logout', (req, res) => {
 
 // Current user
 app.get('/api/auth/me', (req, res) => {
-  res.json({ user: { id: req.user.id, username: req.user.username, role: req.user.role, email: req.user.email } });
+  // When auth is disabled, req.user is not set by the middleware (auth routes are skipped)
+  if (config.auth?.enabled === false) {
+    return res.json({ user: { id: 'local', username: 'local', role: 'admin', email: '' } });
+  }
+  const cookies = parseCookies(req);
+  const token = cookies.sessionToken || req.headers['x-session-token'];
+  const session = auth.getSession(token);
+  if (!session) return res.status(401).json({ error: 'Unauthorized', needsAuth: true });
+  const user = auth.getUserById(session.user_id);
+  if (!user) return res.status(401).json({ error: 'User not found', needsAuth: true });
+  res.json({ user: { id: user.id, username: user.username, role: user.role, email: user.email } });
 });
 
 // ===== Admin API =====
