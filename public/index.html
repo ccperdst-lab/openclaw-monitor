@@ -337,7 +337,7 @@
   <div class="dh"><h1>🟢 OPENCLAW 3D</h1><div class="sub">Agent Monitor — Direct FS</div></div>
   <div class="db">
     <div class="sec" id="sec-agents"><div class="sec-h">🏠 Agents <span class="arr">▼</span></div><div class="sec-b" id="b-agents"></div></div>
-    <div class="sec" id="sec-sessions"><div class="sec-h">📡 Sessions <span class="arr">▼</span></div><div class="sec-b"><input class="cmd-input" id="session-search" placeholder="🔍 搜索会话..." style="margin-bottom:6px" /><div id="b-sessions"></div></div></div>
+    <div class="sec off" id="sec-sessions"><div class="sec-h">📡 Sessions <span class="arr">▼</span></div><div class="sec-b"><input class="cmd-input" id="session-search" placeholder="🔍 搜索会话..." style="margin-bottom:6px" /><div id="b-sessions"></div></div></div>
     <div class="sec" id="sec-logs"><div class="sec-h">📋 Events <span class="arr">▼</span></div><div class="sec-b" id="b-logs" style="max-height:260px;overflow-y:auto"></div></div>
     <div class="sec" id="sec-cli"><div class="sec-h">⌨️ CLI <span class="arr">▼</span></div><div class="sec-b">
       <input class="cmd-input" id="cmd-in" placeholder="openclaw status ..." />
@@ -356,7 +356,7 @@
 </div>
 <div id="user-bar" style="position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:100;display:flex;align-items:center;gap:10px;padding:5px 14px;background:rgba(8,8,24,0.85);border:1px solid rgba(83,216,251,0.2);border-radius:20px;font-size:12px;font-family:monospace;color:#aaa;backdrop-filter:blur(6px)">
   <span id="user-name" style="color:#53d8fb"></span>
-  <a id="admin-link" href="/admin" style="display:none;color:#f472b6;text-decoration:none">管理</a>
+  <a id="admin-link" href="#" style="display:none;color:#f472b6;text-decoration:none">管理</a>
   <button onclick="fetch('/api/auth/logout',{method:'POST'}).then(()=>location.href='/login.html')" style="background:none;border:1px solid rgba(83,216,251,0.3);color:#889;padding:2px 8px;border-radius:10px;cursor:pointer;font-size:11px">退出</button>
 </div>
 <script>
@@ -365,7 +365,10 @@ fetch('/api/auth/status').then(r=>r.json()).then(d=>{
   const nb=document.getElementById('user-name');
   const al=document.getElementById('admin-link');
   if(nb)nb.textContent=d.user.username;
-  if(al&&d.user.role==='admin')al.style.display='inline';
+  if(al&&d.user.role==='admin'){
+    al.style.display='inline';
+    fetch('/api/admin/path').then(r=>r.json()).then(p=>{ if(p.path) al.href=p.path; }).catch(()=>{ al.href='/admin'; });
+  }
 }).catch(()=>{});
 </script>
 <div id="loading-overlay">
