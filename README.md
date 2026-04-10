@@ -75,14 +75,49 @@ Press `T` to open the world chat panel — broadcast a message to all agents at 
 
 ---
 
+## 🔐 Auth & Access Control
+
+When `auth.enabled: true`, the monitor requires login before accessing the 3D world.
+
+**How it works:**
+- The **first user to register** automatically becomes admin — no pre-seeding needed
+- Subsequent registrations require an invite or admin approval
+- Session tokens are stored in `localStorage` and validated on every API call
+- The admin panel is accessible only at a **secret randomized URL** (generated on first run, persisted to disk, printed in server logs, and linked from the 3D world UI via a hidden button)
+
+**Roles:**
+
+| Role | 3D World | Chat | Admin Panel | User Management |
+|------|----------|------|-------------|-----------------|
+| `admin` | ✅ | ✅ | ✅ | ✅ |
+| `user` | ✅ | ✅ | ❌ | ❌ |
+| `viewer` | ✅ | ❌ | ❌ | ❌ |
+
+When `auth.enabled: false` (default): no login required — anyone with port access can use the monitor.
+
+---
+
 ## 🛡️ Admin Panel
 
-Accessible at a secret randomized URL (printed in server logs on startup, also linked from the main UI):
+The admin panel is a separate management UI accessible at the secret URL. It has three sections:
 
-- **User Management** — Create, delete, and manage user accounts with role-based access
-- **Roles** — `admin` (full), `user` (view + chat), `viewer` (read-only)
-- **Agents Overview** — See all agents, their session counts, and recent activity
-- **Sessions Table** — Browse all active sessions with agent, channel, type, and status
+### 👤 Users
+- View all registered users with their role, creation time, and last login
+- **Create** new users (set username, password, role)
+- **Delete** users (with confirmation)
+- **Change roles** on the fly
+
+### 🤖 Agents
+- Overview cards: total agents, active sessions, total sessions
+- **Sessions table** — lists every session with: agent name, session type (group/dm/cron/subagent), channel, and current status
+- Useful for quickly spotting stuck or zombie sessions
+
+### ⚙️ Settings *(coming soon)*
+- Runtime config editing without restarting the server
+
+**Navigation:**
+- Admin panel has its own sidebar with Users / Agents sections
+- "🌍 返回 3D 世界" button in the sidebar takes you back to the 3D monitor
 
 ---
 
@@ -117,19 +152,7 @@ display:
   recentMinutes: 10        # Only show sessions active in last N minutes
 ```
 
----
 
-## 🔐 Auth & Access Control
-
-**`auth.enabled: true`:**
-- First user to register becomes admin
-- Admin panel at a secret randomized URL (persisted across restarts)
-- Fine-grained roles: admin / user / viewer
-
-**`auth.enabled: false` (default):**
-- No login required — open to anyone with port access
-
----
 
 ## ⌨️ Keyboard Shortcuts
 
