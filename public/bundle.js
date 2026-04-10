@@ -29929,14 +29929,9 @@ function collidesAABB(ax, az, ar, box) {
   const dx = ax - closestX, dz = az - closestZ;
   return dx * dx + dz * dz < ar * ar;
 }
-function collidesWithAny(x, z, excludeKey) {
+function collidesWithObstacles(x, z) {
   for (const obs of obstacles) {
     if (collidesAABB(x, z, MINION_RADIUS, obs)) return true;
-  }
-  for (const other of minions) {
-    if (other.userData.sessionKey === excludeKey) continue;
-    const dx = x - other.position.x, dz = z - other.position.z;
-    if (dx * dx + dz * dz < MINION_RADIUS * 2 * (MINION_RADIUS * 2)) return true;
   }
   return false;
 }
@@ -31044,8 +31039,14 @@ function initWorld(worldData) {
       const m = createMinion(profile);
       const cols = Math.ceil(Math.sqrt(agent.sessions.length));
       const col = si % cols, row = Math.floor(si / cols);
-      const defaultPx = continent.ox + 3 + col * (continent.W - 6) / Math.max(cols - 1, 1);
-      const defaultPz = continent.oz + 3 + row * (continent.D - 6) / Math.max(Math.ceil(agent.sessions.length / cols) - 1, 1);
+      const totalCols = cols;
+      const totalRows = Math.ceil(agent.sessions.length / cols);
+      const spacingX = Math.min(3.5, (continent.W - 4) / Math.max(totalCols, 1));
+      const spacingZ = Math.min(3.5, (continent.D - 4) / Math.max(totalRows, 1));
+      const gridStartX = continent.ox + continent.W / 2 - (totalCols - 1) * spacingX / 2;
+      const gridStartZ = continent.oz + continent.D / 2 - (totalRows - 1) * spacingZ / 2;
+      const defaultPx = gridStartX + col * spacingX;
+      const defaultPz = gridStartZ + row * spacingZ;
       const saved = savedPositions[sess.key];
       const px = saved ? saved.x : defaultPx;
       const pz = saved ? saved.z : defaultPz;
@@ -32241,39 +32242,36 @@ function animate() {
           const cz2 = (ud.bounds.minZ + ud.bounds.maxZ) / 2;
           const targets = [
             [cx2 - 3, cz2 + 2],
-            // table area (outside)
             [cx2 + 4, cz2 + 4],
-            // pond
             [cx2 - 5, cz2 + 1],
-            // bench
             [ud.bounds.minX + 2, ud.bounds.minZ + 2],
-            // corner
             [ud.bounds.maxX - 2, ud.bounds.minZ + 2],
-            // corner
             [cx2 + 5, cz2 - 2],
-            // house side (outside)
             [cx2 - 2, cz2 + 5],
-            // front yard
-            [cx2 + 3, cz2 + 6]
-            // open area
+            [cx2 + 3, cz2 + 6],
+            [ud.bounds.maxX - 2, cz2 + 3],
+            [cx2, ud.bounds.minZ + 2],
+            [ud.bounds.minX + 3, cz2]
           ];
           const pick = targets[Math.floor(rng() * targets.length)];
-          ud.targetX = pick[0] + (rng() - 0.5) * 2;
-          ud.targetZ = pick[1] + (rng() - 0.5) * 2;
+          ud.targetX = pick[0] + (rng() - 0.5) * 3.5;
+          ud.targetZ = pick[1] + (rng() - 0.5) * 3.5;
           ud.idleAction = "walk";
           ud.idleTimer = 4 + rng() * 6;
-        } else if (roll < 0.7 && ud.bounds) {
-          ud.targetX = m.position.x + (rng() - 0.5) * 4;
-          ud.targetZ = m.position.z + (rng() - 0.5) * 4;
+        } else if (roll < 0.75 && ud.bounds) {
+          const wanderR = 3 + rng() * 5;
+          const wanderAngle = rng() * Math.PI * 2;
+          ud.targetX = m.position.x + Math.cos(wanderAngle) * wanderR;
+          ud.targetZ = m.position.z + Math.sin(wanderAngle) * wanderR;
           ud.idleAction = "walk";
-          ud.idleTimer = 2 + rng() * 4;
+          ud.idleTimer = 2 + rng() * 5;
         } else {
           ud.idleAction = "stand";
-          ud.idleTimer = 3 + rng() * 5;
+          ud.idleTimer = 2 + rng() * 4;
         }
         if (ud.bounds) {
-          ud.targetX = Math.max(ud.bounds.minX + 1, Math.min(ud.bounds.maxX - 1, ud.targetX));
-          ud.targetZ = Math.max(ud.bounds.minZ + 1, Math.min(ud.bounds.maxZ - 1, ud.targetZ));
+          ud.targetX = Math.max(ud.bounds.minX + 1.2, Math.min(ud.bounds.maxX - 1.2, ud.targetX));
+          ud.targetZ = Math.max(ud.bounds.minZ + 1.2, Math.min(ud.bounds.maxZ - 1.2, ud.targetZ));
         }
       }
       if (ud.sitTarget && !ud.isSitting && ud.idleAction === "walk") {
@@ -32295,26 +32293,61 @@ function animate() {
       if (ud.bounds) {
         const dx = ud.targetX - m.position.x, dz = ud.targetZ - m.position.z;
         const dist = Math.sqrt(dx * dx + dz * dz);
-        if (dist > 0.1) {
+        let sepX = 0, sepZ = 0;
+        const SEP_RADIUS = 1.2;
+        const SEP_FORCE = 1.4;
+        for (const other of minions) {
+          if (other === m) continue;
+          const ox = m.position.x - other.position.x;
+          const oz = m.position.z - other.position.z;
+          const d2 = ox * ox + oz * oz;
+          if (d2 < SEP_RADIUS * SEP_RADIUS && d2 > 1e-4) {
+            const d = Math.sqrt(d2);
+            const strength = (SEP_RADIUS - d) / SEP_RADIUS;
+            sepX += ox / d * strength * SEP_FORCE;
+            sepZ += oz / d * strength * SEP_FORCE;
+          }
+        }
+        if (dist > 0.12) {
           const baseSpd = 0.8;
           const spd = (ud._mcpSpeed || baseSpd) * dt;
           delete ud._mcpSpeed;
-          const nx = m.position.x + dx / dist * spd;
-          const nz = m.position.z + dz / dist * spd;
-          if (!collidesWithAny(nx, nz, ud.sessionKey)) {
+          let moveX = dx / dist * spd + sepX * dt;
+          let moveZ = dz / dist * spd + sepZ * dt;
+          const stepLen = Math.sqrt(moveX * moveX + moveZ * moveZ);
+          const maxStep = baseSpd * 2 * dt;
+          if (stepLen > maxStep) {
+            moveX = moveX / stepLen * maxStep;
+            moveZ = moveZ / stepLen * maxStep;
+          }
+          const nx = m.position.x + moveX;
+          const nz = m.position.z + moveZ;
+          if (!collidesWithObstacles(nx, nz)) {
             m.position.x = nx;
             m.position.z = nz;
-          } else if (!collidesWithAny(nx, m.position.z, ud.sessionKey)) {
+          } else if (!collidesWithObstacles(nx, m.position.z)) {
             m.position.x = nx;
-          } else if (!collidesWithAny(m.position.x, nz, ud.sessionKey)) {
+          } else if (!collidesWithObstacles(m.position.x, nz)) {
             m.position.z = nz;
           } else {
-            ud.idleTimer = 0;
+            if (!ud._stuckTimer) ud._stuckTimer = 0;
+            ud._stuckTimer += dt;
+            if (ud._stuckTimer > 1.2) {
+              ud.idleTimer = 0;
+              ud._stuckTimer = 0;
+            }
           }
-          m.rotation.y = Math.atan2(dx, dz);
+          if (dist > 0.3) m.rotation.y = Math.atan2(dx, dz);
+        } else if (sepX !== 0 || sepZ !== 0) {
+          const nx = m.position.x + sepX * dt * 0.6;
+          const nz = m.position.z + sepZ * dt * 0.6;
+          if (!collidesWithObstacles(nx, nz)) {
+            m.position.x = nx;
+            m.position.z = nz;
+          }
         }
-        m.position.x = Math.max(ud.bounds.minX, Math.min(ud.bounds.maxX, m.position.x));
-        m.position.z = Math.max(ud.bounds.minZ, Math.min(ud.bounds.maxZ, m.position.z));
+        m.position.x = Math.max(ud.bounds.minX + 0.4, Math.min(ud.bounds.maxX - 0.4, m.position.x));
+        m.position.z = Math.max(ud.bounds.minZ + 0.4, Math.min(ud.bounds.maxZ - 0.4, m.position.z));
       }
       let yOff = 0;
       let extraRotY = 0;
