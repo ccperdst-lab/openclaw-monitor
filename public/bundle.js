@@ -1,4 +1,4 @@
-// node_modules/three/build/three.core.js
+// ../../root/openclaw-monitor/node_modules/three/build/three.core.js
 var REVISION = "183";
 var CullFaceNone = 0;
 var CullFaceBack = 1;
@@ -12967,6 +12967,196 @@ var Frustum = class {
     return new this.constructor().copy(this);
   }
 };
+var LineBasicMaterial = class extends Material {
+  /**
+   * Constructs a new line basic material.
+   *
+   * @param {Object} [parameters] - An object with one or more properties
+   * defining the material's appearance. Any property of the material
+   * (including any property from inherited materials) can be passed
+   * in here. Color values can be passed any type of value accepted
+   * by {@link Color#set}.
+   */
+  constructor(parameters) {
+    super();
+    this.isLineBasicMaterial = true;
+    this.type = "LineBasicMaterial";
+    this.color = new Color(16777215);
+    this.map = null;
+    this.linewidth = 1;
+    this.linecap = "round";
+    this.linejoin = "round";
+    this.fog = true;
+    this.setValues(parameters);
+  }
+  copy(source) {
+    super.copy(source);
+    this.color.copy(source.color);
+    this.map = source.map;
+    this.linewidth = source.linewidth;
+    this.linecap = source.linecap;
+    this.linejoin = source.linejoin;
+    this.fog = source.fog;
+    return this;
+  }
+};
+var _vStart = /* @__PURE__ */ new Vector3();
+var _vEnd = /* @__PURE__ */ new Vector3();
+var _inverseMatrix$1 = /* @__PURE__ */ new Matrix4();
+var _ray$1 = /* @__PURE__ */ new Ray();
+var _sphere$1 = /* @__PURE__ */ new Sphere();
+var _intersectPointOnRay = /* @__PURE__ */ new Vector3();
+var _intersectPointOnSegment = /* @__PURE__ */ new Vector3();
+var Line = class extends Object3D {
+  /**
+   * Constructs a new line.
+   *
+   * @param {BufferGeometry} [geometry] - The line geometry.
+   * @param {Material|Array<Material>} [material] - The line material.
+   */
+  constructor(geometry = new BufferGeometry(), material = new LineBasicMaterial()) {
+    super();
+    this.isLine = true;
+    this.type = "Line";
+    this.geometry = geometry;
+    this.material = material;
+    this.morphTargetDictionary = void 0;
+    this.morphTargetInfluences = void 0;
+    this.updateMorphTargets();
+  }
+  copy(source, recursive) {
+    super.copy(source, recursive);
+    this.material = Array.isArray(source.material) ? source.material.slice() : source.material;
+    this.geometry = source.geometry;
+    return this;
+  }
+  /**
+   * Computes an array of distance values which are necessary for rendering dashed lines.
+   * For each vertex in the geometry, the method calculates the cumulative length from the
+   * current point to the very beginning of the line.
+   *
+   * @return {Line} A reference to this line.
+   */
+  computeLineDistances() {
+    const geometry = this.geometry;
+    if (geometry.index === null) {
+      const positionAttribute = geometry.attributes.position;
+      const lineDistances = [0];
+      for (let i = 1, l = positionAttribute.count; i < l; i++) {
+        _vStart.fromBufferAttribute(positionAttribute, i - 1);
+        _vEnd.fromBufferAttribute(positionAttribute, i);
+        lineDistances[i] = lineDistances[i - 1];
+        lineDistances[i] += _vStart.distanceTo(_vEnd);
+      }
+      geometry.setAttribute("lineDistance", new Float32BufferAttribute(lineDistances, 1));
+    } else {
+      warn("Line.computeLineDistances(): Computation only possible with non-indexed BufferGeometry.");
+    }
+    return this;
+  }
+  /**
+   * Computes intersection points between a casted ray and this line.
+   *
+   * @param {Raycaster} raycaster - The raycaster.
+   * @param {Array<Object>} intersects - The target array that holds the intersection points.
+   */
+  raycast(raycaster2, intersects) {
+    const geometry = this.geometry;
+    const matrixWorld = this.matrixWorld;
+    const threshold = raycaster2.params.Line.threshold;
+    const drawRange = geometry.drawRange;
+    if (geometry.boundingSphere === null) geometry.computeBoundingSphere();
+    _sphere$1.copy(geometry.boundingSphere);
+    _sphere$1.applyMatrix4(matrixWorld);
+    _sphere$1.radius += threshold;
+    if (raycaster2.ray.intersectsSphere(_sphere$1) === false) return;
+    _inverseMatrix$1.copy(matrixWorld).invert();
+    _ray$1.copy(raycaster2.ray).applyMatrix4(_inverseMatrix$1);
+    const localThreshold = threshold / ((this.scale.x + this.scale.y + this.scale.z) / 3);
+    const localThresholdSq = localThreshold * localThreshold;
+    const step = this.isLineSegments ? 2 : 1;
+    const index = geometry.index;
+    const attributes = geometry.attributes;
+    const positionAttribute = attributes.position;
+    if (index !== null) {
+      const start = Math.max(0, drawRange.start);
+      const end = Math.min(index.count, drawRange.start + drawRange.count);
+      for (let i = start, l = end - 1; i < l; i += step) {
+        const a = index.getX(i);
+        const b = index.getX(i + 1);
+        const intersect2 = checkIntersection(this, raycaster2, _ray$1, localThresholdSq, a, b, i);
+        if (intersect2) {
+          intersects.push(intersect2);
+        }
+      }
+      if (this.isLineLoop) {
+        const a = index.getX(end - 1);
+        const b = index.getX(start);
+        const intersect2 = checkIntersection(this, raycaster2, _ray$1, localThresholdSq, a, b, end - 1);
+        if (intersect2) {
+          intersects.push(intersect2);
+        }
+      }
+    } else {
+      const start = Math.max(0, drawRange.start);
+      const end = Math.min(positionAttribute.count, drawRange.start + drawRange.count);
+      for (let i = start, l = end - 1; i < l; i += step) {
+        const intersect2 = checkIntersection(this, raycaster2, _ray$1, localThresholdSq, i, i + 1, i);
+        if (intersect2) {
+          intersects.push(intersect2);
+        }
+      }
+      if (this.isLineLoop) {
+        const intersect2 = checkIntersection(this, raycaster2, _ray$1, localThresholdSq, end - 1, start, end - 1);
+        if (intersect2) {
+          intersects.push(intersect2);
+        }
+      }
+    }
+  }
+  /**
+   * Sets the values of {@link Line#morphTargetDictionary} and {@link Line#morphTargetInfluences}
+   * to make sure existing morph targets can influence this 3D object.
+   */
+  updateMorphTargets() {
+    const geometry = this.geometry;
+    const morphAttributes = geometry.morphAttributes;
+    const keys2 = Object.keys(morphAttributes);
+    if (keys2.length > 0) {
+      const morphAttribute = morphAttributes[keys2[0]];
+      if (morphAttribute !== void 0) {
+        this.morphTargetInfluences = [];
+        this.morphTargetDictionary = {};
+        for (let m = 0, ml = morphAttribute.length; m < ml; m++) {
+          const name = morphAttribute[m].name || String(m);
+          this.morphTargetInfluences.push(0);
+          this.morphTargetDictionary[name] = m;
+        }
+      }
+    }
+  }
+};
+function checkIntersection(object, raycaster2, ray, thresholdSq, a, b, i) {
+  const positionAttribute = object.geometry.attributes.position;
+  _vStart.fromBufferAttribute(positionAttribute, a);
+  _vEnd.fromBufferAttribute(positionAttribute, b);
+  const distSq = ray.distanceSqToSegment(_vStart, _vEnd, _intersectPointOnRay, _intersectPointOnSegment);
+  if (distSq > thresholdSq) return;
+  _intersectPointOnRay.applyMatrix4(object.matrixWorld);
+  const distance = raycaster2.ray.origin.distanceTo(_intersectPointOnRay);
+  if (distance < raycaster2.near || distance > raycaster2.far) return;
+  return {
+    distance,
+    // What do we want? intersection point on the ray or on the segment??
+    // point: raycaster.ray.at( distance ),
+    point: _intersectPointOnSegment.clone().applyMatrix4(object.matrixWorld),
+    index: i,
+    face: null,
+    faceIndex: null,
+    barycoord: null,
+    object
+  };
+}
 var CubeTexture = class extends Texture {
   /**
    * Constructs a new cube texture.
@@ -17270,7 +17460,7 @@ if (typeof window !== "undefined") {
   }
 }
 
-// node_modules/three/build/three.module.js
+// ../../root/openclaw-monitor/node_modules/three/build/three.module.js
 function WebGLAnimation() {
   let context = null;
   let isAnimating = false;
@@ -28557,7 +28747,7 @@ var WebGLRenderer = class {
   }
 };
 
-// public/monitor-app.js
+// app.js
 var container = document.getElementById("scene3d");
 function authFetch(url, options = {}) {
   return fetch(url, options);
@@ -29443,6 +29633,12 @@ function createMinion(profile) {
     const pupil = new Mesh(new SphereGeometry(pupilR, 8, 8), mat.pupil);
     pupil.position.set(ex, eyeY, br * 0.85 + eyeR * 0.5);
     group.add(pupil);
+    const goggleFrame = new Mesh(
+      new TorusGeometry(eyeR * 1.15, eyeR * 0.18, 8, 20),
+      new MeshStandardMaterial({ color: 3355443, metalness: 0.7, roughness: 0.2 })
+    );
+    goggleFrame.position.set(ex, eyeY, br * 0.87);
+    group.add(goggleFrame);
   }
   const hairCount = 3 + Math.floor(Math.random() * 4);
   for (let i = 0; i < hairCount; i++) {
@@ -30849,7 +31045,7 @@ function openFixedPanel(sessionKey) {
   if (!fixedPanelEl) {
     fixedPanelEl = document.createElement("div");
     fixedPanelEl.id = "fixed-panel";
-    fixedPanelEl.innerHTML = `<div class="fp-hd"><span class="fp-avatar">\u{1F4CC}</span><span class="fp-user"></span><button class="fp-abort" title="\u7EC8\u6B62\u601D\u8003">\u{1F6D1}</button><button class="fp-unpin" title="\u53D6\u6D88\u56FA\u5B9A\u56DE\u6C14\u6CE1">\u{1F4CC}</button><button class="fp-close">\u2715</button></div><div class="fp-body"><div class="fp-msg"></div><div class="fp-acts collapsed"><div class="fp-acts-hd"><span class="fp-acts-tri">\u25B6</span><span class="fp-acts-lbl">\u601D\u8003\u8FC7\u7A0B</span><span class="fp-acts-cnt">0</span></div><div class="fp-acts-body"></div></div><div class="fp-chat"><input class="fp-chat-in" placeholder="\u76F4\u63A5\u5BF9\u8BDD..." /></div><div class="fp-foot"></div></div>`;
+    fixedPanelEl.innerHTML = `<div class="fp-hd"><span class="fp-avatar">\u{1F4CC}</span><span class="fp-user"></span><button class="fp-traj" title="\u67E5\u770B\u5386\u53F2\u8F68\u8FF9">\u{1F4CD}</button><button class="fp-abort" title="\u7EC8\u6B62\u601D\u8003">\u{1F6D1}</button><button class="fp-unpin" title="\u53D6\u6D88\u56FA\u5B9A\u56DE\u6C14\u6CE1">\u{1F4CC}</button><button class="fp-close">\u2715</button></div><div class="fp-body"><div class="fp-msg"></div><div class="fp-acts collapsed"><div class="fp-acts-hd"><span class="fp-acts-tri">\u25B6</span><span class="fp-acts-lbl">\u601D\u8003\u8FC7\u7A0B</span><span class="fp-acts-cnt">0</span></div><div class="fp-acts-body"></div></div><div class="fp-chat"><input class="fp-chat-in" placeholder="\u76F4\u63A5\u5BF9\u8BDD..." /></div><div class="fp-foot"></div></div>`;
     document.body.appendChild(fixedPanelEl);
     fixedPanelEl.querySelector(".fp-close").addEventListener("click", (e) => {
       e.stopPropagation();
@@ -30868,6 +31064,14 @@ function openFixedPanel(sessionKey) {
     fixedPanelEl.querySelector(".fp-abort").addEventListener("click", (e) => {
       e.stopPropagation();
       if (fixedPanelSession) abortSession(fixedPanelSession);
+    });
+    fixedPanelEl.querySelector(".fp-traj").addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (fixedPanelSession) {
+        const mn = minions.find((m) => m.userData.sessionKey === fixedPanelSession);
+        const name = mn ? mn.userData.userName || mn.userData.sessionLabel || fixedPanelSession : fixedPanelSession;
+        openTrajPanel(fixedPanelSession, name);
+      }
     });
     fixedPanelEl.querySelector(".fp-acts-hd").addEventListener("click", (e) => {
       e.stopPropagation();
@@ -32144,6 +32348,7 @@ window.addEventListener("resize", () => {
 (function initDrawer() {
   const drawer = document.getElementById("drawer");
   const toggle = document.getElementById("toggle");
+  drawer.classList.add("shut");
   toggle.addEventListener("click", (e) => {
     e.stopPropagation();
     drawer.classList.toggle("shut");
@@ -33272,6 +33477,254 @@ window.addEventListener("beforeunload", () => {
   const beaconUrl = "/api/state";
   navigator.sendBeacon(beaconUrl, new Blob([data], { type: "application/json" }));
 });
+var trajData = null;
+var trajSessionKey = null;
+var trajSessionName = "";
+var trajPlaying = false;
+var trajPlayIdx = 0;
+var trajPlayTimer = null;
+var trajGhostMesh = null;
+var trajPathLine = null;
+var trajPanel = document.getElementById("traj-panel");
+var trajTimeline = document.getElementById("tp-timeline");
+var trajFill = document.getElementById("tp-fill");
+var trajThumb = document.getElementById("tp-thumb");
+var trajEventDots = document.getElementById("tp-event-dots");
+var trajTimeDisplay = document.getElementById("tp-time-display");
+var trajEventInfo = document.getElementById("tp-event-info");
+var trajPathInfo = document.getElementById("tp-path-info");
+var trajSessName = document.getElementById("tp-sess-name");
+var trajMinimap = document.getElementById("traj-minimap");
+document.getElementById("tp-close").addEventListener("click", closeTrajPanel);
+document.getElementById("tp-play").addEventListener("click", () => {
+  if (trajPlaying) pauseTrajPlayback();
+  else startTrajPlayback();
+});
+document.getElementById("tp-stop").addEventListener("click", stopTrajPlayback);
+trajPanel.addEventListener("mousedown", (e) => e.stopPropagation());
+trajPanel.addEventListener("mouseup", (e) => e.stopPropagation());
+function openTrajPanel(sessionKey, displayName) {
+  trajSessionKey = sessionKey;
+  trajSessionName = displayName || sessionKey;
+  trajSessName.textContent = trajSessionName;
+  trajData = null;
+  trajPlayIdx = 0;
+  trajPlaying = false;
+  clearInterval(trajPlayTimer);
+  trajPanel.classList.add("show");
+  trajEventInfo.textContent = "\u23F3 \u52A0\u8F7D\u8F68\u8FF9\u6570\u636E...";
+  authFetch("/api/trajectory/" + encodeURIComponent(sessionKey)).then((r) => r.json()).then((data) => {
+    trajData = data.points || [];
+    if (trajData.length === 0) {
+      trajEventInfo.textContent = "\u{1F6AB} \u6682\u65E0\u8F68\u8FF9\u6570\u636E\uFF08\u79FB\u52A8\u540E\u91CD\u8BD5\uFF09";
+      return;
+    }
+    trajEventInfo.textContent = "\u{1F4CD} \u5171 " + trajData.length + " \u4E2A\u8F68\u8FF9\u70B9";
+    renderTrajTimeline();
+    setTrajIndex(trajData.length - 1);
+  }).catch(() => {
+    trajEventInfo.textContent = "\u274C \u52A0\u8F7D\u5931\u8D25";
+  });
+}
+function closeTrajPanel() {
+  trajPanel.classList.remove("show");
+  if (trajMinimap) trajMinimap.classList.remove("show");
+  stopTrajPlayback();
+  removeTrajGhost();
+  trajData = null;
+  trajSessionKey = null;
+}
+function renderTrajTimeline() {
+  if (!trajData || trajData.length === 0) return;
+  const minTs = trajData[0].ts, maxTs = trajData[trajData.length - 1].ts, span = maxTs - minTs || 1;
+  let dotsHtml = "";
+  for (const pt of trajData) {
+    if (!pt.event) continue;
+    const pct = (pt.ts - minTs) / span * 100;
+    dotsHtml += '<div class="tp-event-dot ' + (pt.event.type || "tool_use") + '" style="left:' + pct.toFixed(2) + '%" title="' + escAttr(pt.event.label || "") + '"></div>';
+  }
+  trajEventDots.innerHTML = dotsHtml;
+}
+function setTrajIndex(idx) {
+  if (!trajData || trajData.length === 0) return;
+  idx = Math.max(0, Math.min(trajData.length - 1, idx));
+  trajPlayIdx = idx;
+  const pt = trajData[idx];
+  const minTs = trajData[0].ts, maxTs = trajData[trajData.length - 1].ts, span = maxTs - minTs || 1;
+  const pct = (pt.ts - minTs) / span * 100;
+  trajFill.style.width = pct.toFixed(2) + "%";
+  trajThumb.style.left = pct.toFixed(2) + "%";
+  const elapsed = Math.round((pt.ts - minTs) / 1e3), total = Math.round(span / 1e3);
+  trajTimeDisplay.textContent = formatTrajSecs(elapsed) + " / " + formatTrajSecs(total);
+  if (pt.event) {
+    trajEventInfo.textContent = "\u{1F535} " + (pt.event.label || pt.event.type) + "  @  " + new Date(pt.ts).toLocaleTimeString();
+  } else {
+    trajEventInfo.textContent = "\u{1F4CD} \u4F4D\u7F6E (" + pt.x + ", " + pt.z + ")  @  " + new Date(pt.ts).toLocaleTimeString();
+  }
+  trajPathInfo.textContent = "x:" + pt.x + " z:" + pt.z + " | " + pt.state;
+  moveTrajGhost(pt);
+  drawTrajMinimap(idx);
+}
+function formatTrajSecs(s) {
+  const m = Math.floor(s / 60), sec = s % 60;
+  return String(m).padStart(2, "0") + ":" + String(sec).padStart(2, "0");
+}
+function startTrajPlayback() {
+  if (!trajData || trajData.length === 0) return;
+  trajPlaying = true;
+  document.getElementById("tp-play").textContent = "\u23F8 \u6682\u505C";
+  document.getElementById("tp-play").classList.add("active");
+  if (trajPlayIdx >= trajData.length - 1) trajPlayIdx = 0;
+  const speed = parseFloat(document.getElementById("tp-speed").value) || 5;
+  const stepMs = Math.max(50, 1e3 / speed);
+  clearInterval(trajPlayTimer);
+  trajPlayTimer = setInterval(() => {
+    if (trajPlayIdx >= trajData.length - 1) {
+      pauseTrajPlayback();
+      return;
+    }
+    setTrajIndex(trajPlayIdx + 1);
+  }, stepMs);
+}
+function pauseTrajPlayback() {
+  trajPlaying = false;
+  clearInterval(trajPlayTimer);
+  document.getElementById("tp-play").textContent = "\u25B6 \u64AD\u653E";
+  document.getElementById("tp-play").classList.remove("active");
+}
+function stopTrajPlayback() {
+  pauseTrajPlayback();
+  if (trajData && trajData.length > 0) setTrajIndex(0);
+}
+function getOrCreateTrajGhost() {
+  if (trajGhostMesh) return trajGhostMesh;
+  const geo = new SphereGeometry(0.35, 12, 12);
+  const mat2 = new MeshBasicMaterial({ color: 5495035, transparent: true, opacity: 0.55 });
+  trajGhostMesh = new Mesh(geo, mat2);
+  scene.add(trajGhostMesh);
+  const lineGeo = new BufferGeometry();
+  const lineMat = new LineBasicMaterial({ color: 5495035, transparent: true, opacity: 0.3 });
+  trajPathLine = new Line(lineGeo, lineMat);
+  scene.add(trajPathLine);
+  return trajGhostMesh;
+}
+function moveTrajGhost(pt) {
+  const ghost = getOrCreateTrajGhost();
+  ghost.position.set(pt.x, 1.2, pt.z);
+  if (trajData && trajPathLine) {
+    const pts = trajData.slice(0, trajPlayIdx + 1).map((p) => new Vector3(p.x, 0.5, p.z));
+    if (pts.length >= 2) {
+      trajPathLine.geometry.setFromPoints(pts);
+    }
+  }
+}
+function removeTrajGhost() {
+  if (trajGhostMesh) {
+    scene.remove(trajGhostMesh);
+    trajGhostMesh = null;
+  }
+  if (trajPathLine) {
+    scene.remove(trajPathLine);
+    trajPathLine = null;
+  }
+}
+function drawTrajMinimap(upToIdx) {
+  if (!trajData || trajData.length === 0 || !trajMinimap) return;
+  trajMinimap.classList.add("show");
+  const ctx = trajMinimap.getContext("2d");
+  const W = trajMinimap.width, H = trajMinimap.height;
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = "rgba(8,8,24,0.75)";
+  ctx.fillRect(0, 0, W, H);
+  let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+  for (const p of trajData) {
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.z < minZ) minZ = p.z;
+    if (p.z > maxZ) maxZ = p.z;
+  }
+  const pad = 18, rangeX = maxX - minX || 1, rangeZ = maxZ - minZ || 1;
+  const sc2 = Math.min((W - pad * 2) / rangeX, (H - pad * 2) / rangeZ);
+  const toS = (p) => ({ x: pad + (p.x - minX) * sc2, y: pad + (p.z - minZ) * sc2 });
+  ctx.strokeStyle = "rgba(83,216,251,0.2)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  trajData.forEach((p, i) => {
+    const s = toS(p);
+    if (i === 0) ctx.moveTo(s.x, s.y);
+    else ctx.lineTo(s.x, s.y);
+  });
+  ctx.stroke();
+  ctx.strokeStyle = "rgba(83,216,251,0.8)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  trajData.slice(0, upToIdx + 1).forEach((p, i) => {
+    const s = toS(p);
+    if (i === 0) ctx.moveTo(s.x, s.y);
+    else ctx.lineTo(s.x, s.y);
+  });
+  ctx.stroke();
+  const evColors = { user_msg: "#34d399", thinking: "#a78bfa", tool_use: "#f97316", tool_result: "#f59e0b", reply_text: "#60a5fa" };
+  for (const pt of trajData) {
+    if (!pt.event) continue;
+    const s = toS(pt);
+    ctx.fillStyle = evColors[pt.event.type] || "#fff";
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  if (trajData[upToIdx]) {
+    const s = toS(trajData[upToIdx]);
+    ctx.fillStyle = "#53d8fb";
+    ctx.shadowColor = "#53d8fb";
+    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+  const s0 = toS(trajData[0]);
+  ctx.fillStyle = "#4ade80";
+  ctx.beginPath();
+  ctx.arc(s0.x, s0.y, 4, 0, Math.PI * 2);
+  ctx.fill();
+}
+var trajScrubbing = false;
+trajTimeline.addEventListener("mousedown", (e) => {
+  trajScrubbing = true;
+  seekTrajByMouseX(e);
+  e.stopPropagation();
+});
+window.addEventListener("mousemove", (e) => {
+  if (trajScrubbing) seekTrajByMouseX(e);
+});
+window.addEventListener("mouseup", () => {
+  trajScrubbing = false;
+});
+trajTimeline.addEventListener("touchstart", (e) => {
+  trajScrubbing = true;
+  seekTrajByTouch(e);
+  e.stopPropagation();
+}, { passive: false });
+window.addEventListener("touchmove", (e) => {
+  if (trajScrubbing) seekTrajByTouch(e);
+}, { passive: false });
+window.addEventListener("touchend", () => {
+  trajScrubbing = false;
+});
+function seekTrajByMouseX(e) {
+  if (!trajData || trajData.length === 0) return;
+  const rect = trajTimeline.getBoundingClientRect();
+  const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+  setTrajIndex(Math.round(pct * (trajData.length - 1)));
+}
+function seekTrajByTouch(e) {
+  if (!e.touches.length) return;
+  const rect = trajTimeline.getBoundingClientRect();
+  const pct = Math.max(0, Math.min(1, (e.touches[0].clientX - rect.left) / rect.width));
+  setTrajIndex(Math.round(pct * (trajData.length - 1)));
+}
+window.openTrajPanel = openTrajPanel;
 animate();
 /*! Bundled license information:
 

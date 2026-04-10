@@ -2638,11 +2638,12 @@ function openFixedPanel(sessionKey) {
   if (!fixedPanelEl) {
     fixedPanelEl = document.createElement('div');
     fixedPanelEl.id = 'fixed-panel';
-    fixedPanelEl.innerHTML = `<div class="fp-hd"><span class="fp-avatar">📌</span><span class="fp-user"></span><button class="fp-abort" title="终止思考">🛑</button><button class="fp-unpin" title="取消固定回气泡">📌</button><button class="fp-close">✕</button></div><div class="fp-body"><div class="fp-msg"></div><div class="fp-acts collapsed"><div class="fp-acts-hd"><span class="fp-acts-tri">▶</span><span class="fp-acts-lbl">思考过程</span><span class="fp-acts-cnt">0</span></div><div class="fp-acts-body"></div></div><div class="fp-chat"><input class="fp-chat-in" placeholder="直接对话..." /></div><div class="fp-foot"></div></div>`;
+    fixedPanelEl.innerHTML = `<div class="fp-hd"><span class="fp-avatar">📌</span><span class="fp-user"></span><button class="fp-traj" title="查看历史轨迹">📍</button><button class="fp-abort" title="终止思考">🛑</button><button class="fp-unpin" title="取消固定回气泡">📌</button><button class="fp-close">✕</button></div><div class="fp-body"><div class="fp-msg"></div><div class="fp-acts collapsed"><div class="fp-acts-hd"><span class="fp-acts-tri">▶</span><span class="fp-acts-lbl">思考过程</span><span class="fp-acts-cnt">0</span></div><div class="fp-acts-body"></div></div><div class="fp-chat"><input class="fp-chat-in" placeholder="直接对话..." /></div><div class="fp-foot"></div></div>`;
     document.body.appendChild(fixedPanelEl);
     fixedPanelEl.querySelector('.fp-close').addEventListener('click', (e) => { e.stopPropagation(); closeFixedPanel(); });
     fixedPanelEl.querySelector('.fp-unpin').addEventListener('click', (e) => { e.stopPropagation(); const sk = fixedPanelSession; closeFixedPanel(); if (sk && bubbles[sk]) { bubbles[sk]._dismissed = false; const mn = minions.find(m => m.userData.sessionKey === sk); if (mn) showBubble(mn); } });
     fixedPanelEl.querySelector('.fp-abort').addEventListener('click', (e) => { e.stopPropagation(); if (fixedPanelSession) abortSession(fixedPanelSession); });
+    fixedPanelEl.querySelector('.fp-traj').addEventListener('click', (e) => { e.stopPropagation(); if (fixedPanelSession) { const mn = minions.find(m => m.userData.sessionKey === fixedPanelSession); const name = mn ? (mn.userData.userName || mn.userData.sessionLabel || fixedPanelSession) : fixedPanelSession; openTrajPanel(fixedPanelSession, name); } });
     fixedPanelEl.querySelector('.fp-acts-hd').addEventListener('click', (e) => { e.stopPropagation(); fixedPanelEl.querySelector('.fp-acts').classList.toggle('collapsed'); setTimeout(clampPanelToViewport, 350); });
     const chatIn = fixedPanelEl.querySelector('.fp-chat-in');
     let isComposing = false;
@@ -5479,5 +5480,220 @@ window.addEventListener('beforeunload', () => {
   const beaconUrl = '/api/state';
   navigator.sendBeacon(beaconUrl, new Blob([data], { type: 'application/json' }));
 });
+
+// ===== Trajectory Replay =====
+let trajData = null;
+let trajSessionKey = null;
+let trajSessionName = '';
+let trajPlaying = false;
+let trajPlayIdx = 0;
+let trajPlayTimer = null;
+let trajGhostMesh = null;
+let trajPathLine = null;
+
+const trajPanel = document.getElementById('traj-panel');
+const trajTimeline = document.getElementById('tp-timeline');
+const trajFill = document.getElementById('tp-fill');
+const trajThumb = document.getElementById('tp-thumb');
+const trajEventDots = document.getElementById('tp-event-dots');
+const trajTimeDisplay = document.getElementById('tp-time-display');
+const trajEventInfo = document.getElementById('tp-event-info');
+const trajPathInfo = document.getElementById('tp-path-info');
+const trajSessName = document.getElementById('tp-sess-name');
+const trajMinimap = document.getElementById('traj-minimap');
+
+document.getElementById('tp-close').addEventListener('click', closeTrajPanel);
+document.getElementById('tp-play').addEventListener('click', () => { if (trajPlaying) pauseTrajPlayback(); else startTrajPlayback(); });
+document.getElementById('tp-stop').addEventListener('click', stopTrajPlayback);
+trajPanel.addEventListener('mousedown', e => e.stopPropagation());
+trajPanel.addEventListener('mouseup', e => e.stopPropagation());
+
+function openTrajPanel(sessionKey, displayName) {
+  trajSessionKey = sessionKey;
+  trajSessionName = displayName || sessionKey;
+  trajSessName.textContent = trajSessionName;
+  trajData = null;
+  trajPlayIdx = 0;
+  trajPlaying = false;
+  clearInterval(trajPlayTimer);
+  trajPanel.classList.add('show');
+  trajEventInfo.textContent = '⏳ 加载轨迹数据...';
+  authFetch('/api/trajectory/' + encodeURIComponent(sessionKey))
+    .then(r => r.json())
+    .then(data => {
+      trajData = data.points || [];
+      if (trajData.length === 0) { trajEventInfo.textContent = '🚫 暂无轨迹数据（移动后重试）'; return; }
+      trajEventInfo.textContent = '📍 共 ' + trajData.length + ' 个轨迹点';
+      renderTrajTimeline();
+      setTrajIndex(trajData.length - 1);
+    })
+    .catch(() => { trajEventInfo.textContent = '❌ 加载失败'; });
+}
+
+function closeTrajPanel() {
+  trajPanel.classList.remove('show');
+  if (trajMinimap) trajMinimap.classList.remove('show');
+  stopTrajPlayback();
+  removeTrajGhost();
+  trajData = null;
+  trajSessionKey = null;
+}
+
+function renderTrajTimeline() {
+  if (!trajData || trajData.length === 0) return;
+  const minTs = trajData[0].ts, maxTs = trajData[trajData.length - 1].ts, span = maxTs - minTs || 1;
+  let dotsHtml = '';
+  for (const pt of trajData) {
+    if (!pt.event) continue;
+    const pct = ((pt.ts - minTs) / span) * 100;
+    dotsHtml += '<div class="tp-event-dot ' + (pt.event.type || 'tool_use') + '" style="left:' + pct.toFixed(2) + '%" title="' + escAttr(pt.event.label || '') + '"></div>';
+  }
+  trajEventDots.innerHTML = dotsHtml;
+}
+
+function setTrajIndex(idx) {
+  if (!trajData || trajData.length === 0) return;
+  idx = Math.max(0, Math.min(trajData.length - 1, idx));
+  trajPlayIdx = idx;
+  const pt = trajData[idx];
+  const minTs = trajData[0].ts, maxTs = trajData[trajData.length - 1].ts, span = maxTs - minTs || 1;
+  const pct = ((pt.ts - minTs) / span) * 100;
+  trajFill.style.width = pct.toFixed(2) + '%';
+  trajThumb.style.left = pct.toFixed(2) + '%';
+  const elapsed = Math.round((pt.ts - minTs) / 1000), total = Math.round(span / 1000);
+  trajTimeDisplay.textContent = formatTrajSecs(elapsed) + ' / ' + formatTrajSecs(total);
+  if (pt.event) {
+    trajEventInfo.textContent = '🔵 ' + (pt.event.label || pt.event.type) + '  @  ' + new Date(pt.ts).toLocaleTimeString();
+  } else {
+    trajEventInfo.textContent = '📍 位置 (' + pt.x + ', ' + pt.z + ')  @  ' + new Date(pt.ts).toLocaleTimeString();
+  }
+  trajPathInfo.textContent = 'x:' + pt.x + ' z:' + pt.z + ' | ' + pt.state;
+  moveTrajGhost(pt);
+  drawTrajMinimap(idx);
+}
+
+function formatTrajSecs(s) {
+  const m = Math.floor(s / 60), sec = s % 60;
+  return String(m).padStart(2,'0') + ':' + String(sec).padStart(2,'0');
+}
+
+function startTrajPlayback() {
+  if (!trajData || trajData.length === 0) return;
+  trajPlaying = true;
+  document.getElementById('tp-play').textContent = '⏸ 暂停';
+  document.getElementById('tp-play').classList.add('active');
+  if (trajPlayIdx >= trajData.length - 1) trajPlayIdx = 0;
+  const speed = parseFloat(document.getElementById('tp-speed').value) || 5;
+  const stepMs = Math.max(50, 1000 / speed);
+  clearInterval(trajPlayTimer);
+  trajPlayTimer = setInterval(() => {
+    if (trajPlayIdx >= trajData.length - 1) { pauseTrajPlayback(); return; }
+    setTrajIndex(trajPlayIdx + 1);
+  }, stepMs);
+}
+
+function pauseTrajPlayback() {
+  trajPlaying = false;
+  clearInterval(trajPlayTimer);
+  document.getElementById('tp-play').textContent = '▶ 播放';
+  document.getElementById('tp-play').classList.remove('active');
+}
+
+function stopTrajPlayback() {
+  pauseTrajPlayback();
+  if (trajData && trajData.length > 0) setTrajIndex(0);
+}
+
+function getOrCreateTrajGhost() {
+  if (trajGhostMesh) return trajGhostMesh;
+  const geo = new THREE.SphereGeometry(0.35, 12, 12);
+  const mat = new THREE.MeshBasicMaterial({ color: 0x53d8fb, transparent: true, opacity: 0.55 });
+  trajGhostMesh = new THREE.Mesh(geo, mat);
+  scene.add(trajGhostMesh);
+  const lineGeo = new THREE.BufferGeometry();
+  const lineMat = new THREE.LineBasicMaterial({ color: 0x53d8fb, transparent: true, opacity: 0.3 });
+  trajPathLine = new THREE.Line(lineGeo, lineMat);
+  scene.add(trajPathLine);
+  return trajGhostMesh;
+}
+
+function moveTrajGhost(pt) {
+  const ghost = getOrCreateTrajGhost();
+  ghost.position.set(pt.x, 1.2, pt.z);
+  if (trajData && trajPathLine) {
+    const pts = trajData.slice(0, trajPlayIdx + 1).map(p => new THREE.Vector3(p.x, 0.5, p.z));
+    if (pts.length >= 2) { trajPathLine.geometry.setFromPoints(pts); }
+  }
+}
+
+function removeTrajGhost() {
+  if (trajGhostMesh) { scene.remove(trajGhostMesh); trajGhostMesh = null; }
+  if (trajPathLine) { scene.remove(trajPathLine); trajPathLine = null; }
+}
+
+function drawTrajMinimap(upToIdx) {
+  if (!trajData || trajData.length === 0 || !trajMinimap) return;
+  trajMinimap.classList.add('show');
+  const ctx = trajMinimap.getContext('2d');
+  const W = trajMinimap.width, H = trajMinimap.height;
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = 'rgba(8,8,24,0.75)';
+  ctx.fillRect(0, 0, W, H);
+  let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+  for (const p of trajData) {
+    if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
+    if (p.z < minZ) minZ = p.z; if (p.z > maxZ) maxZ = p.z;
+  }
+  const pad = 18, rangeX = maxX - minX || 1, rangeZ = maxZ - minZ || 1;
+  const sc = Math.min((W - pad * 2) / rangeX, (H - pad * 2) / rangeZ);
+  const toS = p => ({ x: pad + (p.x - minX) * sc, y: pad + (p.z - minZ) * sc });
+  ctx.strokeStyle = 'rgba(83,216,251,0.2)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  trajData.forEach((p, i) => { const s = toS(p); if (i === 0) ctx.moveTo(s.x, s.y); else ctx.lineTo(s.x, s.y); });
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(83,216,251,0.8)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  trajData.slice(0, upToIdx + 1).forEach((p, i) => { const s = toS(p); if (i === 0) ctx.moveTo(s.x, s.y); else ctx.lineTo(s.x, s.y); });
+  ctx.stroke();
+  const evColors = { user_msg: '#34d399', thinking: '#a78bfa', tool_use: '#f97316', tool_result: '#f59e0b', reply_text: '#60a5fa' };
+  for (const pt of trajData) {
+    if (!pt.event) continue;
+    const s = toS(pt);
+    ctx.fillStyle = evColors[pt.event.type] || '#fff';
+    ctx.beginPath(); ctx.arc(s.x, s.y, 3, 0, Math.PI * 2); ctx.fill();
+  }
+  if (trajData[upToIdx]) {
+    const s = toS(trajData[upToIdx]);
+    ctx.fillStyle = '#53d8fb'; ctx.shadowColor = '#53d8fb'; ctx.shadowBlur = 8;
+    ctx.beginPath(); ctx.arc(s.x, s.y, 5, 0, Math.PI * 2); ctx.fill(); ctx.shadowBlur = 0;
+  }
+  const s0 = toS(trajData[0]);
+  ctx.fillStyle = '#4ade80'; ctx.beginPath(); ctx.arc(s0.x, s0.y, 4, 0, Math.PI * 2); ctx.fill();
+}
+
+let trajScrubbing = false;
+trajTimeline.addEventListener('mousedown', e => { trajScrubbing = true; seekTrajByMouseX(e); e.stopPropagation(); });
+window.addEventListener('mousemove', e => { if (trajScrubbing) seekTrajByMouseX(e); });
+window.addEventListener('mouseup', () => { trajScrubbing = false; });
+trajTimeline.addEventListener('touchstart', e => { trajScrubbing = true; seekTrajByTouch(e); e.stopPropagation(); }, { passive: false });
+window.addEventListener('touchmove', e => { if (trajScrubbing) seekTrajByTouch(e); }, { passive: false });
+window.addEventListener('touchend', () => { trajScrubbing = false; });
+
+function seekTrajByMouseX(e) {
+  if (!trajData || trajData.length === 0) return;
+  const rect = trajTimeline.getBoundingClientRect();
+  const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+  setTrajIndex(Math.round(pct * (trajData.length - 1)));
+}
+function seekTrajByTouch(e) {
+  if (!e.touches.length) return;
+  const rect = trajTimeline.getBoundingClientRect();
+  const pct = Math.max(0, Math.min(1, (e.touches[0].clientX - rect.left) / rect.width));
+  setTrajIndex(Math.round(pct * (trajData.length - 1)));
+}
+
+window.openTrajPanel = openTrajPanel;
 
 animate();

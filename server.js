@@ -601,6 +601,7 @@ function processLine(agentName, sessionKey, line) {
           ts: new Date().toISOString(),
         }
       });
+      recordSessionEvent(sessionKey, 'user_msg', senderName ? `💬 ${senderName}` : '💬 msg');
     }
 
     if (role === 'assistant') {
@@ -616,6 +617,7 @@ function processLine(agentName, sessionKey, line) {
             ts: new Date().toISOString(),
           }
         });
+        recordSessionEvent(sessionKey, 'thinking', '🤔 thinking');
       }
       for (const tc of parsed.toolCalls) {
         broadcast({
@@ -629,6 +631,7 @@ function processLine(agentName, sessionKey, line) {
             ts: new Date().toISOString(),
           }
         });
+        recordSessionEvent(sessionKey, 'tool_use', `🔧 ${tc.name}`);
       }
       if (parsed.texts.length > 0) {
         const hasTools = parsed.toolCalls.length > 0;
@@ -642,6 +645,7 @@ function processLine(agentName, sessionKey, line) {
             ts: new Date().toISOString(),
           }
         });
+        recordSessionEvent(sessionKey, 'reply_text', '💬 reply');
       }
     }
 
@@ -659,6 +663,7 @@ function processLine(agentName, sessionKey, line) {
           ts: new Date().toISOString(),
         }
       });
+      recordSessionEvent(sessionKey, 'tool_result', `✅ ${toolName}`);
     }
 
   } catch (e) {
@@ -1215,15 +1220,69 @@ function round2(n) { return Math.round(n * 100) / 100; }
 // Track minion positions reported by the 3D client
 const minionPositions = {}; // sessionKey -> { x, y, z, state }
 
+// ===== Trajectory Recording =====
+// Store position history: sessionKey -> Array<{ts, x, y, z, state, event?}>
+const TRAJECTORY_MAX_POINTS = 3600; // ~1 hour at 1pt/sec
+const trajectoryHistory = {}; // sessionKey -> [{ts, x, z, state, event?}]
+
+function recordTrajectoryPoint(sessionKey, pos, event = null) {
+  if (!trajectoryHistory[sessionKey]) trajectoryHistory[sessionKey] = [];
+  const arr = trajectoryHistory[sessionKey];
+  const point = {
+    ts: Date.now(),
+    x: Math.round(pos.x * 10) / 10,
+    z: Math.round((pos.z || 0) * 10) / 10,
+    state: pos.state || 'idle',
+  };
+  if (event) point.event = event;
+  // Deduplicate: skip if position unchanged and no event
+  const last = arr[arr.length - 1];
+  if (!event && last && last.x === point.x && last.z === point.z && last.state === point.state) return;
+  arr.push(point);
+  // Trim to max
+  if (arr.length > TRAJECTORY_MAX_POINTS) arr.splice(0, arr.length - TRAJECTORY_MAX_POINTS);
+}
+
+// Also record events (tool calls, replies) into the trajectory timeline
+// Called from processLine (broadcast events already happen there)
+function recordSessionEvent(sessionKey, eventType, label) {
+  const pos = minionPositions[sessionKey];
+  if (!pos) return;
+  recordTrajectoryPoint(sessionKey, pos, { type: eventType, label });
+}
+
+// Hook into broadcast to capture events for trajectory timeline
+const _origBroadcast = broadcast;
+// We intercept events after broadcast is defined; done below after processLine is patched
+
 // Client reports positions periodically
 app.post('/api/minions/positions', (req, res) => {
   const positions = req.body.positions;
   if (positions && typeof positions === 'object') {
     for (const [sk, pos] of Object.entries(positions)) {
       minionPositions[sk] = pos;
+      recordTrajectoryPoint(sk, pos);
     }
   }
   res.json({ ok: true });
+});
+
+// Get trajectory for a session
+app.get('/api/trajectory/:sessionKey', (req, res) => {
+  const sk = req.params.sessionKey;
+  const since = req.query.since ? parseInt(req.query.since) : 0;
+  const points = (trajectoryHistory[sk] || []).filter(p => p.ts >= since);
+  res.json({ sessionKey: sk, points, count: points.length });
+});
+
+// Get trajectories for all sessions (for overview)
+app.get('/api/trajectories', (req, res) => {
+  const since = req.query.since ? parseInt(req.query.since) : 0;
+  const result = {};
+  for (const [sk, arr] of Object.entries(trajectoryHistory)) {
+    result[sk] = arr.filter(p => p.ts >= since);
+  }
+  res.json({ trajectories: result });
 });
 
 // List all minions with positions, states, session info
