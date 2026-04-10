@@ -473,8 +473,9 @@ function isInputFocused() {
   return tag === 'INPUT' || tag === 'TEXTAREA';
 }
 window.addEventListener('keydown', e => {
-  // Escape: exit follow mode (works even when interacting with overlay)
+  // Escape: exit follow mode / close drawers
   if (e.code === 'Escape') {
+    if (agentDrawer && agentDrawer.classList.contains('open')) { closeAgentDrawer(); return; }
     if (followMinion) { followMinion = null; return; }
   }
 
@@ -2356,7 +2357,7 @@ function getOrCreateBubble(sessionKey) {
     el = document.createElement('div');
     el.className = 'bubble3d';
     const sk = sessionKey;
-    el.innerHTML = `<div class="bub-hd"><span class="bub-avatar">🟡</span><span class="bub-user"></span><button class="bub-abort" title="终止思考">🛑</button><button class="bub-pin" title="固定到底部">📌</button><button class="bub-close">✕</button></div><div class="bub-msg"></div><div class="bub-acts collapsed"><div class="bub-acts-hd"><span class="bub-acts-tri">▶</span><span class="bub-acts-lbl">思考过程</span><span class="bub-acts-cnt">0</span></div><div class="bub-acts-body"></div></div><div class="bub-chat"><input class="bub-chat-in" placeholder="直接对话..." /></div><div class="bub-foot"></div>`;
+    el.innerHTML = `<div class="bub-hd"><span class="bub-avatar">🟡</span><span class="bub-user"></span><button class="bub-detail" title="查看详情">🔍</button><button class="bub-abort" title="终止思考">🛑</button><button class="bub-pin" title="固定到底部">📌</button><button class="bub-close">✕</button></div><div class="bub-msg"></div><div class="bub-acts collapsed"><div class="bub-acts-hd"><span class="bub-acts-tri">▶</span><span class="bub-acts-lbl">思考过程</span><span class="bub-acts-cnt">0</span></div><div class="bub-acts-body"></div></div><div class="bub-chat"><input class="bub-chat-in" placeholder="直接对话..." /></div><div class="bub-foot"></div>`;
     el._hasMore = true;
     el._loadingHistory = false;
 
@@ -2378,6 +2379,14 @@ function getOrCreateBubble(sessionKey) {
     pinBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       toggleFixedPanel(sk);
+    });
+
+    // Detail button — open agent drawer
+    const detailBtn = el.querySelector('.bub-detail');
+    detailBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const mn = minions.find(m => m.userData.sessionKey === sk);
+      if (mn) openAgentDrawer(mn.userData.sessionId, sk, mn);
     });
 
     // Abort button — terminate active thinking run
@@ -2638,12 +2647,13 @@ function openFixedPanel(sessionKey) {
   if (!fixedPanelEl) {
     fixedPanelEl = document.createElement('div');
     fixedPanelEl.id = 'fixed-panel';
-    fixedPanelEl.innerHTML = `<div class="fp-hd"><span class="fp-avatar">📌</span><span class="fp-user"></span><button class="fp-traj" title="查看历史轨迹">📍</button><button class="fp-abort" title="终止思考">🛑</button><button class="fp-unpin" title="取消固定回气泡">📌</button><button class="fp-close">✕</button></div><div class="fp-body"><div class="fp-msg"></div><div class="fp-acts collapsed"><div class="fp-acts-hd"><span class="fp-acts-tri">▶</span><span class="fp-acts-lbl">思考过程</span><span class="fp-acts-cnt">0</span></div><div class="fp-acts-body"></div></div><div class="fp-chat"><input class="fp-chat-in" placeholder="直接对话..." /></div><div class="fp-foot"></div></div>`;
+    fixedPanelEl.innerHTML = `<div class="fp-hd"><span class="fp-avatar">📌</span><span class="fp-user"></span><button class="fp-detail" title="查看详情">🔍</button><button class="fp-traj" title="查看历史轨迹">📍</button><button class="fp-abort" title="终止思考">🛑</button><button class="fp-unpin" title="取消固定回气泡">📌</button><button class="fp-close">✕</button></div><div class="fp-body"><div class="fp-msg"></div><div class="fp-acts collapsed"><div class="fp-acts-hd"><span class="fp-acts-tri">▶</span><span class="fp-acts-lbl">思考过程</span><span class="fp-acts-cnt">0</span></div><div class="fp-acts-body"></div></div><div class="fp-chat"><input class="fp-chat-in" placeholder="直接对话..." /></div><div class="fp-foot"></div></div>`;
     document.body.appendChild(fixedPanelEl);
     fixedPanelEl.querySelector('.fp-close').addEventListener('click', (e) => { e.stopPropagation(); closeFixedPanel(); });
     fixedPanelEl.querySelector('.fp-unpin').addEventListener('click', (e) => { e.stopPropagation(); const sk = fixedPanelSession; closeFixedPanel(); if (sk && bubbles[sk]) { bubbles[sk]._dismissed = false; const mn = minions.find(m => m.userData.sessionKey === sk); if (mn) showBubble(mn); } });
     fixedPanelEl.querySelector('.fp-abort').addEventListener('click', (e) => { e.stopPropagation(); if (fixedPanelSession) abortSession(fixedPanelSession); });
     fixedPanelEl.querySelector('.fp-traj').addEventListener('click', (e) => { e.stopPropagation(); if (fixedPanelSession) { const mn = minions.find(m => m.userData.sessionKey === fixedPanelSession); const name = mn ? (mn.userData.userName || mn.userData.sessionLabel || fixedPanelSession) : fixedPanelSession; openTrajPanel(fixedPanelSession, name); } });
+    fixedPanelEl.querySelector('.fp-detail').addEventListener('click', (e) => { e.stopPropagation(); if (fixedPanelSession) { const mn = minions.find(m => m.userData.sessionKey === fixedPanelSession); if (mn) openAgentDrawer(mn.userData.sessionId, fixedPanelSession, mn); } });
     fixedPanelEl.querySelector('.fp-acts-hd').addEventListener('click', (e) => { e.stopPropagation(); fixedPanelEl.querySelector('.fp-acts').classList.toggle('collapsed'); setTimeout(clampPanelToViewport, 350); });
     const chatIn = fixedPanelEl.querySelector('.fp-chat-in');
     let isComposing = false;
@@ -5480,6 +5490,225 @@ window.addEventListener('beforeunload', () => {
   const beaconUrl = '/api/state';
   navigator.sendBeacon(beaconUrl, new Blob([data], { type: 'application/json' }));
 });
+
+// ===== Agent Detail Drawer =====
+const agentDrawer = document.getElementById('agent-drawer');
+let drawerSessionId = null;
+let drawerSessionKey = null;
+let drawerActiveTab = 'current';
+let drawerHistoryBefore = null; // for pagination
+let drawerHistoryAll = [];
+
+document.getElementById('ad-close').addEventListener('click', closeAgentDrawer);
+agentDrawer.addEventListener('mousedown', e => e.stopPropagation());
+agentDrawer.addEventListener('mouseup', e => e.stopPropagation());
+
+// Tab switching
+agentDrawer.querySelectorAll('.ad-tab').forEach(tab => {
+  tab.addEventListener('click', e => {
+    e.stopPropagation();
+    const pane = tab.dataset.pane;
+    agentDrawer.querySelectorAll('.ad-tab').forEach(t => t.classList.remove('active'));
+    agentDrawer.querySelectorAll('.ad-pane').forEach(p => p.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('ad-pane-' + pane).classList.add('active');
+    drawerActiveTab = pane;
+    if (pane === 'history' && drawerHistoryAll.length === 0) loadDrawerHistory();
+    if (pane === 'stats') loadDrawerStats();
+  });
+});
+
+function openAgentDrawer(sessionId, sessionKey, minion) {
+  drawerSessionId = sessionId;
+  drawerSessionKey = sessionKey;
+  drawerHistoryBefore = null;
+  drawerHistoryAll = [];
+  drawerActiveTab = 'current';
+
+  // Reset tabs to current
+  agentDrawer.querySelectorAll('.ad-tab').forEach(t => t.classList.remove('active'));
+  agentDrawer.querySelectorAll('.ad-pane').forEach(p => p.classList.remove('active'));
+  agentDrawer.querySelector('[data-pane="current"]').classList.add('active');
+  document.getElementById('ad-pane-current').classList.add('active');
+
+  // Header
+  const ud = minion ? minion.userData : {};
+  const stateEmoji = ud.state === 'thinking' ? '🧠' : ud.state === 'done' ? '✅' : '🤖';
+  document.getElementById('ad-avatar').textContent = stateEmoji;
+  document.getElementById('ad-name').textContent = ud.userName || ud.sessionLabel || sessionKey.slice(0, 30);
+  document.getElementById('ad-meta').textContent = (ud.sessionType || '') + (ud.channel ? ' · ' + ud.channel : '') + ' · ' + sessionId.slice(0, 8);
+
+  agentDrawer.classList.add('open');
+  loadDrawerCurrent();
+}
+
+function closeAgentDrawer() {
+  agentDrawer.classList.remove('open');
+  drawerSessionId = null;
+  drawerSessionKey = null;
+}
+
+function loadDrawerCurrent() {
+  if (!drawerSessionId) return;
+  const pane = document.getElementById('ad-pane-current');
+  pane.innerHTML = '<div class="ad-empty">加载中...</div>';
+  authFetch('/api/session-state/' + encodeURIComponent(drawerSessionId))
+    .then(r => r.json())
+    .then(data => {
+      const mn = minions.find(m => m.userData.sessionId === drawerSessionId);
+      if (mn) {
+        document.getElementById('ad-avatar').textContent = data.state === 'thinking' ? '🧠' : data.state === 'done' ? '✅' : '🤖';
+        document.getElementById('ad-name').textContent = mn.userData.userName || mn.userData.sessionLabel || drawerSessionKey.slice(0, 30);
+      }
+      const stateLabel = data.state === 'thinking' ? '🧠 思考中' : data.state === 'done' ? '✅ 已完成' : '💤 空闲';
+      const stateClass = data.state === 'thinking' ? 'thinking' : data.state === 'done' ? 'done' : 'idle';
+      const eventLog = data.eventLog || [];
+
+      let html = '<div class="ad-state-badge ' + stateClass + '">' + stateLabel + '</div>';
+
+      // Current user message
+      if (data.userMsg) {
+        html += '<div class="ad-section"><div class="ad-section-title">📨 最新请求</div><div class="ad-msg-box">' + esc(data.userMsg) + '</div></div>';
+      }
+
+      // Last reply
+      if (data.replyText) {
+        html += '<div class="ad-section"><div class="ad-section-title">💬 最新回复</div><div class="ad-msg-box" style="color:#a7f3d0">' + esc(data.replyText.slice(0, 500)) + '</div></div>';
+      }
+
+      // Active tools / thinking steps
+      if (eventLog.length > 0) {
+        html += '<div class="ad-section"><div class="ad-section-title">⚙️ 当前动作</div>';
+        for (const ev of eventLog.slice(-8)) {
+          const icon = ev.type === 'think' ? '💭' : ev.type === 'tool_use' ? '🔧' : ev.type === 'tool_result' ? '✅' : '💬';
+          const name = ev.type === 'tool_use' ? (ev.text || '?') : (ev.text || '').slice(0, 60);
+          const timeStr = ev.ts ? new Date(ev.ts).toLocaleTimeString() : '';
+          html += '<div class="ad-tool-row"><span class="ad-tool-icon">' + icon + '</span><span class="ad-tool-name">' + esc(name) + '</span><span class="ad-tool-time">' + esc(timeStr) + '</span></div>';
+        }
+        html += '</div>';
+      }
+
+      if (!data.userMsg && !data.replyText && eventLog.length === 0) {
+        html += '<div class="ad-empty">暂无活动</div>';
+      }
+
+      // Traj button
+      html += '<div style="margin-top:10px"><button onclick="openTrajPanel(\'' + escAttr(drawerSessionKey) + '\',\'' + escAttr(document.getElementById('ad-name').textContent) + '\')" style="width:100%;padding:8px;background:rgba(83,216,251,0.07);border:1px solid rgba(83,216,251,0.15);border-radius:8px;color:#53d8fb;font-size:8px;cursor:pointer;font-family:\'Press Start 2P\',monospace">📍 查看历史轨迹</button></div>';
+
+      pane.innerHTML = html;
+    })
+    .catch(() => { pane.innerHTML = '<div class="ad-empty">❌ 加载失败</div>'; });
+}
+
+function loadDrawerHistory(append = false) {
+  if (!drawerSessionId) return;
+  const pane = document.getElementById('ad-pane-history');
+  if (!append) { pane.innerHTML = '<div class="ad-empty">加载中...</div>'; }
+
+  const url = '/api/messages/' + encodeURIComponent(drawerSessionId) + '?limit=20' + (drawerHistoryBefore ? '&before=' + encodeURIComponent(drawerHistoryBefore) : '');
+  authFetch(url)
+    .then(r => r.json())
+    .then(data => {
+      const msgs = data.messages || [];
+      if (!append) drawerHistoryAll = msgs;
+      else drawerHistoryAll = [...msgs, ...drawerHistoryAll];
+
+      if (drawerHistoryAll.length === 0) { pane.innerHTML = '<div class="ad-empty">暂无历史记录</div>'; return; }
+
+      let html = '';
+      for (const msg of drawerHistoryAll) {
+        const role = msg.role;
+        const ts = msg.timestamp ? new Date(msg.timestamp).toLocaleString() : '';
+        let icon, preview, fullText;
+        if (role === 'user') {
+          icon = '👤'; preview = esc((msg.text || '').slice(0, 80)); fullText = esc(msg.text || '');
+        } else if (role === 'assistant') {
+          const texts = msg.texts || [];
+          const tcs = msg.toolCalls || [];
+          icon = tcs.length ? '🔧' : '🤖';
+          preview = tcs.length ? esc(tcs.map(t=>t.name).join(', ').slice(0, 80)) : esc(texts.join(' ').slice(0, 80));
+          fullText = esc((texts.join('\n') + (tcs.length ? '\n工具: ' + tcs.map(t=>t.name+'('+t.args+')').join(', ') : '') + (msg.thinking ? '\n思考: ' + msg.thinking.slice(0, 300) : '')).trim());
+        } else if (role === 'toolResult') {
+          icon = '📋'; preview = esc(((msg.toolName || '?') + ': ' + (msg.result || '')).slice(0, 80)); fullText = esc((msg.result || '').slice(0, 2000));
+        } else {
+          icon = '❓'; preview = esc(role); fullText = '';
+        }
+        html += '<div class="ad-turn"><div class="ad-turn-hd" onclick="this.closest(\'.ad-turn\').classList.toggle(\'expanded\')"><span class="ad-turn-role">' + icon + '</span><span class="ad-turn-text">' + preview + '</span><span class="ad-turn-ts">' + esc(ts) + '</span></div><div class="ad-turn-body">' + fullText + '</div></div>';
+      }
+
+      if (data.hasMore) {
+        const oldest = msgs.length ? msgs[0].timestamp : null;
+        html += '<button class="ad-load-more" onclick="loadMoreDrawerHistory(\'' + escAttr(oldest || '') + '\')">⬆ 加载更多</button>';
+      }
+
+      pane.innerHTML = html;
+    })
+    .catch(() => { if (!append) pane.innerHTML = '<div class="ad-empty">❌ 加载失败</div>'; });
+}
+
+function loadMoreDrawerHistory(before) {
+  drawerHistoryBefore = before;
+  loadDrawerHistory(true);
+}
+
+function loadDrawerStats() {
+  if (!drawerSessionId) return;
+  const pane = document.getElementById('ad-pane-stats');
+  pane.innerHTML = '<div class="ad-empty">统计中...</div>';
+  authFetch('/api/agent-stats/' + encodeURIComponent(drawerSessionId))
+    .then(r => r.json())
+    .then(data => {
+      const s = data.stats;
+      if (!s) { pane.innerHTML = '<div class="ad-empty">暂无数据</div>'; return; }
+
+      const durStr = s.durationMs ? formatDrawerDuration(s.durationMs) : '-';
+      const latStr = s.avgLatencyMs ? (s.avgLatencyMs > 1000 ? (s.avgLatencyMs/1000).toFixed(1)+'s' : s.avgLatencyMs+'ms') : '-';
+      const charsStr = s.totalChars > 1000 ? (s.totalChars/1000).toFixed(1)+'k' : String(s.totalChars);
+
+      let html = '<div class="ad-stat-grid">';
+      html += '<div class="ad-stat-card"><div class="ad-stat-val">' + s.userTurns + '</div><div class="ad-stat-lbl">用户轮次</div></div>';
+      html += '<div class="ad-stat-card"><div class="ad-stat-val">' + s.toolCalls + '</div><div class="ad-stat-lbl">工具调用</div></div>';
+      html += '<div class="ad-stat-card"><div class="ad-stat-val">' + latStr + '</div><div class="ad-stat-lbl">平均响应</div></div>';
+      html += '<div class="ad-stat-card"><div class="ad-stat-val">' + charsStr + '</div><div class="ad-stat-lbl">输出字符</div></div>';
+      html += '</div>';
+
+      html += '<div class="ad-section-title">会话时长: ' + durStr + '</div>';
+
+      if (s.topTools && s.topTools.length > 0) {
+        html += '<div class="ad-section"><div class="ad-section-title">🔧 Top 工具</div>';
+        for (const t of s.topTools) {
+          const pct = Math.round(t.cnt / s.toolCalls * 100);
+          html += '<div class="ad-tool-row"><span class="ad-tool-icon">🔧</span><span class="ad-tool-name">' + esc(t.name) + '</span><span class="ad-tool-time">' + t.cnt + '次 (' + pct + '%)</span></div>';
+        }
+        html += '</div>';
+      }
+
+      if (s.timeline && s.timeline.length > 0) {
+        html += '<div class="ad-section"><div class="ad-section-title">📅 活动时间轴</div>';
+        for (const ev of s.timeline) {
+          const evColors = { user_msg: 'user_msg', thinking: 'thinking', tool_use: 'tool_use', tool_result: 'tool_result', reply_text: 'reply_text' };
+          const timeStr = ev.ts ? new Date(ev.ts).toLocaleTimeString() : '';
+          html += '<div class="ad-tl-row"><div class="ad-tl-dot ' + (evColors[ev.type] || 'tool_use') + '"></div><span class="ad-tl-label">' + esc(ev.label.slice(0, 50)) + '</span><span class="ad-tl-time">' + esc(timeStr) + '</span></div>';
+        }
+        html += '</div>';
+      }
+
+      pane.innerHTML = html;
+    })
+    .catch(() => { pane.innerHTML = '<div class="ad-empty">❌ 加载失败</div>'; });
+}
+
+function formatDrawerDuration(ms) {
+  const secs = Math.round(ms / 1000);
+  if (secs < 60) return secs + 's';
+  const mins = Math.floor(secs / 60), s = secs % 60;
+  if (mins < 60) return mins + 'm' + s + 's';
+  const hrs = Math.floor(mins / 60), m = mins % 60;
+  return hrs + 'h' + m + 'm';
+}
+
+window.openAgentDrawer = openAgentDrawer;
+window.loadMoreDrawerHistory = loadMoreDrawerHistory;
 
 // ===== Trajectory Replay =====
 let trajData = null;

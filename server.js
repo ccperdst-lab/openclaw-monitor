@@ -967,6 +967,93 @@ app.get('/api/session-state/:sessionId', (req, res) => {
   }
 });
 
+// ===== Agent Stats API =====
+// Returns stats computed from full JSONL: turn count, tool counts, avg latency, timeline
+app.get('/api/agent-stats/:sessionId', (req, res) => {
+  const sessionId = req.params.sessionId;
+  let filePath = null;
+  for (const [agentName, info] of Object.entries(agentState)) {
+    for (const [key, sess] of Object.entries(info.sessions)) {
+      if (sess.sessionId === sessionId) {
+        filePath = path.join(AGENTS_DIR, agentName, 'sessions', sessionId + '.jsonl');
+        break;
+      }
+    }
+    if (filePath) break;
+  }
+  if (!filePath || !fs.existsSync(filePath)) return res.json({ stats: null });
+
+  try {
+    const raw = fs.readFileSync(filePath, 'utf-8');
+    const lines = raw.split('\n').filter(Boolean);
+
+    let userTurns = 0, assistantTurns = 0, toolCalls = 0, toolResults = 0, totalChars = 0;
+    const toolCounts = {};
+    const timeline = []; // last 50 events with ts
+    let firstTs = null, lastTs = null;
+    const latencies = []; // user→assistant latencies
+    let lastUserTs = null;
+
+    // For turn-by-turn latency
+    const messages = [];
+    for (const line of lines.slice(-1000)) {
+      try {
+        const entry = JSON.parse(line);
+        if (entry.type !== 'message') continue;
+        const ts = new Date(entry.timestamp).getTime();
+        if (!firstTs) firstTs = ts;
+        lastTs = ts;
+        const msg = entry.message || {};
+        messages.push({ role: msg.role, ts, content: msg.content, toolName: msg.toolName });
+      } catch {}
+    }
+
+    for (const m of messages) {
+      if (m.role === 'user') {
+        userTurns++;
+        lastUserTs = m.ts;
+        const text = parseUserMessage(typeof m.content === 'string' ? m.content : JSON.stringify(m.content || ''));
+        if (timeline.length < 50) timeline.push({ type: 'user_msg', label: text.slice(0, 60), ts: m.ts });
+      } else if (m.role === 'assistant') {
+        assistantTurns++;
+        if (lastUserTs) { latencies.push(m.ts - lastUserTs); lastUserTs = null; }
+        const ac = parseAssistantContent(m.content);
+        for (const tc of ac.toolCalls) {
+          toolCalls++;
+          toolCounts[tc.name] = (toolCounts[tc.name] || 0) + 1;
+          if (timeline.length < 50) timeline.push({ type: 'tool_use', label: tc.name, ts: m.ts });
+        }
+        if (ac.texts.length) {
+          totalChars += ac.texts.join('').length;
+          if (timeline.length < 50) timeline.push({ type: 'reply_text', label: ac.texts.join('').slice(0, 60), ts: m.ts });
+        }
+        if (ac.thinking && timeline.length < 50) timeline.push({ type: 'thinking', label: '💭 thinking', ts: m.ts });
+      } else if (m.role === 'toolResult') {
+        toolResults++;
+        if (timeline.length < 50) timeline.push({ type: 'tool_result', label: (m.toolName || '?') + ' ✓', ts: m.ts });
+      }
+    }
+
+    const avgLatencyMs = latencies.length ? Math.round(latencies.reduce((a,b)=>a+b,0) / latencies.length) : 0;
+    const durationMs = (firstTs && lastTs) ? (lastTs - firstTs) : 0;
+
+    // Top tools sorted
+    const topTools = Object.entries(toolCounts).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([name,cnt])=>({ name, cnt }));
+
+    res.json({
+      stats: {
+        userTurns, assistantTurns, toolCalls, toolResults, totalChars,
+        avgLatencyMs, durationMs, firstTs, lastTs,
+        topTools,
+        timeline: timeline.slice(-30), // last 30 events
+        messageCount: messages.length,
+      }
+    });
+  } catch (err) {
+    res.json({ stats: null, error: err.message });
+  }
+});
+
 // SSE (requires login)
 app.get('/api/events', (req, res) => {
   // Auth check via query param (SSE can't send headers easily)

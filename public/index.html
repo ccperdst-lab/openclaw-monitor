@@ -68,6 +68,8 @@
   .bub-close:hover{background:#f3f4f6;color:#555}
   .bub-pin{background:none;border:none;cursor:pointer;font-size:13px;padding:2px 4px;border-radius:4px;transition:background .15s;flex-shrink:0;opacity:0.5}
   .bub-pin:hover{background:#f3f4f6;opacity:1}
+  .bub-detail{background:none;border:none;cursor:pointer;font-size:13px;padding:2px 4px;border-radius:4px;transition:background .15s;flex-shrink:0;opacity:0.5}
+  .bub-detail:hover{background:#eff6ff;opacity:1}
   .bub-abort{background:none;border:none;cursor:pointer;font-size:13px;padding:2px 4px;border-radius:4px;transition:background .15s,transform .15s;flex-shrink:0;display:none}
   .bub-abort:hover{background:#fef2f2;transform:scale(1.2)}
   .bub-abort:active{transform:scale(0.9)}
@@ -195,6 +197,8 @@
   .fp-abort:hover{opacity:1;background:#fef2f2}
   .fp-traj{background:none;border:none;cursor:pointer;font-size:12px;padding:3px 6px;border-radius:6px;opacity:0.5;transition:all .15s}
   .fp-traj:hover{opacity:1;background:#eff6ff}
+  .fp-detail{background:none;border:none;cursor:pointer;font-size:12px;padding:3px 6px;border-radius:6px;opacity:0.5;transition:all .15s}
+  .fp-detail:hover{opacity:1;background:#eff6ff}
   .fp-close{background:none;border:none;cursor:pointer;color:#bbb;font-size:15px;font-weight:300;width:22px;height:22px;border-radius:6px;display:flex;align-items:center;justify-content:center;transition:all .15s}
   .fp-close:hover{background:#f0f0f0;color:#555}
   .fp-body{flex:1;overflow-y:auto;padding:0}
@@ -303,6 +307,62 @@
     transition:background .15s,color .15s;z-index:1;
   }
   .dp-close:hover{background:rgba(0,0,0,0.12);color:#333}
+
+  /* Agent Detail Drawer */
+  #agent-drawer{position:fixed;top:0;right:0;height:100vh;width:min(420px,92vw);z-index:150;background:rgba(10,10,28,0.97);backdrop-filter:blur(20px);border-left:1px solid rgba(83,216,251,0.25);box-shadow:-8px 0 40px rgba(0,0,0,0.6);display:flex;flex-direction:column;transform:translateX(100%);transition:transform 0.35s cubic-bezier(0.4,0,0.2,1);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;}
+  #agent-drawer.open{transform:translateX(0)}
+  .ad-hd{padding:16px 16px 12px;border-bottom:1px solid rgba(83,216,251,0.12);display:flex;align-items:center;gap:12px;flex-shrink:0}
+  .ad-avatar{font-size:24px;flex-shrink:0}
+  .ad-title{flex:1;min-width:0}
+  .ad-name{font-size:14px;font-weight:700;color:#e0e0e0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ad-meta{font-size:8px;color:#556;margin-top:2px;font-family:'Press Start 2P',monospace}
+  .ad-close{background:none;border:none;color:#556;font-size:20px;cursor:pointer;padding:4px 8px;border-radius:8px;transition:all .15s;flex-shrink:0}
+  .ad-close:hover{color:#53d8fb;background:rgba(83,216,251,0.1)}
+  .ad-tabs{display:flex;border-bottom:1px solid rgba(83,216,251,0.1);flex-shrink:0}
+  .ad-tab{flex:1;padding:10px 6px;color:#556;cursor:pointer;text-align:center;border-bottom:2px solid transparent;transition:all .15s;font-family:'Press Start 2P',monospace;font-size:7px}
+  .ad-tab:hover{color:#aaa;background:rgba(83,216,251,0.05)}
+  .ad-tab.active{color:#53d8fb;border-bottom-color:#53d8fb}
+  .ad-body{flex:1;overflow:hidden;position:relative}
+  .ad-pane{position:absolute;inset:0;overflow-y:auto;padding:14px 16px;display:none}
+  .ad-pane.active{display:block}
+  .ad-pane::-webkit-scrollbar{width:4px}
+  .ad-pane::-webkit-scrollbar-thumb{background:rgba(83,216,251,0.2);border-radius:2px}
+  .ad-state-badge{display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:20px;font-size:10px;margin-bottom:12px;font-weight:600}
+  .ad-state-badge.thinking{background:rgba(167,139,250,0.15);color:#a78bfa;border:1px solid rgba(167,139,250,0.3)}
+  .ad-state-badge.done{background:rgba(74,222,128,0.12);color:#4ade80;border:1px solid rgba(74,222,128,0.25)}
+  .ad-state-badge.idle{background:rgba(100,100,120,0.2);color:#778;border:1px solid rgba(100,100,120,0.3)}
+  .ad-section{margin-bottom:14px}
+  .ad-section-title{font-size:8px;color:#556;font-family:'Press Start 2P',monospace;margin-bottom:7px;display:flex;align-items:center;gap:6px}
+  .ad-section-title::after{content:'';flex:1;height:1px;background:rgba(83,216,251,0.1)}
+  .ad-msg-box{background:rgba(15,52,96,0.25);border-radius:8px;padding:10px 12px;font-size:12px;color:#c8d4e0;line-height:1.6;word-break:break-word;border:1px solid rgba(83,216,251,0.1)}
+  .ad-tool-row{display:flex;align-items:center;gap:8px;padding:5px 8px;margin-bottom:3px;background:rgba(0,0,0,0.2);border-radius:6px;font-size:11px;color:#aaa}
+  .ad-tool-icon{font-size:12px;flex-shrink:0}
+  .ad-tool-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#e0e0e0}
+  .ad-tool-time{font-size:9px;color:#445;font-family:monospace;flex-shrink:0}
+  .ad-turn{margin-bottom:10px;border-radius:8px;overflow:hidden;border:1px solid rgba(83,216,251,0.08)}
+  .ad-turn-hd{display:flex;align-items:center;gap:8px;padding:7px 10px;background:rgba(15,52,96,0.2);cursor:pointer;user-select:none}
+  .ad-turn-hd:hover{background:rgba(15,52,96,0.35)}
+  .ad-turn-role{font-size:12px;flex-shrink:0}
+  .ad-turn-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:#c8d4e0}
+  .ad-turn-ts{font-size:9px;color:#445;font-family:monospace;flex-shrink:0}
+  .ad-turn-body{padding:8px 10px;font-size:11px;color:#aaa;line-height:1.6;display:none;background:rgba(0,0,0,0.15);word-break:break-word;max-height:200px;overflow-y:auto;white-space:pre-wrap}
+  .ad-turn.expanded .ad-turn-body{display:block}
+  .ad-load-more{width:100%;padding:8px;background:rgba(83,216,251,0.07);border:1px solid rgba(83,216,251,0.15);border-radius:8px;color:#53d8fb;font-size:8px;cursor:pointer;transition:all .15s;font-family:'Press Start 2P',monospace;margin-top:6px}
+  .ad-load-more:hover{background:rgba(83,216,251,0.15)}
+  .ad-stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}
+  .ad-stat-card{background:rgba(15,52,96,0.2);border-radius:8px;padding:10px 12px;border:1px solid rgba(83,216,251,0.1)}
+  .ad-stat-val{font-size:14px;font-weight:700;color:#53d8fb;font-family:'Press Start 2P',monospace}
+  .ad-stat-lbl{font-size:8px;color:#556;margin-top:4px;font-family:'Press Start 2P',monospace}
+  .ad-tl-row{display:flex;align-items:center;gap:8px;padding:5px 2px;border-bottom:1px solid rgba(83,216,251,0.06);font-size:10px;color:#778}
+  .ad-tl-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+  .ad-tl-dot.user_msg{background:#34d399}
+  .ad-tl-dot.thinking{background:#a78bfa}
+  .ad-tl-dot.tool_use{background:#f97316}
+  .ad-tl-dot.tool_result{background:#f59e0b}
+  .ad-tl-dot.reply_text{background:#60a5fa}
+  .ad-tl-label{flex:1}
+  .ad-tl-time{font-family:monospace;color:#445;font-size:9px;flex-shrink:0}
+  .ad-empty{color:#445;font-size:10px;text-align:center;padding:24px;font-family:'Press Start 2P',monospace}
 
   /* Feature 2: World Chat Panel */
   #chat-panel{
@@ -418,6 +478,34 @@ fetch('/api/auth/status').then(r=>r.json()).then(d=>{
     <div class="loading-text">🟢 Loading OpenClaw Monitor...</div>
   </div>
 </div>
+<!-- Agent Detail Drawer -->
+<div id="agent-drawer">
+  <div class="ad-hd">
+    <span class="ad-avatar" id="ad-avatar">🤖</span>
+    <div class="ad-title">
+      <div class="ad-name" id="ad-name">Agent</div>
+      <div class="ad-meta" id="ad-meta">-</div>
+    </div>
+    <button class="ad-close" id="ad-close">✕</button>
+  </div>
+  <div class="ad-tabs">
+    <div class="ad-tab active" data-pane="current">📌 当前</div>
+    <div class="ad-tab" data-pane="history">📜 历史</div>
+    <div class="ad-tab" data-pane="stats">📊 统计</div>
+  </div>
+  <div class="ad-body">
+    <div class="ad-pane active" id="ad-pane-current">
+      <div class="ad-empty">加载中...</div>
+    </div>
+    <div class="ad-pane" id="ad-pane-history">
+      <div class="ad-empty">加载中...</div>
+    </div>
+    <div class="ad-pane" id="ad-pane-stats">
+      <div class="ad-empty">加载中...</div>
+    </div>
+  </div>
+</div>
+
 <!-- Trajectory Timeline Panel -->
 <div id="traj-panel">
   <div class="tp-hd">

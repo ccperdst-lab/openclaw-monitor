@@ -29160,6 +29160,10 @@ function isInputFocused() {
 }
 window.addEventListener("keydown", (e) => {
   if (e.code === "Escape") {
+    if (agentDrawer && agentDrawer.classList.contains("open")) {
+      closeAgentDrawer();
+      return;
+    }
     if (followMinion) {
       followMinion = null;
       return;
@@ -30800,7 +30804,7 @@ function getOrCreateBubble(sessionKey) {
     el = document.createElement("div");
     el.className = "bubble3d";
     const sk = sessionKey;
-    el.innerHTML = `<div class="bub-hd"><span class="bub-avatar">\u{1F7E1}</span><span class="bub-user"></span><button class="bub-abort" title="\u7EC8\u6B62\u601D\u8003">\u{1F6D1}</button><button class="bub-pin" title="\u56FA\u5B9A\u5230\u5E95\u90E8">\u{1F4CC}</button><button class="bub-close">\u2715</button></div><div class="bub-msg"></div><div class="bub-acts collapsed"><div class="bub-acts-hd"><span class="bub-acts-tri">\u25B6</span><span class="bub-acts-lbl">\u601D\u8003\u8FC7\u7A0B</span><span class="bub-acts-cnt">0</span></div><div class="bub-acts-body"></div></div><div class="bub-chat"><input class="bub-chat-in" placeholder="\u76F4\u63A5\u5BF9\u8BDD..." /></div><div class="bub-foot"></div>`;
+    el.innerHTML = `<div class="bub-hd"><span class="bub-avatar">\u{1F7E1}</span><span class="bub-user"></span><button class="bub-detail" title="\u67E5\u770B\u8BE6\u60C5">\u{1F50D}</button><button class="bub-abort" title="\u7EC8\u6B62\u601D\u8003">\u{1F6D1}</button><button class="bub-pin" title="\u56FA\u5B9A\u5230\u5E95\u90E8">\u{1F4CC}</button><button class="bub-close">\u2715</button></div><div class="bub-msg"></div><div class="bub-acts collapsed"><div class="bub-acts-hd"><span class="bub-acts-tri">\u25B6</span><span class="bub-acts-lbl">\u601D\u8003\u8FC7\u7A0B</span><span class="bub-acts-cnt">0</span></div><div class="bub-acts-body"></div></div><div class="bub-chat"><input class="bub-chat-in" placeholder="\u76F4\u63A5\u5BF9\u8BDD..." /></div><div class="bub-foot"></div>`;
     el._hasMore = true;
     el._loadingHistory = false;
     el.addEventListener("mousedown", (e) => {
@@ -30821,6 +30825,12 @@ function getOrCreateBubble(sessionKey) {
     pinBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       toggleFixedPanel(sk);
+    });
+    const detailBtn = el.querySelector(".bub-detail");
+    detailBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const mn = minions.find((m) => m.userData.sessionKey === sk);
+      if (mn) openAgentDrawer(mn.userData.sessionId, sk, mn);
     });
     const abortBtn = el.querySelector(".bub-abort");
     abortBtn.addEventListener("click", (e) => {
@@ -31045,7 +31055,7 @@ function openFixedPanel(sessionKey) {
   if (!fixedPanelEl) {
     fixedPanelEl = document.createElement("div");
     fixedPanelEl.id = "fixed-panel";
-    fixedPanelEl.innerHTML = `<div class="fp-hd"><span class="fp-avatar">\u{1F4CC}</span><span class="fp-user"></span><button class="fp-traj" title="\u67E5\u770B\u5386\u53F2\u8F68\u8FF9">\u{1F4CD}</button><button class="fp-abort" title="\u7EC8\u6B62\u601D\u8003">\u{1F6D1}</button><button class="fp-unpin" title="\u53D6\u6D88\u56FA\u5B9A\u56DE\u6C14\u6CE1">\u{1F4CC}</button><button class="fp-close">\u2715</button></div><div class="fp-body"><div class="fp-msg"></div><div class="fp-acts collapsed"><div class="fp-acts-hd"><span class="fp-acts-tri">\u25B6</span><span class="fp-acts-lbl">\u601D\u8003\u8FC7\u7A0B</span><span class="fp-acts-cnt">0</span></div><div class="fp-acts-body"></div></div><div class="fp-chat"><input class="fp-chat-in" placeholder="\u76F4\u63A5\u5BF9\u8BDD..." /></div><div class="fp-foot"></div></div>`;
+    fixedPanelEl.innerHTML = `<div class="fp-hd"><span class="fp-avatar">\u{1F4CC}</span><span class="fp-user"></span><button class="fp-detail" title="\u67E5\u770B\u8BE6\u60C5">\u{1F50D}</button><button class="fp-traj" title="\u67E5\u770B\u5386\u53F2\u8F68\u8FF9">\u{1F4CD}</button><button class="fp-abort" title="\u7EC8\u6B62\u601D\u8003">\u{1F6D1}</button><button class="fp-unpin" title="\u53D6\u6D88\u56FA\u5B9A\u56DE\u6C14\u6CE1">\u{1F4CC}</button><button class="fp-close">\u2715</button></div><div class="fp-body"><div class="fp-msg"></div><div class="fp-acts collapsed"><div class="fp-acts-hd"><span class="fp-acts-tri">\u25B6</span><span class="fp-acts-lbl">\u601D\u8003\u8FC7\u7A0B</span><span class="fp-acts-cnt">0</span></div><div class="fp-acts-body"></div></div><div class="fp-chat"><input class="fp-chat-in" placeholder="\u76F4\u63A5\u5BF9\u8BDD..." /></div><div class="fp-foot"></div></div>`;
     document.body.appendChild(fixedPanelEl);
     fixedPanelEl.querySelector(".fp-close").addEventListener("click", (e) => {
       e.stopPropagation();
@@ -31071,6 +31081,13 @@ function openFixedPanel(sessionKey) {
         const mn = minions.find((m) => m.userData.sessionKey === fixedPanelSession);
         const name = mn ? mn.userData.userName || mn.userData.sessionLabel || fixedPanelSession : fixedPanelSession;
         openTrajPanel(fixedPanelSession, name);
+      }
+    });
+    fixedPanelEl.querySelector(".fp-detail").addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (fixedPanelSession) {
+        const mn = minions.find((m) => m.userData.sessionKey === fixedPanelSession);
+        if (mn) openAgentDrawer(mn.userData.sessionId, fixedPanelSession, mn);
       }
     });
     fixedPanelEl.querySelector(".fp-acts-hd").addEventListener("click", (e) => {
@@ -33477,6 +33494,196 @@ window.addEventListener("beforeunload", () => {
   const beaconUrl = "/api/state";
   navigator.sendBeacon(beaconUrl, new Blob([data], { type: "application/json" }));
 });
+var agentDrawer = document.getElementById("agent-drawer");
+var drawerSessionId = null;
+var drawerSessionKey = null;
+var drawerActiveTab = "current";
+var drawerHistoryBefore = null;
+var drawerHistoryAll = [];
+document.getElementById("ad-close").addEventListener("click", closeAgentDrawer);
+agentDrawer.addEventListener("mousedown", (e) => e.stopPropagation());
+agentDrawer.addEventListener("mouseup", (e) => e.stopPropagation());
+agentDrawer.querySelectorAll(".ad-tab").forEach((tab) => {
+  tab.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const pane = tab.dataset.pane;
+    agentDrawer.querySelectorAll(".ad-tab").forEach((t) => t.classList.remove("active"));
+    agentDrawer.querySelectorAll(".ad-pane").forEach((p) => p.classList.remove("active"));
+    tab.classList.add("active");
+    document.getElementById("ad-pane-" + pane).classList.add("active");
+    drawerActiveTab = pane;
+    if (pane === "history" && drawerHistoryAll.length === 0) loadDrawerHistory();
+    if (pane === "stats") loadDrawerStats();
+  });
+});
+function openAgentDrawer(sessionId, sessionKey, minion) {
+  drawerSessionId = sessionId;
+  drawerSessionKey = sessionKey;
+  drawerHistoryBefore = null;
+  drawerHistoryAll = [];
+  drawerActiveTab = "current";
+  agentDrawer.querySelectorAll(".ad-tab").forEach((t) => t.classList.remove("active"));
+  agentDrawer.querySelectorAll(".ad-pane").forEach((p) => p.classList.remove("active"));
+  agentDrawer.querySelector('[data-pane="current"]').classList.add("active");
+  document.getElementById("ad-pane-current").classList.add("active");
+  const ud = minion ? minion.userData : {};
+  const stateEmoji = ud.state === "thinking" ? "\u{1F9E0}" : ud.state === "done" ? "\u2705" : "\u{1F916}";
+  document.getElementById("ad-avatar").textContent = stateEmoji;
+  document.getElementById("ad-name").textContent = ud.userName || ud.sessionLabel || sessionKey.slice(0, 30);
+  document.getElementById("ad-meta").textContent = (ud.sessionType || "") + (ud.channel ? " \xB7 " + ud.channel : "") + " \xB7 " + sessionId.slice(0, 8);
+  agentDrawer.classList.add("open");
+  loadDrawerCurrent();
+}
+function closeAgentDrawer() {
+  agentDrawer.classList.remove("open");
+  drawerSessionId = null;
+  drawerSessionKey = null;
+}
+function loadDrawerCurrent() {
+  if (!drawerSessionId) return;
+  const pane = document.getElementById("ad-pane-current");
+  pane.innerHTML = '<div class="ad-empty">\u52A0\u8F7D\u4E2D...</div>';
+  authFetch("/api/session-state/" + encodeURIComponent(drawerSessionId)).then((r) => r.json()).then((data) => {
+    const mn = minions.find((m) => m.userData.sessionId === drawerSessionId);
+    if (mn) {
+      document.getElementById("ad-avatar").textContent = data.state === "thinking" ? "\u{1F9E0}" : data.state === "done" ? "\u2705" : "\u{1F916}";
+      document.getElementById("ad-name").textContent = mn.userData.userName || mn.userData.sessionLabel || drawerSessionKey.slice(0, 30);
+    }
+    const stateLabel = data.state === "thinking" ? "\u{1F9E0} \u601D\u8003\u4E2D" : data.state === "done" ? "\u2705 \u5DF2\u5B8C\u6210" : "\u{1F4A4} \u7A7A\u95F2";
+    const stateClass = data.state === "thinking" ? "thinking" : data.state === "done" ? "done" : "idle";
+    const eventLog = data.eventLog || [];
+    let html = '<div class="ad-state-badge ' + stateClass + '">' + stateLabel + "</div>";
+    if (data.userMsg) {
+      html += '<div class="ad-section"><div class="ad-section-title">\u{1F4E8} \u6700\u65B0\u8BF7\u6C42</div><div class="ad-msg-box">' + esc(data.userMsg) + "</div></div>";
+    }
+    if (data.replyText) {
+      html += '<div class="ad-section"><div class="ad-section-title">\u{1F4AC} \u6700\u65B0\u56DE\u590D</div><div class="ad-msg-box" style="color:#a7f3d0">' + esc(data.replyText.slice(0, 500)) + "</div></div>";
+    }
+    if (eventLog.length > 0) {
+      html += '<div class="ad-section"><div class="ad-section-title">\u2699\uFE0F \u5F53\u524D\u52A8\u4F5C</div>';
+      for (const ev of eventLog.slice(-8)) {
+        const icon = ev.type === "think" ? "\u{1F4AD}" : ev.type === "tool_use" ? "\u{1F527}" : ev.type === "tool_result" ? "\u2705" : "\u{1F4AC}";
+        const name = ev.type === "tool_use" ? ev.text || "?" : (ev.text || "").slice(0, 60);
+        const timeStr = ev.ts ? new Date(ev.ts).toLocaleTimeString() : "";
+        html += '<div class="ad-tool-row"><span class="ad-tool-icon">' + icon + '</span><span class="ad-tool-name">' + esc(name) + '</span><span class="ad-tool-time">' + esc(timeStr) + "</span></div>";
+      }
+      html += "</div>";
+    }
+    if (!data.userMsg && !data.replyText && eventLog.length === 0) {
+      html += '<div class="ad-empty">\u6682\u65E0\u6D3B\u52A8</div>';
+    }
+    html += `<div style="margin-top:10px"><button onclick="openTrajPanel('` + escAttr(drawerSessionKey) + "','" + escAttr(document.getElementById("ad-name").textContent) + `')" style="width:100%;padding:8px;background:rgba(83,216,251,0.07);border:1px solid rgba(83,216,251,0.15);border-radius:8px;color:#53d8fb;font-size:8px;cursor:pointer;font-family:'Press Start 2P',monospace">\u{1F4CD} \u67E5\u770B\u5386\u53F2\u8F68\u8FF9</button></div>`;
+    pane.innerHTML = html;
+  }).catch(() => {
+    pane.innerHTML = '<div class="ad-empty">\u274C \u52A0\u8F7D\u5931\u8D25</div>';
+  });
+}
+function loadDrawerHistory(append = false) {
+  if (!drawerSessionId) return;
+  const pane = document.getElementById("ad-pane-history");
+  if (!append) {
+    pane.innerHTML = '<div class="ad-empty">\u52A0\u8F7D\u4E2D...</div>';
+  }
+  const url = "/api/messages/" + encodeURIComponent(drawerSessionId) + "?limit=20" + (drawerHistoryBefore ? "&before=" + encodeURIComponent(drawerHistoryBefore) : "");
+  authFetch(url).then((r) => r.json()).then((data) => {
+    const msgs = data.messages || [];
+    if (!append) drawerHistoryAll = msgs;
+    else drawerHistoryAll = [...msgs, ...drawerHistoryAll];
+    if (drawerHistoryAll.length === 0) {
+      pane.innerHTML = '<div class="ad-empty">\u6682\u65E0\u5386\u53F2\u8BB0\u5F55</div>';
+      return;
+    }
+    let html = "";
+    for (const msg of drawerHistoryAll) {
+      const role = msg.role;
+      const ts = msg.timestamp ? new Date(msg.timestamp).toLocaleString() : "";
+      let icon, preview, fullText;
+      if (role === "user") {
+        icon = "\u{1F464}";
+        preview = esc((msg.text || "").slice(0, 80));
+        fullText = esc(msg.text || "");
+      } else if (role === "assistant") {
+        const texts = msg.texts || [];
+        const tcs = msg.toolCalls || [];
+        icon = tcs.length ? "\u{1F527}" : "\u{1F916}";
+        preview = tcs.length ? esc(tcs.map((t) => t.name).join(", ").slice(0, 80)) : esc(texts.join(" ").slice(0, 80));
+        fullText = esc((texts.join("\n") + (tcs.length ? "\n\u5DE5\u5177: " + tcs.map((t) => t.name + "(" + t.args + ")").join(", ") : "") + (msg.thinking ? "\n\u601D\u8003: " + msg.thinking.slice(0, 300) : "")).trim());
+      } else if (role === "toolResult") {
+        icon = "\u{1F4CB}";
+        preview = esc(((msg.toolName || "?") + ": " + (msg.result || "")).slice(0, 80));
+        fullText = esc((msg.result || "").slice(0, 2e3));
+      } else {
+        icon = "\u2753";
+        preview = esc(role);
+        fullText = "";
+      }
+      html += `<div class="ad-turn"><div class="ad-turn-hd" onclick="this.closest('.ad-turn').classList.toggle('expanded')"><span class="ad-turn-role">` + icon + '</span><span class="ad-turn-text">' + preview + '</span><span class="ad-turn-ts">' + esc(ts) + '</span></div><div class="ad-turn-body">' + fullText + "</div></div>";
+    }
+    if (data.hasMore) {
+      const oldest = msgs.length ? msgs[0].timestamp : null;
+      html += `<button class="ad-load-more" onclick="loadMoreDrawerHistory('` + escAttr(oldest || "") + `')">\u2B06 \u52A0\u8F7D\u66F4\u591A</button>`;
+    }
+    pane.innerHTML = html;
+  }).catch(() => {
+    if (!append) pane.innerHTML = '<div class="ad-empty">\u274C \u52A0\u8F7D\u5931\u8D25</div>';
+  });
+}
+function loadMoreDrawerHistory(before) {
+  drawerHistoryBefore = before;
+  loadDrawerHistory(true);
+}
+function loadDrawerStats() {
+  if (!drawerSessionId) return;
+  const pane = document.getElementById("ad-pane-stats");
+  pane.innerHTML = '<div class="ad-empty">\u7EDF\u8BA1\u4E2D...</div>';
+  authFetch("/api/agent-stats/" + encodeURIComponent(drawerSessionId)).then((r) => r.json()).then((data) => {
+    const s = data.stats;
+    if (!s) {
+      pane.innerHTML = '<div class="ad-empty">\u6682\u65E0\u6570\u636E</div>';
+      return;
+    }
+    const durStr = s.durationMs ? formatDrawerDuration(s.durationMs) : "-";
+    const latStr = s.avgLatencyMs ? s.avgLatencyMs > 1e3 ? (s.avgLatencyMs / 1e3).toFixed(1) + "s" : s.avgLatencyMs + "ms" : "-";
+    const charsStr = s.totalChars > 1e3 ? (s.totalChars / 1e3).toFixed(1) + "k" : String(s.totalChars);
+    let html = '<div class="ad-stat-grid">';
+    html += '<div class="ad-stat-card"><div class="ad-stat-val">' + s.userTurns + '</div><div class="ad-stat-lbl">\u7528\u6237\u8F6E\u6B21</div></div>';
+    html += '<div class="ad-stat-card"><div class="ad-stat-val">' + s.toolCalls + '</div><div class="ad-stat-lbl">\u5DE5\u5177\u8C03\u7528</div></div>';
+    html += '<div class="ad-stat-card"><div class="ad-stat-val">' + latStr + '</div><div class="ad-stat-lbl">\u5E73\u5747\u54CD\u5E94</div></div>';
+    html += '<div class="ad-stat-card"><div class="ad-stat-val">' + charsStr + '</div><div class="ad-stat-lbl">\u8F93\u51FA\u5B57\u7B26</div></div>';
+    html += "</div>";
+    html += '<div class="ad-section-title">\u4F1A\u8BDD\u65F6\u957F: ' + durStr + "</div>";
+    if (s.topTools && s.topTools.length > 0) {
+      html += '<div class="ad-section"><div class="ad-section-title">\u{1F527} Top \u5DE5\u5177</div>';
+      for (const t of s.topTools) {
+        const pct = Math.round(t.cnt / s.toolCalls * 100);
+        html += '<div class="ad-tool-row"><span class="ad-tool-icon">\u{1F527}</span><span class="ad-tool-name">' + esc(t.name) + '</span><span class="ad-tool-time">' + t.cnt + "\u6B21 (" + pct + "%)</span></div>";
+      }
+      html += "</div>";
+    }
+    if (s.timeline && s.timeline.length > 0) {
+      html += '<div class="ad-section"><div class="ad-section-title">\u{1F4C5} \u6D3B\u52A8\u65F6\u95F4\u8F74</div>';
+      for (const ev of s.timeline) {
+        const evColors = { user_msg: "user_msg", thinking: "thinking", tool_use: "tool_use", tool_result: "tool_result", reply_text: "reply_text" };
+        const timeStr = ev.ts ? new Date(ev.ts).toLocaleTimeString() : "";
+        html += '<div class="ad-tl-row"><div class="ad-tl-dot ' + (evColors[ev.type] || "tool_use") + '"></div><span class="ad-tl-label">' + esc(ev.label.slice(0, 50)) + '</span><span class="ad-tl-time">' + esc(timeStr) + "</span></div>";
+      }
+      html += "</div>";
+    }
+    pane.innerHTML = html;
+  }).catch(() => {
+    pane.innerHTML = '<div class="ad-empty">\u274C \u52A0\u8F7D\u5931\u8D25</div>';
+  });
+}
+function formatDrawerDuration(ms) {
+  const secs = Math.round(ms / 1e3);
+  if (secs < 60) return secs + "s";
+  const mins = Math.floor(secs / 60), s = secs % 60;
+  if (mins < 60) return mins + "m" + s + "s";
+  const hrs = Math.floor(mins / 60), m = mins % 60;
+  return hrs + "h" + m + "m";
+}
+window.openAgentDrawer = openAgentDrawer;
+window.loadMoreDrawerHistory = loadMoreDrawerHistory;
 var trajData = null;
 var trajSessionKey = null;
 var trajSessionName = "";
