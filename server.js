@@ -474,10 +474,15 @@ function parseUserMessage(text) {
   // Strip trailing JSON blocks
   const jsonStart = msg.search(/\n\{/);
   if (jsonStart >= 0) msg = msg.slice(0, jsonStart);
+  // Strip [System: ...] injected metadata blocks
+  msg = msg.replace(/\n\[System:[^\]]*\]/g, '');
+  msg = msg.replace(/\[System:[^\]]*\]/g, '');
+  // Strip [media attached: ...] lines at start
+  msg = msg.replace(/^\[media attached:[^\]]*\]\s*/i, '');
   msg = msg.trim();
   // Clean at mentions
   msg = msg.replace(/<at[^>]*>([^<]*)<\/at>/g, '@$1');
-  if (msg.startsWith('[media attached:') || msg.includes('[media attached')) return '📎 图片/附件';
+  if (!msg || msg.startsWith('[media attached:') || msg.includes('[media attached')) return '📎 图片/附件';
   return msg.slice(0, 2000);
 }
 
@@ -1269,7 +1274,8 @@ try {
       if (ev === 'session.message') {
         const role = p.role;
         if (role === 'user') {
-          const text = typeof p.content === 'string' ? p.content : (p.content?.[0]?.text || JSON.stringify(p.content || '').slice(0, 200));
+          const rawText = typeof p.content === 'string' ? p.content : (p.content?.[0]?.text || JSON.stringify(p.content || '').slice(0, 200));
+          const text = parseUserMessage(rawText);
           applyRealtimeState(sk, { state: 'thinking', lastMsg: text.slice(0, 300), thinkCount: 0, toolCount: 0, lastTool: null });
         } else if (role === 'assistant') {
           // Check content for thinking blocks
@@ -1543,7 +1549,7 @@ app.get('/api/minions', (req, res) => {
         agentName,
         sessionType: sess.type,
         sessionLabel: sess.label,
-        chineseName: (profiles[key] || {}).name || '',
+        chineseName: (profiles[key] || {}).name || sess.displayName || '',
         position: pos ? { x: round2(pos.x), y: round2(pos.y || 0), z: round2(pos.z) } : null,
         state: pos?.state || 'unknown',
         bounds: pos?.bounds || null,

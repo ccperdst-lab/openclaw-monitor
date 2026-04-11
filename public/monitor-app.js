@@ -2437,8 +2437,18 @@ function initWorld(worldData) {
 
     agent.sessions.forEach((sess, si) => {
       const profile = sess.profile || {};
+      // Use chineseName from server if no saved profile name (don't randomize)
       if (!profile.name) {
-        profile.name = getRandomName();
+        // Prefer: server-provided chineseName → sessionLabel snippet → agent name
+        const srvName = sess.chineseName || '';
+        if (srvName && srvName !== sess.key) {
+          // Use a short version of chineseName (strip url-like prefixes)
+          profile.name = srvName.replace(/^feishu:[gd]-/i, '').slice(0, 16);
+        } else {
+          // Fall back to session label abbreviation
+          const lbl = (sess.label || sess.type || agent.name || '').replace(/^Cron:\s*/i, '').slice(0, 12);
+          profile.name = lbl || getRandomName();
+        }
         if (!profile.color) profile.color = [0xf5d033, 0xff6b6b, 0x4ecdc4, 0xffe66d, 0xa8e6cf][Math.floor(Math.random()*5)];
         if (!profile.heightScale) profile.heightScale = 0.8 + Math.random() * 0.4;
         if (!profile.widthScale) profile.widthScale = 0.9 + Math.random() * 0.2;
