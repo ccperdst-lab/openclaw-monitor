@@ -2783,8 +2783,8 @@ function updateBubbleContent(m) {
   if (abortBtn) abortBtn.style.display = ud.state === 'thinking' ? '' : 'none';
 
   // Footer
-  const tc = log.filter(e => e.type === 'think').length;
-  const oc = log.filter(e => e.type === 'tool_use' || e.type === 'tool_result').length;
+  const tc = ud._gwThinkCount !== undefined ? ud._gwThinkCount : log.filter(e => e.type === 'think').length;
+  const oc = ud._gwToolCount !== undefined ? ud._gwToolCount : log.filter(e => e.type === 'tool_use' || e.type === 'tool_result').length;
   el.querySelector('.bub-foot').textContent =
     ud.state === 'thinking' ? `🧠 思考中 (${tc}步, ${oc}工具)...` :
     ud.state === 'streaming' ? `✍️ 流式输出中...` :
@@ -2952,8 +2952,8 @@ function updateFixedPanelContent(minion) {
   // No final reply in thinking panel — it's shown in the main message area above
   actsBody.innerHTML = items.slice(-50).join('');
   if (wasAtBottom) actsBody.scrollTop = actsBody.scrollHeight;
-  const tc = log.filter(e => e.type === 'think').length;
-  const oc = log.filter(e => e.type === 'tool_use' || e.type === 'tool_result').length;
+  const tc = ud._gwThinkCount !== undefined ? ud._gwThinkCount : log.filter(e => e.type === 'think').length;
+  const oc = ud._gwToolCount !== undefined ? ud._gwToolCount : log.filter(e => e.type === 'tool_use' || e.type === 'tool_result').length;
   fixedPanelEl.querySelector('.fp-acts-cnt').textContent = tc + oc;
   fixedPanelEl.querySelector('.fp-foot').textContent = ud.state === 'thinking' ? `🧠 思考中 (${tc}步, ${oc}工具)...` : ud.state === 'streaming' ? '✍️ 流式输出中...' : `✅ 思考了${tc}步 · 🔧${oc}工具 · 📤${ud.replyCount}条`;
 
@@ -3195,6 +3195,18 @@ function handleEvent(ev) {
     if (fixedPanelSession !== ud.sessionKey) {
       showNotifyBox(ud.sessionKey, ud.userName, ev.msg || '', ud.chineseName || ud.sessionLabel);
     }
+  } else if (ev.type === 'session_update') {
+    // Real-time state from gateway hook
+    if (ev.state) { ud.state = ev.state; ud.lastEventTime = Date.now(); }
+    // Authoritative counts from gateway
+    if (ev.thinkCount !== undefined) ud._gwThinkCount = ev.thinkCount;
+    if (ev.toolCount !== undefined) ud._gwToolCount = ev.toolCount;
+    if (ev.lastTool) {
+      if (!ud.eventLog) ud.eventLog = [];
+      ud.eventLog.push(mkEvt('tool_use', ev.lastTool, '', ev.ts));
+    }
+    showBubble(m);
+    if (ev.state === 'thinking') startBubbleRefresh(m);
   } else if (ev.type === 'thinking') {
     ud.state = 'thinking'; ud.lastEventTime = Date.now();
     if (!ud.eventLog) ud.eventLog = [];

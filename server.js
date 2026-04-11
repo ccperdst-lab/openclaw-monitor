@@ -1181,6 +1181,164 @@ try {
   });
 } catch (e) { log('error', 'Failed to watch agents dir: ' + e.message); }
 
+// ===== Gateway Hook (real-time agent state) =====
+let gatewayHook = null;
+try {
+  const { GatewayHook } = require('./gateway-hook.js');
+
+  // realtimeState: sessionKey -> { state, thinkCount, toolCount, lastTool, lastMsg, lastReply, updatedAt }
+  // This OVERRIDES the JSONL-polled state from agentState
+  const realtimeState = {};
+
+  // Map from sessionKey → agentName for fast lookup
+  function findAgentForSession(sessionKey) {
+    for (const [agentName, info] of Object.entries(agentState)) {
+      for (const [sk] of Object.entries(info.sessions)) {
+        if (sk === sessionKey) return agentName;
+      }
+    }
+    return null;
+  }
+
+  function applyRealtimeState(sessionKey, patch) {
+    if (!realtimeState[sessionKey]) {
+      realtimeState[sessionKey] = { state: 'idle', thinkCount: 0, toolCount: 0, lastTool: null, lastMsg: null, lastReply: null, updatedAt: Date.now() };
+    }
+    Object.assign(realtimeState[sessionKey], patch, { updatedAt: Date.now() });
+
+    // Also update agentState so /api/session-state picks it up
+    const agentName = findAgentForSession(sessionKey);
+    if (agentName && agentState[agentName]?.sessions?.[sessionKey]) {
+      const s = agentState[agentName].sessions[sessionKey];
+      const rt = realtimeState[sessionKey];
+      if (patch.state !== undefined) s.thinking = (patch.state === 'thinking');
+      if (patch.lastTool) s.currentTool = patch.lastTool;
+      if (patch.lastMsg) s.userMsg = patch.lastMsg;
+      if (patch.lastReply) s.replyText = patch.lastReply;
+      if (patch.thinkCount !== undefined) s.thinkCount = patch.thinkCount;
+      if (patch.toolCount !== undefined) s.toolCount = patch.toolCount;
+    }
+
+    // Broadcast real-time state update to frontend via SSE
+    broadcast({ type: 'event', data: {
+      type: patch.state === 'thinking' ? 'thinking' :
+            patch.lastTool ? 'tool_use' :
+            patch.state === 'done' ? 'reply_text' : 'session_update',
+      session: sessionKey,
+      agent: findAgentForSession(sessionKey) || 'unknown',
+      state: realtimeState[sessionKey].state,
+      thinkCount: realtimeState[sessionKey].thinkCount,
+      toolCount: realtimeState[sessionKey].toolCount,
+      lastTool: realtimeState[sessionKey].lastTool,
+      ts: new Date().toISOString(),
+    }});
+
+    // Record trajectory event if we have a position
+    if (patch.lastTool) recordSessionEvent(sessionKey, 'tool_use', `🔧 ${patch.lastTool}`);
+    else if (patch.state === 'thinking') recordSessionEvent(sessionKey, 'thinking', '🤔 thinking');
+    else if (patch.state === 'done') recordSessionEvent(sessionKey, 'reply_text', '💬 reply');
+  }
+
+  gatewayHook = new GatewayHook({
+    onReady: () => {
+      log('info', '🔗 Gateway Hook connected — real-time agent state active');
+      // Subscribe to all session messages
+      gatewayHook.request('sessions.list', {}).then(p => {
+        const sessions = Array.isArray(p) ? p : (p?.sessions || []);
+        for (const s of sessions) {
+          const sk = s.sessionKey || s.key;
+          if (sk) gatewayHook.subscribeSession(sk);
+        }
+      }).catch(() => {});
+    },
+
+    onEvent: (msg) => {
+      const ev = msg.event;
+      const p = msg.payload || {};
+      const sk = p.sessionKey || p.key;
+
+      // New session started — subscribe to its messages
+      if (ev === 'session.created' || ev === 'sessions.changed') {
+        if (sk) gatewayHook.subscribeSession(sk);
+        return;
+      }
+
+      if (!sk) return;
+
+      // Real-time message events from sessions.messages.subscribe
+      if (ev === 'session.message') {
+        const role = p.role;
+        if (role === 'user') {
+          const text = typeof p.content === 'string' ? p.content : (p.content?.[0]?.text || JSON.stringify(p.content || '').slice(0, 200));
+          applyRealtimeState(sk, { state: 'thinking', lastMsg: text.slice(0, 300), thinkCount: 0, toolCount: 0, lastTool: null });
+        } else if (role === 'assistant') {
+          // Check content for thinking blocks
+          const blocks = Array.isArray(p.content) ? p.content : [];
+          const thinkBlocks = blocks.filter(b => b.type === 'thinking').length;
+          const toolBlocks = blocks.filter(b => b.type === 'tool_use');
+          const textBlocks = blocks.filter(b => b.type === 'text');
+          const prevState = realtimeState[sk] || {};
+          if (thinkBlocks > 0) {
+            applyRealtimeState(sk, {
+              state: 'thinking',
+              thinkCount: (prevState.thinkCount || 0) + thinkBlocks,
+            });
+          }
+          for (const tc of toolBlocks) {
+            applyRealtimeState(sk, {
+              state: 'thinking',
+              lastTool: tc.name || tc.tool_name || '?',
+              toolCount: (realtimeState[sk]?.toolCount || 0) + 1,
+            });
+          }
+          if (textBlocks.length > 0 && toolBlocks.length === 0) {
+            const replyText = textBlocks.map(b => b.text || '').join(' ').slice(0, 300);
+            applyRealtimeState(sk, { state: 'done', lastReply: replyText });
+          }
+        } else if (role === 'tool') {
+          // Tool result — still thinking (more tool calls may come)
+          applyRealtimeState(sk, { state: 'thinking' });
+        }
+      }
+
+      // Session state change (e.g., turn ends)
+      if (ev === 'session.state' || ev === 'session.updated') {
+        const state = p.state || p.status;
+        if (state === 'idle' || state === 'done') {
+          applyRealtimeState(sk, { state: 'done' });
+          // Reset to idle after short delay
+          setTimeout(() => {
+            if (realtimeState[sk]?.state === 'done') {
+              applyRealtimeState(sk, { state: 'idle', thinkCount: 0, toolCount: 0, lastTool: null });
+            }
+          }, 8000);
+        } else if (state === 'thinking' || state === 'running') {
+          applyRealtimeState(sk, { state: 'thinking' });
+        }
+      }
+
+      // Turn-level events if available
+      if (ev === 'session.turn.start') {
+        applyRealtimeState(sk, { state: 'thinking', thinkCount: 0, toolCount: 0, lastTool: null });
+      }
+      if (ev === 'session.turn.end') {
+        applyRealtimeState(sk, { state: 'done' });
+        setTimeout(() => {
+          if (realtimeState[sk]?.state === 'done') applyRealtimeState(sk, { state: 'idle' });
+        }, 6000);
+      }
+    },
+
+    onClose: () => {
+      log('warn', '⚠️ Gateway Hook disconnected — falling back to JSONL polling');
+    },
+  });
+
+  gatewayHook.start();
+} catch (e) {
+  log('warn', 'Gateway hook unavailable: ' + e.message + ' — using JSONL polling');
+}
+
 // ===== Start =====
 initAll();
 watchSessionMaps();
